@@ -217,9 +217,11 @@ impl SqllogParser {
 
     /// 流式解析：对每个解析出的 Sqllog 调用回调函数，避免一次性加载全部到内存。
     /// 回调返回 Err 则提前终止解析并返回该错误。
-    pub fn parse_with<F>(&self, mut on_record: F) -> Result<()>
+    /// 同时支持错误回调，处理解析失败的记录
+    pub fn parse_with<F, E>(&self, mut on_record: F, mut on_error: E) -> Result<()>
     where
         F: FnMut(&Sqllog) -> Result<()>,
+        E: FnMut(&Path, &dm_database_parser_sqllog::ParseError) -> Result<()>,
     {
         let log_files = self.scan_log_files()?;
         if log_files.is_empty() {
@@ -241,6 +243,9 @@ impl SqllogParser {
                 }
                 if !errors.is_empty() {
                     warn!("文件 {} 存在 {} 个错误", file.display(), errors.len());
+                    for err in &errors {
+                        on_error(file, err)?;
+                    }
                 }
             }
         } else {
@@ -253,20 +258,25 @@ impl SqllogParser {
                         reason: format!("创建线程池失败: {}", e),
                     })
                 })?;
-            let results: Result<Vec<(Vec<Sqllog>, Vec<_>)>> = pool.install(|| {
+            let results: Result<Vec<(PathBuf, Vec<Sqllog>, Vec<_>)>> = pool.install(|| {
                 log_files
                     .par_iter()
-                    .map(|f| Self::parse_single_file(f))
+                    .map(|f| {
+                        Self::parse_single_file(f).map(|(sqllogs, errors)| (f.clone(), sqllogs, errors))
+                    })
                     .collect()
             });
             match results {
                 Ok(parsed) => {
-                    for (sqllogs, errors) in parsed {
+                    for (file_path, sqllogs, errors) in parsed {
                         for s in &sqllogs {
                             on_record(s)?;
                         }
                         if !errors.is_empty() {
-                            warn!("文件解析出现 {} 个错误", errors.len());
+                            warn!("文件 {} 解析出现 {} 个错误", file_path.display(), errors.len());
+                            for err in &errors {
+                                on_error(&file_path, err)?;
+                            }
                         }
                     }
                 }

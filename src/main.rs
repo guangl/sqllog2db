@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod constants;
 mod error;
+mod error_logger;
 mod exporter;
 mod logging;
 mod parser;

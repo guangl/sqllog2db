@@ -217,6 +217,14 @@ pub enum ExportError {
     /// 序列化失败
     #[error("序列化失败 (类型: {data_type}): {reason}")]
     SerializationFailed { data_type: String, reason: String },
+
+    /// 文件创建失败
+    #[error("创建文件失败 {}: {reason}", path.display())]
+    FileCreateFailed { path: PathBuf, reason: String },
+
+    /// 文件写入失败
+    #[error("写入文件失败 {path}: {reason}")]
+    FileWriteFailed { path: String, reason: String },
 }
 
 /// 应用程序 Result 类型别名
