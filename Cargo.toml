@@ -1,0 +1,24 @@
+[package]
+name = "sqllog2db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+chrono = "0.4"
+clap = { version = "4.5.51", features = ["derive"] }
+dm-database-parser-sqllog = { version = "0.3.0", features = ["serde"] }
+duckdb = { version = "1.1.3", features = ["bundled"] }
+once_cell = "1.21.3"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0.17"
+toml = { version = "0.9.8", features = ["serde"] }
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+rayon = "1.10"
+
+[dev-dependencies]
+tempfile = "3.23.0"

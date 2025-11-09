@@ -1,0 +1,11 @@
+/target
+.idea/
+.db
+.sqlite
+.vscode
+sqllogs/
+logs/
+export/
+coverage/
+*.profraw
+*.ps1
