@@ -4,7 +4,7 @@ use crate::error::{Error, FileError, Result};
 use std::path::Path;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// 初始化日志系统
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
@@ -60,13 +60,9 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
             })
         })?;
 
-    // 构建环境过滤器
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level.as_str()));
-
-    // 设置订阅者
+    // 使用 LevelFilter 代替 EnvFilter（移除 env-filter 特性以减小体积）
     let subscriber = tracing_subscriber::registry()
-        .with(env_filter)
+        .with(LevelFilter::from_level(level))
         .with(
             fmt::layer()
                 .with_writer(file_appender)

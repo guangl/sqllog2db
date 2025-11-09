@@ -96,7 +96,9 @@ impl ErrorLogger {
         error: &dm_database_parser_sqllog::ParseError,
     ) -> Result<()> {
         let record = ParseErrorRecord {
-            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
             file_path: file_path.to_string(),
             error_message: format!("{:?}", error),
             raw_content: None, // dm-database-parser-sqllog 的 ParseError 不包含原始内容
@@ -131,10 +133,7 @@ impl ErrorLogger {
     pub fn finalize(mut self) -> Result<()> {
         self.flush()?;
         if self.count > 0 {
-            info!(
-                "错误日志已写入: {} ({} 条错误记录)",
-                self.path, self.count
-            );
+            info!("错误日志已写入: {} ({} 条错误记录)", self.path, self.count);
         } else {
             debug!("无错误记录需要写入");
         }
@@ -220,7 +219,11 @@ mod tests {
     #[test]
     fn test_error_logger_creates_parent_directory() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("logs").join("errors").join("parse.jsonl");
+        let log_path = temp_dir
+            .path()
+            .join("logs")
+            .join("errors")
+            .join("parse.jsonl");
 
         let logger = ErrorLogger::new(&log_path)?;
         assert!(log_path.exists());

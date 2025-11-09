@@ -8,19 +8,7 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("配置验证已在 main 中完成");
 
     info!("SQL日志路径: {}", cfg.sqllog.path());
-    info!(
-        "线程数: {}",
-        if cfg.sqllog.is_auto_threading() {
-            format!(
-                "自动 (将使用 {} 个核心)",
-                std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(1)
-            )
-        } else {
-            cfg.sqllog.thread_count().to_string()
-        }
-    );
+    info!("线程数: {}", cfg.sqllog.thread_count().to_string());
     info!("日志级别: {}", cfg.logging.level());
     info!("日志文件: {}", cfg.logging.path());
     info!("日志保留: {} 天", cfg.logging.retention_days());

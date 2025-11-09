@@ -9,14 +9,18 @@ use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
 use tracing::{debug, info};
 
-#[cfg(feature = "csv")] mod csv;
+#[cfg(feature = "csv")]
+mod csv;
 mod database;
-#[cfg(feature = "jsonl")] mod jsonl;
+#[cfg(feature = "jsonl")]
+mod jsonl;
 mod util;
 
-#[cfg(feature = "csv")] pub use csv::CsvExporter;
+#[cfg(feature = "csv")]
+pub use csv::CsvExporter;
 pub use database::DatabaseExporter;
-#[cfg(feature = "jsonl")] pub use jsonl::JsonlExporter;
+#[cfg(feature = "jsonl")]
+pub use jsonl::JsonlExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -107,7 +111,10 @@ impl ExporterManager {
         #[cfg(not(feature = "csv"))]
         {
             if !config.exporter.csvs().is_empty() {
-                info!("CSV 导出器特性未启用, 跳过 {} 个 CSV 导出配置", config.exporter.csvs().len());
+                info!(
+                    "CSV 导出器特性未启用, 跳过 {} 个 CSV 导出配置",
+                    config.exporter.csvs().len()
+                );
             }
         }
 

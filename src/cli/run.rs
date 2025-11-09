@@ -14,19 +14,6 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     // 第一步：创建 SQL 日志解析器
     let parser = SqllogParser::new(cfg.sqllog.path(), cfg.sqllog.thread_count());
     info!("SQL 日志路径: {}", parser.path().display());
-    info!(
-        "线程数: {}",
-        if parser.thread_count() == 0 {
-            format!(
-                "自动 ({} 个核心)",
-                std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(1)
-            )
-        } else {
-            parser.thread_count().to_string()
-        }
-    );
 
     // 第二步：创建导出器管理器
     let mut exporter_manager = ExporterManager::from_config(cfg)?;

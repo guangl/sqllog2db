@@ -2,10 +2,14 @@ use std::{fs, path::PathBuf, process::Command};
 
 // Helper to get path to compiled binary provided by Cargo for integration tests
 fn binary_path() -> PathBuf {
-    // CARGO_BIN_EXE_<name> is set by Cargo for each binary target
-    let var = format!("CARGO_BIN_EXE_{}", env!("CARGO_PKG_NAME"));
-    let path = std::env::var(&var).expect("binary path env not set by cargo");
-    PathBuf::from(path)
+    // 使用 cargo 测试时提供的二进制路径
+    let exe = env!("CARGO_BIN_EXE_sqllog2db");
+    PathBuf::from(exe)
+}
+
+// 转换路径为 TOML 兼容格式（Windows 反斜杠转义）
+fn toml_path(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\\', "\\\\")
 }
 
 #[test]
@@ -35,14 +39,18 @@ path = "{}"
 level = "info"
 retention_days = 7
 
+[features]
+replace_sql_parameters = false
+scatter = false
+
 [[exporter.csv]]
 path = "{}"
 overwrite = true
 "#,
-        logs_dir.display(),
-        work_dir.join("errors.jsonl").display(),
-        log_file.display(),
-        out_csv.display()
+        toml_path(&logs_dir),
+        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&log_file),
+        toml_path(&out_csv)
     );
     fs::write(&config_path, cfg).unwrap();
 

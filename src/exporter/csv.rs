@@ -486,6 +486,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let test_file = temp_dir.join("test_csv_batch.csv");
 
+        // 确保先删除已存在的文件
         let _ = fs::remove_file(&test_file);
 
         let mut exporter = CsvExporter::new(&test_file, true);
@@ -508,6 +509,15 @@ mod tests {
         // 验证文件内容
         let content = fs::read_to_string(&test_file).unwrap();
         let lines: Vec<&str> = content.lines().collect();
+
+        // 打印调试信息
+        if lines.len() != 4 {
+            eprintln!("期望 4 行，实际 {} 行:", lines.len());
+            for (i, line) in lines.iter().enumerate() {
+                eprintln!("行 {}: {}", i + 1, line);
+            }
+        }
+
         assert_eq!(lines.len(), 4); // 头部 + 3 条记录
 
         // 清理
@@ -546,8 +556,9 @@ mod tests {
     fn test_csv_exporter_with_batch_size() {
         use std::fs;
         let temp_dir = std::env::temp_dir();
-        let test_file = temp_dir.join("test_csv_batch.csv");
+        let test_file = temp_dir.join("test_csv_batch_size.csv");
 
+        // 确保删除已存在的文件
         let _ = fs::remove_file(&test_file);
 
         // 创建批量大小为 2 的导出器
@@ -568,6 +579,7 @@ mod tests {
         exporter.finalize().unwrap();
 
         // 验证所有记录都已写入
+        assert!(test_file.exists(), "文件应该存在: {}", test_file.display());
         let content = fs::read_to_string(&test_file).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 6); // 头部 + 5 条记录
