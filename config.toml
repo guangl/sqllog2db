@@ -7,7 +7,7 @@ batch_size = 0
 path = "errors.jsonl"
 
 [logging]
-path = "logs"
+path = "logs/sqllog2db.log"
 level = "info"
 retention_days = 7
 
