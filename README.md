@@ -1,5 +1,10 @@
 # sqllog2db
 
+[![Crates.io](https://img.shields.io/crates/v/dm-database-sqllog2db.svg)](https://crates.io/crates/dm-database-sqllog2db)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub Release](https://img.shields.io/github/v/release/guangl/sqllog2db)](https://github.com/guangl/sqllog2db/releases)
+[![Rust 1.56+](https://img.shields.io/badge/Rust-1.56%2B-orange.svg)](https://www.rust-lang.org/)
+
 一个轻量、可扩展的 SQL 日志导出 CLI 工具：解析数据库 SQL 日志（流式），导出到 CSV / JSONL / 数据库（可选），并集中记录解析错误与分类指标。
 
 - 体积小巧：默认功能仅 CSV/JSONL，按需启用数据库导出，最小化二进制体积
@@ -7,6 +12,15 @@
 - 易于集成：清晰的配置文件（TOML），一条命令跑完
 
 > 适用场景：日志归档、数据分析预处理、基于日志的问责/审计、异构系统导出。
+
+---
+
+## 快速链接
+
+- [Crates.io 包页面](https://crates.io/crates/dm-database-sqllog2db)
+- [GitHub 仓库](https://github.com/guangl/sqllog2db)
+- [GitHub Releases](https://github.com/guangl/sqllog2db/releases)
+- [CHANGELOG](./CHANGELOG.md)
 
 ---
 
@@ -28,40 +42,48 @@
 
 ## 安装与构建
 
-你可以选择本地构建或从源码安装。
+你可以选择多种方式安装或构建。
 
-- 本地构建（开发者推荐）
+### 从 crates.io 安装（推荐）
+
+```bash
+cargo install dm-database-sqllog2db
+```
+
+### 本地构建
+
+**本地构建（开发者推荐）**
 
 ```powershell
 # 在仓库根目录
 cargo build --release
 ```
 
-- 本地安装（把可执行安装到 Cargo bin 目录）
+**本地安装（把可执行安装到 Cargo bin 目录）**
 
 ```powershell
 cargo install --path .
 ```
 
-> 构建数据库导出支持（可选）：
->
-> - 启用 SQLite
->
-> ```powershell
-> cargo build --release --features sqlite
-> ```
->
-> - 启用 DuckDB
->
-> ```powershell
-> cargo build --release --features duckdb
-> ```
->
-> - 同时启用
->
-> ```powershell
-> cargo build --release --features "sqlite duckdb"
-> ```
+### 构建数据库导出支持（可选）
+
+启用 SQLite：
+
+```powershell
+cargo build --release --features sqlite
+```
+
+启用 DuckDB：
+
+```powershell
+cargo build --release --features duckdb
+```
+
+同时启用：
+
+```powershell
+cargo build --release --features "sqlite duckdb"
+```
 
 ---
 
