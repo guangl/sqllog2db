@@ -9,14 +9,14 @@ use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
 use tracing::{debug, info};
 
-mod csv;
+#[cfg(feature = "csv")] mod csv;
 mod database;
-mod jsonl;
+#[cfg(feature = "jsonl")] mod jsonl;
 mod util;
 
-pub use csv::CsvExporter;
+#[cfg(feature = "csv")] pub use csv::CsvExporter;
 pub use database::DatabaseExporter;
-pub use jsonl::JsonlExporter;
+#[cfg(feature = "jsonl")] pub use jsonl::JsonlExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -95,18 +95,39 @@ impl ExporterManager {
 
         info!("初始化导出器管理器...");
 
-        // 创建 CSV 导出器
-        for csv_config in config.exporter.csvs() {
-            let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
-            debug!("添加 CSV 导出器: {}", csv_config.path);
-            exporters.push(Box::new(csv_exporter));
+        // 创建 CSV 导出器（需启用 feature="csv"）
+        #[cfg(feature = "csv")]
+        {
+            for csv_config in config.exporter.csvs() {
+                let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
+                debug!("添加 CSV 导出器: {}", csv_config.path);
+                exporters.push(Box::new(csv_exporter));
+            }
+        }
+        #[cfg(not(feature = "csv"))]
+        {
+            if !config.exporter.csvs().is_empty() {
+                info!("CSV 导出器特性未启用, 跳过 {} 个 CSV 导出配置", config.exporter.csvs().len());
+            }
         }
 
-        // 创建 JSONL 导出器
-        for jsonl_config in config.exporter.jsonls() {
-            let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
-            debug!("添加 JSONL 导出器: {}", jsonl_config.path);
-            exporters.push(Box::new(jsonl_exporter));
+        // 创建 JSONL 导出器（需启用 feature="jsonl"）
+        #[cfg(feature = "jsonl")]
+        {
+            for jsonl_config in config.exporter.jsonls() {
+                let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
+                debug!("添加 JSONL 导出器: {}", jsonl_config.path);
+                exporters.push(Box::new(jsonl_exporter));
+            }
+        }
+        #[cfg(not(feature = "jsonl"))]
+        {
+            if !config.exporter.jsonls().is_empty() {
+                info!(
+                    "JSONL 导出器特性未启用, 跳过 {} 个 JSONL 导出配置",
+                    config.exporter.jsonls().len()
+                );
+            }
         }
 
         // 创建数据库导出器

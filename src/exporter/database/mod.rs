@@ -7,10 +7,10 @@ mod dm;
 /// - PostgreSQL (网络型关系数据库) - 待实现
 /// - Oracle (网络型企业数据库) - 待实现
 /// - DM (达梦数据库) - 待实现
-mod duckdb;
-mod oracle;
-mod postgresql;
-mod sqlite;
+#[cfg(feature = "duckdb")] mod duckdb;
+#[cfg(feature = "oracle")] mod oracle;
+#[cfg(feature = "postgres")] mod postgresql;
+#[cfg(feature = "sqlite")] mod sqlite;
 
 use super::{ExportStats, Exporter};
 use crate::config::DatabaseType;
@@ -20,9 +20,9 @@ use tracing::{debug, info, warn};
 
 /// 数据库连接枚举
 enum DatabaseConnection {
-    SQLite(sqlite::SQLiteExporter),
-    DuckDB(duckdb::DuckDBExporter),
-    // PostgreSQL, Oracle, DM 等暂时不实现
+    #[cfg(feature = "sqlite")] SQLite(sqlite::SQLiteExporter),
+    #[cfg(feature = "duckdb")] DuckDB(duckdb::DuckDBExporter),
+    // 其余数据库尚未实现或未启用 feature 时退化为 Unimplemented
     Unimplemented,
 }
 
@@ -42,27 +42,38 @@ impl DatabaseExporter {
 
         let connection = match database_type {
             DatabaseType::SQLite => {
-                let path = config.path.as_deref().unwrap_or("sqllog.db");
-                DatabaseConnection::SQLite(sqlite::SQLiteExporter::with_batch_size(
-                    path.to_string(),
-                    table_name.clone(),
-                    config.overwrite,
-                    batch_size,
-                ))
+                #[cfg(feature = "sqlite")]
+                {
+                    let path = config.path.as_deref().unwrap_or("sqllog.db");
+                    DatabaseConnection::SQLite(sqlite::SQLiteExporter::with_batch_size(
+                        path.to_string(),
+                        table_name.clone(),
+                        config.overwrite,
+                        batch_size,
+                    ))
+                }
+                #[cfg(not(feature = "sqlite"))]
+                {
+                    DatabaseConnection::Unimplemented
+                }
             }
             DatabaseType::DuckDB => {
-                let path = config.path.as_deref().unwrap_or("sqllog.duckdb");
-                DatabaseConnection::DuckDB(duckdb::DuckDBExporter::with_batch_size(
-                    path.to_string(),
-                    table_name.clone(),
-                    config.overwrite,
-                    batch_size,
-                ))
+                #[cfg(feature = "duckdb")]
+                {
+                    let path = config.path.as_deref().unwrap_or("sqllog.duckdb");
+                    DatabaseConnection::DuckDB(duckdb::DuckDBExporter::with_batch_size(
+                        path.to_string(),
+                        table_name.clone(),
+                        config.overwrite,
+                        batch_size,
+                    ))
+                }
+                #[cfg(not(feature = "duckdb"))]
+                {
+                    DatabaseConnection::Unimplemented
+                }
             }
-            _ => {
-                // 其他数据库类型暂不实现
-                DatabaseConnection::Unimplemented
-            }
+            _ => DatabaseConnection::Unimplemented,
         };
 
         Self {
@@ -76,16 +87,15 @@ impl DatabaseExporter {
 impl Exporter for DatabaseExporter {
     fn initialize(&mut self) -> Result<()> {
         match &mut self.connection {
-            DatabaseConnection::SQLite(exporter) => exporter.initialize(),
-            DatabaseConnection::DuckDB(exporter) => exporter.initialize(),
+            #[cfg(feature = "sqlite")] DatabaseConnection::SQLite(exporter) => exporter.initialize(),
+            #[cfg(feature = "duckdb")] DatabaseConnection::DuckDB(exporter) => exporter.initialize(),
             DatabaseConnection::Unimplemented => {
                 info!(
-                    "初始化 {} 数据库导出器: 表 = {}",
+                    "初始化 {} 数据库导出器(未启用特性或未实现): 表 = {}",
                     self.database_type.as_str(),
                     self.table_name
                 );
-                warn!("数据库导出器尚未实现实际连接逻辑,仅生成 SQL 语句");
-                info!("数据库导出器初始化成功 (模拟)");
+                warn!("数据库导出器尚未启用或尚未实现,跳过实际连接");
                 Ok(())
             }
         }
@@ -93,19 +103,19 @@ impl Exporter for DatabaseExporter {
 
     fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
         match &mut self.connection {
-            DatabaseConnection::SQLite(exporter) => exporter.export(sqllog),
-            DatabaseConnection::DuckDB(exporter) => exporter.export(sqllog),
+            #[cfg(feature = "sqlite")] DatabaseConnection::SQLite(exporter) => exporter.export(sqllog),
+            #[cfg(feature = "duckdb")] DatabaseConnection::DuckDB(exporter) => exporter.export(sqllog),
             DatabaseConnection::Unimplemented => Ok(()),
         }
     }
 
     fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
         match &mut self.connection {
-            DatabaseConnection::SQLite(exporter) => exporter.export_batch(sqllogs),
-            DatabaseConnection::DuckDB(exporter) => exporter.export_batch(sqllogs),
+            #[cfg(feature = "sqlite")] DatabaseConnection::SQLite(exporter) => exporter.export_batch(sqllogs),
+            #[cfg(feature = "duckdb")] DatabaseConnection::DuckDB(exporter) => exporter.export_batch(sqllogs),
             DatabaseConnection::Unimplemented => {
                 debug!(
-                    "批量导出 {} 条记录到 {} 数据库 (模拟)",
+                    "批量导出 {} 条记录到 {} (未启用/未实现,跳过)",
                     sqllogs.len(),
                     self.database_type.as_str()
                 );
@@ -116,16 +126,9 @@ impl Exporter for DatabaseExporter {
 
     fn finalize(&mut self) -> Result<()> {
         match &mut self.connection {
-            DatabaseConnection::SQLite(exporter) => exporter.finalize(),
-            DatabaseConnection::DuckDB(exporter) => exporter.finalize(),
-            DatabaseConnection::Unimplemented => {
-                info!(
-                    "{} 数据库导出完成: 表 = {} (模拟)",
-                    self.database_type.as_str(),
-                    self.table_name
-                );
-                Ok(())
-            }
+            #[cfg(feature = "sqlite")] DatabaseConnection::SQLite(exporter) => exporter.finalize(),
+            #[cfg(feature = "duckdb")] DatabaseConnection::DuckDB(exporter) => exporter.finalize(),
+            DatabaseConnection::Unimplemented => Ok(())
         }
     }
 
@@ -135,8 +138,8 @@ impl Exporter for DatabaseExporter {
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
         match &self.connection {
-            DatabaseConnection::SQLite(exporter) => exporter.stats_snapshot(),
-            DatabaseConnection::DuckDB(exporter) => exporter.stats_snapshot(),
+            #[cfg(feature = "sqlite")] DatabaseConnection::SQLite(exporter) => exporter.stats_snapshot(),
+            #[cfg(feature = "duckdb")] DatabaseConnection::DuckDB(exporter) => exporter.stats_snapshot(),
             DatabaseConnection::Unimplemented => None,
         }
     }
