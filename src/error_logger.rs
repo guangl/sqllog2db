@@ -1,6 +1,7 @@
 /// 错误日志记录器 - 将解析失败的原始数据记录到文件
 use crate::error::{Error, ExportError, Result};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -24,10 +25,34 @@ pub struct ParseErrorRecord {
 }
 
 /// 错误日志记录器
+#[derive(Debug, Default, Serialize)]
+pub struct ErrorMetrics {
+    /// 总错误数
+    pub total: usize,
+    /// 按分类统计
+    pub by_category: HashMap<String, usize>,
+    /// 解析错误的细分（变体）统计
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub parse_variants: HashMap<String, usize>,
+}
+
+impl ErrorMetrics {
+    fn incr_category(&mut self, cat: &str) {
+        *self.by_category.entry(cat.to_string()).or_insert(0) += 1;
+        self.total += 1;
+    }
+
+    fn incr_parse_variant(&mut self, variant: &str) {
+        *self.parse_variants.entry(variant.to_string()).or_insert(0) += 1;
+    }
+}
+
 pub struct ErrorLogger {
     writer: BufWriter<File>,
     path: String,
     count: usize,
+    metrics: ErrorMetrics,
+    summary_path: String,
 }
 
 impl ErrorLogger {
@@ -62,10 +87,19 @@ impl ErrorLogger {
 
         info!("错误日志记录器已初始化: {}", path_str);
 
+        // summary 文件路径：errors.jsonl => errors.summary.json
+        let summary_path = if let Some(stripped) = path_str.strip_suffix(".jsonl") {
+            format!("{}.summary.json", stripped)
+        } else {
+            format!("{}.summary.json", path_str)
+        };
+
         Ok(Self {
             writer: BufWriter::new(file),
             path: path_str,
             count: 0,
+            metrics: ErrorMetrics::default(),
+            summary_path,
         })
     }
 
@@ -86,6 +120,8 @@ impl ErrorLogger {
         })?;
 
         self.count += 1;
+        // 记录分类统计（默认按 parse 分类，若调用方希望其它分类应使用 log_app_error）
+        self.metrics.incr_category("parse");
         Ok(())
     }
 
@@ -104,7 +140,49 @@ impl ErrorLogger {
             raw_content: None, // dm-database-parser-sqllog 的 ParseError 不包含原始内容
             line_number: None,
         };
+        // 粗略使用 Debug 字符串作为 variant 标识
+        let variant = format!("{:?}", error);
+        self.metrics.incr_parse_variant(&variant);
+        self.log_error(record)
+    }
 
+    /// 记录任意应用内部错误（按错误类型归类）
+    pub fn log_app_error(&mut self, file_path: &str, error: &crate::error::Error) -> Result<()> {
+        use crate::error::Error as E;
+        let (category, detail) = match error {
+            E::Config(_) => ("config", error.to_string()),
+            E::File(_) => ("file", error.to_string()),
+            E::Database(_) => ("database", error.to_string()),
+            E::Parse(parse_err) => {
+                // 内部 ParseError 细分
+                let variant = match parse_err {
+                    crate::error::ParseError::SqlLogParseFailed { .. } => "SqlLogParseFailed",
+                    crate::error::ParseError::InvalidSql { .. } => "InvalidSql",
+                    crate::error::ParseError::InvalidTimestamp { .. } => "InvalidTimestamp",
+                    crate::error::ParseError::InvalidNumber { .. } => "InvalidNumber",
+                    crate::error::ParseError::CsvParseFailed { .. } => "CsvParseFailed",
+                    crate::error::ParseError::JsonParseFailed { .. } => "JsonParseFailed",
+                };
+                self.metrics.incr_parse_variant(variant);
+                ("parse", error.to_string())
+            }
+            E::Parser(_) => ("parser", error.to_string()),
+            E::Export(_) => ("export", error.to_string()),
+            E::Io(_) => ("io", error.to_string()),
+            E::Other(_) => ("other", error.to_string()),
+        };
+
+        self.metrics.incr_category(category);
+
+        let record = ParseErrorRecord {
+            timestamp: chrono::Local::now()
+                .format("%Y-%m-%d %H:%M:%S%.3f")
+                .to_string(),
+            file_path: file_path.to_string(),
+            error_message: detail,
+            raw_content: None,
+            line_number: None,
+        };
         self.log_error(record)
     }
 
@@ -130,14 +208,40 @@ impl ErrorLogger {
     }
 
     /// 完成记录并显示统计信息
-    pub fn finalize(mut self) -> Result<()> {
+    pub fn finalize(&mut self) -> Result<()> {
         self.flush()?;
+        // 写入 summary JSON
+        let summary_json = serde_json::to_string_pretty(&self.metrics).map_err(|e| {
+            Error::Export(ExportError::SerializationFailed {
+                data_type: "ErrorMetrics".to_string(),
+                reason: e.to_string(),
+            })
+        })?;
+        std::fs::write(&self.summary_path, summary_json).map_err(|e| {
+            Error::Export(ExportError::FileWriteFailed {
+                path: self.summary_path.clone(),
+                reason: e.to_string(),
+            })
+        })?;
+
         if self.count > 0 {
-            info!("错误日志已写入: {} ({} 条错误记录)", self.path, self.count);
+            info!(
+                "错误日志已写入: {} ({} 条错误记录, 分类: {:?})",
+                self.path, self.count, self.metrics.by_category
+            );
+            info!("错误指标摘要: {}", self.summary_path);
         } else {
-            debug!("无错误记录需要写入");
+            debug!(
+                "无错误记录需要写入 (summary 仍已生成) {}",
+                self.summary_path
+            );
         }
         Ok(())
+    }
+
+    /// 获取 summary 路径（便于测试）
+    pub fn summary_path(&self) -> &str {
+        &self.summary_path
     }
 }
 
@@ -152,9 +256,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let log_path = temp_dir.path().join("errors.jsonl");
 
-        let logger = ErrorLogger::new(&log_path)?;
+        let mut logger = ErrorLogger::new(&log_path)?;
         assert_eq!(logger.count(), 0);
         assert!(log_path.exists());
+        assert!(logger.summary_path().ends_with("errors.summary.json"));
 
         Ok(())
     }
@@ -225,7 +330,7 @@ mod tests {
             .join("errors")
             .join("parse.jsonl");
 
-        let logger = ErrorLogger::new(&log_path)?;
+        let mut logger = ErrorLogger::new(&log_path)?;
         assert!(log_path.exists());
         assert!(log_path.parent().unwrap().exists());
 
@@ -250,6 +355,12 @@ mod tests {
             };
             logger.log_error(record)?;
             logger.finalize()?;
+
+            // 验证 summary 文件
+            let summary_path = log_path.parent().unwrap().join("errors.summary.json");
+            assert!(summary_path.exists());
+            let summary_content = fs::read_to_string(summary_path)?;
+            assert!(summary_content.contains("\"total\""));
         }
 
         // 第二次写入（追加）

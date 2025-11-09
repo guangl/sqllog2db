@@ -125,6 +125,9 @@ impl SQLiteExporter {
         let count = self.buffer.len();
         debug!("刷新 {} 条记录到 SQLite 数据库", count);
 
+        // 记录刷新统计
+        self.stats.record_flush(count);
+
         self.buffer.clear();
         Ok(())
     }

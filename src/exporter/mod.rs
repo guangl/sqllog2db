@@ -61,6 +61,10 @@ pub struct ExportStats {
     pub skipped: usize,
     /// 失败的记录数
     pub failed: usize,
+    /// 刷新/批量写入操作次数（数据库类导出器）
+    pub flush_operations: usize,
+    /// 最近一次刷新写入的记录数
+    pub last_flush_size: usize,
 }
 
 impl ExportStats {
@@ -82,6 +86,12 @@ impl ExportStats {
 
     pub fn total(&self) -> usize {
         self.exported + self.skipped + self.failed
+    }
+
+    /// 记录一次刷新操作
+    pub fn record_flush(&mut self, count: usize) {
+        self.flush_operations += 1;
+        self.last_flush_size = count;
     }
 }
 
@@ -241,12 +251,20 @@ impl ExporterManager {
         info!("导出统计信息:");
         for (name, s) in stats {
             info!(
-                "  - {:<8} => 成功: {}, 失败: {}, 跳过: {} (合计: {})",
+                "  - {:<8} => 成功: {}, 失败: {}, 跳过: {} (合计: {}){}",
                 name,
                 s.exported,
                 s.failed,
                 s.skipped,
-                s.total()
+                s.total(),
+                if s.flush_operations > 0 {
+                    format!(
+                        " | 刷新:{} 次 (最近 {} 条)",
+                        s.flush_operations, s.last_flush_size
+                    )
+                } else {
+                    String::new()
+                }
             );
         }
     }

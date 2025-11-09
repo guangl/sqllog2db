@@ -84,8 +84,9 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("完成导出...");
     exporter_manager.finalize()?;
 
-    // 第七步：完成错误日志记录
+    // 第七步：完成错误日志记录（生成 summary 指标文件）
     error_logger.finalize()?;
+    info!("错误指标摘要文件: {}", error_logger.summary_path());
 
     // 展示统计信息
     exporter_manager.log_stats();

@@ -563,6 +563,14 @@ overwrite = true
                     serde_json::from_str(line).expect("error log should be valid JSON");
             }
         }
+
+        // 校验 summary 指标文件
+        let summary = work_dir.join("errors.summary.json");
+        assert!(summary.exists(), "errors.summary.json should be generated");
+        let summary_json: serde_json::Value =
+            serde_json::from_reader(std::fs::File::open(&summary).unwrap()).unwrap();
+        assert!(summary_json.get("total").is_some());
+        assert!(summary_json.get("by_category").is_some());
     }
 }
 
