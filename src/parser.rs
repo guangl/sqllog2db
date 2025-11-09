@@ -133,7 +133,8 @@ impl SqllogParser {
         Ok((sqllogs, errors))
     }
 
-    /// 解析所有日志文件
+    /// 解析所有日志文件 (已被流式接口 parse_with 取代)
+    #[allow(dead_code)]
     pub fn parse(&self) -> Result<Vec<Sqllog>> {
         let log_files = self.scan_log_files()?;
 
@@ -210,7 +211,8 @@ impl SqllogParser {
         &self.path
     }
 
-    /// 获取线程数配置
+    /// 获取线程数配置 (仅测试使用)
+    #[allow(dead_code)]
     pub fn thread_count(&self) -> usize {
         self.thread_count
     }
@@ -262,7 +264,8 @@ impl SqllogParser {
                 log_files
                     .par_iter()
                     .map(|f| {
-                        Self::parse_single_file(f).map(|(sqllogs, errors)| (f.clone(), sqllogs, errors))
+                        Self::parse_single_file(f)
+                            .map(|(sqllogs, errors)| (f.clone(), sqllogs, errors))
                     })
                     .collect()
             });
@@ -273,7 +276,11 @@ impl SqllogParser {
                             on_record(s)?;
                         }
                         if !errors.is_empty() {
-                            warn!("文件 {} 解析出现 {} 个错误", file_path.display(), errors.len());
+                            warn!(
+                                "文件 {} 解析出现 {} 个错误",
+                                file_path.display(),
+                                errors.len()
+                            );
                             for err in &errors {
                                 on_error(&file_path, err)?;
                             }

@@ -20,6 +20,7 @@ pub struct DuckDBExporter {
 
 impl DuckDBExporter {
     /// 创建新的 DuckDB 导出器
+    #[allow(dead_code)]
     pub fn new(path: String, table_name: String, overwrite: bool) -> Self {
         Self::with_batch_size(path, table_name, overwrite, 1000)
     }

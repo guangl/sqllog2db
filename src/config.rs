@@ -88,6 +88,7 @@ impl SqllogConfig {
     }
 
     /// 是否使用自动线程数
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_auto_threading(&self) -> bool {
         self.thread_count == 0
     }
@@ -306,10 +307,11 @@ impl DatabaseType {
     }
 
     /// 获取默认端口号
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn default_port(&self) -> u16 {
         match self {
-            DatabaseType::DuckDB => 0, // DuckDB 通常不需要端口(文件数据库)
-            DatabaseType::SQLite => 0, // SQLite 不需要端口(文件数据库)
+            DatabaseType::DuckDB => 0,
+            DatabaseType::SQLite => 0,
             DatabaseType::PostgreSQL => 5432,
             DatabaseType::Oracle => 1521,
             DatabaseType::DM => 5236,
@@ -317,6 +319,7 @@ impl DatabaseType {
     }
 
     /// 是否为文件型数据库(不需要网络连接)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_file_based(&self) -> bool {
         matches!(self, DatabaseType::DuckDB | DatabaseType::SQLite)
     }
@@ -379,69 +382,77 @@ fn default_db_batch_size() -> usize {
 
 impl DatabaseExporter {
     /// 获取数据库连接地址 (网络数据库)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
 
     /// 是否覆盖已存在的数据
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn should_overwrite(&self) -> bool {
         self.overwrite
     }
 
     /// 获取表名
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn table_name(&self) -> &str {
         &self.table_name
     }
 
     /// 获取数据库类型
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn database_type(&self) -> DatabaseType {
         self.database_type
     }
 
     /// 获取用户名
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn username(&self) -> &str {
         &self.username
     }
 
     /// 获取密码
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn password(&self) -> &str {
         &self.password
     }
 
     /// 获取数据库名
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn database(&self) -> Option<&str> {
         self.database.as_deref()
     }
 
     /// 获取文件路径 (文件型数据库)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn path(&self) -> Option<&str> {
         self.path.as_deref()
     }
 
     /// 获取 Oracle Service Name
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn service_name(&self) -> Option<&str> {
         self.service_name.as_deref()
     }
 
     /// 获取 Oracle SID
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn sid(&self) -> Option<&str> {
         self.sid.as_deref()
     }
 
     /// 是否为文件型数据库
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn is_file_based(&self) -> bool {
         self.database_type.is_file_based()
     }
 
     /// 构建连接字符串 (根据数据库类型)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn build_connection_string(&self) -> String {
         match self.database_type {
-            DatabaseType::SQLite | DatabaseType::DuckDB => {
-                // 文件型数据库
-                self.path.clone().unwrap_or_default()
-            }
+            DatabaseType::SQLite | DatabaseType::DuckDB => self.path.clone().unwrap_or_default(),
             DatabaseType::PostgreSQL => {
-                // PostgreSQL 连接字符串
                 format!(
                     "postgresql://{}:{}@{}:{}/{}",
                     self.username,
@@ -452,7 +463,6 @@ impl DatabaseExporter {
                 )
             }
             DatabaseType::Oracle => {
-                // Oracle 连接字符串
                 if let Some(service) = &self.service_name {
                     format!("{}:{}/{}/{}", self.host, self.port, service, self.username)
                 } else if let Some(sid) = &self.sid {
@@ -462,7 +472,6 @@ impl DatabaseExporter {
                 }
             }
             DatabaseType::DM => {
-                // 达梦数据库连接字符串
                 format!(
                     "dm://{}:{}@{}:{}/{}",
                     self.username,
@@ -484,11 +493,13 @@ pub struct CsvExporter {
 
 impl CsvExporter {
     /// 获取导出文件路径
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn path(&self) -> &str {
         &self.path
     }
 
     /// 是否覆盖已存在的文件
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn should_overwrite(&self) -> bool {
         self.overwrite
     }
@@ -511,11 +522,13 @@ pub struct JsonlExporter {
 
 impl JsonlExporter {
     /// 获取导出文件路径
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn path(&self) -> &str {
         &self.path
     }
 
     /// 是否覆盖已存在的文件
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn should_overwrite(&self) -> bool {
         self.overwrite
     }
