@@ -2,6 +2,16 @@
 name = "sqllog2db"
 version = "0.1.0"
 edition = "2024"
+description = "命令行工具：将达梦 SQL 日志解析并导出为 CSV/JSONL 或嵌入式数据库 (SQLite/DuckDB)。"
+homepage = "https://github.com/guangl/sqllog2db"
+repository = "https://github.com/guangl/sqllog2db"
+keywords = ["cli", "dm-database", "sqllog"]
+categories = ["command-line-utilities", "data-processing"]
+default-run = "sqllog2db"
+
+[[bin]]
+name = "sqllog2db"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.100"
