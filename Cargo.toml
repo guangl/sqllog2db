@@ -9,7 +9,6 @@ keywords = ["cli", "dm-database", "sqllog"]
 categories = ["command-line-utilities", "data-processing"]
 default-run = "sqllog2db"
 license = "Apache-2.0"
-license-file = "LICENSE"
 readme = "README.md"
 exclude = [
     "/examples/*",
