@@ -27,50 +27,69 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 
     // 生成默认配置内容
     debug!("生成默认配置内容...");
-    let default_config = r#"# SQL 日志导出工具配置文件
+    let default_config = r#"# SQL 日志导出工具默认配置文件 (请根据需要修改)
 
 [sqllog]
-# SQL 日志文件路径或目录
-path = "sqllog"
-# 处理线程数 (0 表示自动根据文件数量以及 cpu 核心数量决定)
+# SQL 日志目录或文件路径
+path = "sqllogs"
+# 处理线程数 (0 表示自动，根据文件数量与 CPU 核心数决定)
 thread_count = 0
+# 批量提交大小 (0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入)
+batch_size = 0
 
 [error]
-# 错误日志输出路径
+# 解析错误日志（JSON Lines 格式）输出路径
 path = "errors.jsonl"
 
 [logging]
-# 应用日志输出路径
+# 应用日志输出目录或文件路径 (当前版本要求为“文件路径”，例如 logs/sqllog2db.log)
+# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
 path = "logs/sqllog2db.log"
-# 日志级别: trace, debug, info, warn, error
+# 日志级别: trace | debug | info | warn | error
 level = "info"
-# 日志保留天数 (1-365)
+# 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
 [features]
-# 是否替换 SQL 参数（将 ? 替换为实际值）
+# 是否替换 SQL 中的参数占位符（如 ? -> 实际值）
 replace_sql_parameters = false
-# 是否分散导出（按日期或其他维度分散到多个文件）
+# 是否启用分散导出（按日期或其他维度拆分输出文件）
 scatter = false
 
-# CSV 导出配置（可配置多个）
+# ===================== 导出器配置 =====================
+# 至少需要配置一个导出器 (CSV / JSONL / Database)
+
+# CSV 导出（可配置多个）
 [[exporter.csv]]
 path = "export/sqllog2db.csv"
 overwrite = true
 
-# JSONL 导出配置（可配置多个）
-# [[exporter.jsonl]]
-# path = "export/sqllog2db.jsonl"
-# overwrite = true
+# JSONL 导出（可配置多个）
+[[exporter.jsonl]]
+path = "export/sqllog2db.jsonl"
+overwrite = true
 
-# 数据库导出配置（可配置多个）
+# 数据库导出（可配置多个）示例：文件型数据库 (SQLite / DuckDB)
 # [[exporter.database]]
-# host = "localhost"
-# port = 5236
-# username = "admin"
-# password = "password"
+# database_type = "sqlite" # 可选: sqlite | duckdb | postgres | oracle | dm
+# path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
 # overwrite = true
 # table_name = "sqllog"
+# batch_size = 1000
+
+# 网络型数据库示例 (DM/PostgreSQL/Oracle)
+# [[exporter.database]]
+# database_type = "dm"
+# host = "localhost"
+# port = 5236
+# username = "SYSDBA"
+# password = "SYSDBA"
+# overwrite = true
+# table_name = "sqllog"
+# batch_size = 1000
+# database = "TEST"          # 可选 (postgres/dm)
+# service_name = "ORCL"       # Oracle 可选（与 sid 二选一）
+# sid = "ORCLSID"             # Oracle 可选（与 service_name 二选一）
 "#;
 
     // 创建目录（如果需要）
@@ -133,8 +152,11 @@ mod tests {
         assert!(content.contains("[sqllog]"));
         assert!(content.contains("[error]"));
         assert!(content.contains("[logging]"));
+        assert!(content.contains("retention_days"));
+        assert!(content.contains("batch_size"));
         assert!(content.contains("[features]"));
         assert!(content.contains("[[exporter.csv]]"));
+        assert!(content.contains("[[exporter.jsonl]]"));
 
         // 清理
         fs::remove_file(test_path).unwrap();
@@ -169,6 +191,7 @@ mod tests {
         // 验证内容已更新
         let content = fs::read_to_string(test_path).unwrap();
         assert!(content.contains("[sqllog]"));
+        assert!(content.contains("batch_size"));
         assert!(!content.contains("old content"));
 
         // 清理
