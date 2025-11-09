@@ -61,18 +61,13 @@ jobs:
           else
             cp target/${{ matrix.target }}/release/${BIN_NAME} dist/${{ matrix.artifact }}
           fi
-          # Generate SHA256 checksum
-          cd dist
-          sha256sum ${{ matrix.artifact }} > ${{ matrix.artifact }}.sha256
         shell: bash
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            dist/${{ matrix.artifact }}
-            dist/${{ matrix.artifact }}.sha256
+          path: dist/${{ matrix.artifact }}
 
   release:
     name: Create GitHub Release
