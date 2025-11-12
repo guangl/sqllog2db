@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.1.1] - 2025-01-12
+
+### Added
+
+- **性能分析文档**：新增 `docs/PARSER_PERFORMANCE_ANALYSIS.md`，详细分析解析库性能瓶颈
+- **架构简化文档**：新增 `docs/SIMPLIFICATION.md`，说明单导出器架构的设计决策
+
+### Changed
+
+- **简化架构为单导出器模式**：
+  - 移除多导出器并发支持，现在只支持配置单个导出器
+  - 移除多线程并发解析和导出逻辑，回归单线程顺序处理
+  - 移除 `crossbeam` 和 `rayon` 依赖，减小二进制体积
+  - 简化代码结构，提高可维护性和可预测性
+  - 当配置多个导出器时，按优先级使用第一个：CSV > JSONL > Database
+- **配置格式变更**（不向后兼容）：
+  - 原 `[[exporter.csv]]` / `[[exporter.jsonl]]` 等数组格式改为单个配置
+  - 新格式：`[exporter.csv]` / `[exporter.jsonl]` / `[exporter.database]`（三选一）
+- **batch_size 语义变更**：
+  - `batch_size = 0` 现在表示"累积所有记录，最后一次性 flush"
+  - `batch_size > 0` 表示"每 N 条记录 flush 一次"
+
+### Removed
+
+- 移除 `SqllogParser::new()` 的 `thread_count` 参数（不再支持多线程）
+- 移除 `SqllogParser::parse_with()` 方法（改用直接调用 `dm-database-parser-sqllog` 的 API）
+- 移除 `ExporterManager::count()` 方法（现在只有单个导出器）
+- 移除 `ExporterManager::into_exporters()` 方法
+- 移除导出器线程和 channel 通信机制
+- 移除 `Arc<Sqllog>` 包装，直接使用引用传递
+- 移除 `Exporter` trait 的 `Send` 约束
+- 移除 `crossbeam` 和 `rayon` 依赖
+
+### Fixed
+
+- 修复 CSV 导出器测试中基于旧实现的断言
+- 修复集成测试缺少 feature 条件编译标记的问题
+
+### Performance
+
+- **CSV 写入优化**（v2.0）：
+  - 零拷贝字段写入（直接写入缓冲区）
+  - 重用行缓冲区（避免重复分配）
+  - 优化转义逻辑
+  - 增大文件缓冲区至 8MB
+  - 性能提升约 9.5%（8.88s → 8.11s，处理 1.1GB/320万条记录）
+- 单线程模式下性能更可预测
+- 对于机械硬盘和文件大小不均的场景，性能更稳定
+- 减少了线程切换和 channel 通信的开销
+- **性能剖析**（NVMe SSD，1.1GB 数据）：
+  - 解析：5.62s（69%，主要瓶颈）
+  - CSV 格式化：1.51s（19%）
+  - 文件写入：0.22s（3%）
+  - 其他开销：0.76s（9%）
+  - 总计：8.11s
+  - 吞吐量：396,928 条/秒，136 MB/秒
+
 ## [0.1.0] - 2025-11-09
 
 ### Added

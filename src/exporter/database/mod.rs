@@ -1,4 +1,3 @@
-mod dm;
 /// 数据库导出器实现
 ///
 /// 支持多种数据库类型:
@@ -44,6 +43,8 @@ impl DatabaseExporter {
     pub fn from_config(config: &crate::config::DatabaseExporter) -> Self {
         let table_name = config.table_name.clone();
         let database_type = config.database_type;
+
+        #[cfg(any(feature = "sqlite", feature = "duckdb"))]
         let batch_size = config.batch_size;
 
         let connection = match database_type {
@@ -109,7 +110,7 @@ impl Exporter for DatabaseExporter {
         }
     }
 
-    fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
+    fn export(&mut self, #[allow(unused_variables)] sqllog: &Sqllog) -> Result<()> {
         match &mut self.connection {
             #[cfg(feature = "sqlite")]
             DatabaseConnection::SQLite(exporter) => exporter.export(sqllog),
@@ -119,7 +120,7 @@ impl Exporter for DatabaseExporter {
         }
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         match &mut self.connection {
             #[cfg(feature = "sqlite")]
             DatabaseConnection::SQLite(exporter) => exporter.export_batch(sqllogs),
@@ -206,7 +207,7 @@ mod tests {
         };
 
         exporter.export(&sqllog).unwrap();
-        exporter.export_batch(&[sqllog]).unwrap();
+        exporter.export_batch(&[&sqllog]).unwrap();
         exporter.finalize().unwrap();
 
         // 未实现类型无统计信息

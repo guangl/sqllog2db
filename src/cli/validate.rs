@@ -8,7 +8,7 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("配置验证已在 main 中完成");
 
     info!("SQL日志路径: {}", cfg.sqllog.path());
-    info!("线程数: {}", cfg.sqllog.thread_count().to_string());
+    info!("批量大小: {}", cfg.sqllog.batch_size());
     info!("日志级别: {}", cfg.logging.level());
     info!("日志文件: {}", cfg.logging.path());
     info!("日志保留: {} 天", cfg.logging.retention_days());
@@ -28,50 +28,30 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
         }
     );
 
-    // 导出配置
-    if let Some(dbs) = &cfg.exporter.database {
-        info!("数据库导出: {} 个配置", dbs.len());
-        for (i, db) in dbs.iter().enumerate() {
-            info!(
-                "  数据库导出器 #{}: {} ({}:{} -> {} 覆盖: {})",
-                i + 1,
-                db.database_type.as_str(),
-                db.host,
-                db.port,
-                db.table_name,
-                if db.overwrite { "是" } else { "否" }
-            );
-        }
+    // 导出配置（只支持单个导出器）
+    if let Some(db) = &cfg.exporter.database {
+        info!(
+            "数据库导出: {} ({}:{} -> {} 覆盖: {})",
+            db.database_type.as_str(),
+            if db.host.is_empty() { "N/A" } else { &db.host },
+            db.port,
+            db.table_name,
+            if db.overwrite { "是" } else { "否" }
+        );
+    } else if let Some(csv) = &cfg.exporter.csv {
+        info!(
+            "CSV导出: {} (覆盖: {})",
+            csv.path(),
+            if csv.overwrite { "是" } else { "否" }
+        );
+    } else if let Some(jsonl) = &cfg.exporter.jsonl {
+        info!(
+            "JSONL导出: {} (覆盖: {})",
+            jsonl.path(),
+            if jsonl.overwrite { "是" } else { "否" }
+        );
     } else {
-        info!("数据库导出: 未配置");
-    }
-
-    if let Some(csvs) = &cfg.exporter.csv {
-        info!("CSV导出: {} 个文件", csvs.len());
-        for (i, csv) in csvs.iter().enumerate() {
-            info!(
-                "  CSV导出器 #{}: {} (覆盖: {})",
-                i + 1,
-                csv.path(),
-                if csv.overwrite { "是" } else { "否" }
-            );
-        }
-    } else {
-        info!("CSV导出: 未配置");
-    }
-
-    if let Some(jsonls) = &cfg.exporter.jsonl {
-        info!("JSONL导出: {} 个文件", jsonls.len());
-        for (i, jsonl) in jsonls.iter().enumerate() {
-            info!(
-                "  JSONL导出器 #{}: {} (覆盖: {})",
-                i + 1,
-                jsonl.path(),
-                if jsonl.overwrite { "是" } else { "否" }
-            );
-        }
-    } else {
-        info!("JSONL导出: 未配置");
+        info!("导出器: 未配置");
     }
 
     Ok(())
@@ -96,7 +76,7 @@ mod tests {
         let toml_str = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 4
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -109,7 +89,7 @@ level = "info"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
@@ -124,7 +104,7 @@ overwrite = true
         let toml_str = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -137,13 +117,13 @@ level = "debug"
 replace_sql_parameters = true
 scatter = true
 
-[[exporter.jsonl]]
+[exporter.jsonl]
 path = "output.jsonl"
 overwrite = true
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
         assert!(cfg.validate().is_ok());
-        assert!(cfg.sqllog.is_auto_threading());
+        assert_eq!(cfg.sqllog.batch_size(), 10000);
         let result = handle_validate(&cfg);
         assert!(result.is_ok());
     }
@@ -153,7 +133,7 @@ overwrite = true
         let toml_str = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 0
 
 [error]
 path = "errors.jsonl"
@@ -166,7 +146,7 @@ level = "warn"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
+[exporter.database]
 database_type = "dm"
 host = "localhost"
 port = 5236
@@ -175,23 +155,10 @@ password = "password"
 overwrite = true
 table_name = "test_table"
 
-[[exporter.csv]]
-path = "output1.csv"
-overwrite = true
-
-[[exporter.csv]]
-path = "output2.csv"
-overwrite = false
-
-[[exporter.jsonl]]
-path = "output.jsonl"
-overwrite = true
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
         assert!(cfg.validate().is_ok());
-        assert_eq!(cfg.exporter.databases().len(), 1);
-        assert_eq!(cfg.exporter.csvs().len(), 2);
-        assert_eq!(cfg.exporter.jsonls().len(), 1);
+        assert!(cfg.exporter.database().is_some());
         let result = handle_validate(&cfg);
         assert!(result.is_ok());
     }

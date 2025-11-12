@@ -43,7 +43,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,

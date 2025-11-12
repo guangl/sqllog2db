@@ -195,7 +195,7 @@ impl Exporter for DuckDBExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         for sqllog in sqllogs {
             self.export(sqllog)?;
         }

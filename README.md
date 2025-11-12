@@ -21,17 +21,21 @@
 - [GitHub 仓库](https://github.com/guangl/sqllog2db)
 - [GitHub Releases](https://github.com/guangl/sqllog2db/releases)
 - [CHANGELOG](./CHANGELOG.md)
+- [性能测试报告](./docs/PERFORMANCE.md)
+- [架构简化说明](./docs/SIMPLIFICATION.md)
 
 ---
 
 ## 功能特性
 
-- 流式解析 SQL 日志：多文件并行、自动线程数（可配置）
-- 多导出目标：
+- 流式解析 SQL 日志：单线程顺序处理，性能优秀且可预测
+- 单导出目标（简化架构）：
   - CSV（默认特性）
   - JSONL（默认特性）
   - SQLite / DuckDB（可选特性）
-- 批量导出：支持按条数进行批量 flush（如 1000 条/批）
+- 批量导出：支持按条数进行批量 flush（推荐 10000 条/批）
+  - `batch_size > 0`: 每 N 条记录 flush 一次
+  - `batch_size = 0`: 累积所有记录，最后一次性 flush
 - 错误记录：
   - 所有解析失败按 JSONL 逐条写入 `errors.jsonl`
   - 生成 `errors.summary.json`，包含总数、分类与子类统计
@@ -251,9 +255,31 @@ cargo test --features duckdb
 
 ## 性能与体积
 
+### 性能测试结果
+
+**测试环境**: ~1.1GB SQL 日志文件，约 320 万条记录
+
+| 配置 | 平均用时 | 吞吐量 | 相对性能 |
+|------|---------|--------|---------|
+| **batch_size=10000 (推荐)** | **8.88s** | **~362K 条/秒** | 100% (最快) |
+| batch_size=50000 | 9.24s | ~348K 条/秒 | 104% |
+| batch_size=1000 | 9.34s | ~344K 条/秒 | 105% |
+| batch_size=0 (全部累积) | 9.64s | ~334K 条/秒 | 108% |
+
+**结论**: 默认配置 `batch_size=10000` 提供最佳性能，在 I/O 效率和内存占用之间达到最佳平衡。
+
+详细性能分析请参考：[性能测试报告](docs/PERFORMANCE.md)
+
+运行性能测试：
+```bash
+cargo bench --bench performance
+```
+
+### 二进制体积
+
 - Release 构建已启用：`opt-level = "z"`, `lto = true`, `codegen-units = 1`, `strip = true`, `panic = "abort"`
 - 建议仅启用所需特性以获得更小二进制体积
-- 批量导出（`sqllog.batch_size`、数据库导出器的 `batch_size`）可在吞吐与内存之间平衡
+- 单导出器模式移除了多线程开销（已移除 `crossbeam`、`rayon` 依赖）
 
 ---
 

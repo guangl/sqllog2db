@@ -7,7 +7,7 @@
 use crate::config::Config;
 use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
-use tracing::{debug, info};
+use tracing::info;
 
 #[cfg(feature = "csv")]
 mod csv;
@@ -24,7 +24,7 @@ pub use jsonl::JsonlExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
-pub trait Exporter: Send {
+pub trait Exporter {
     /// 初始化导出器 (例如:创建文件、连接数据库、创建表等)
     fn initialize(&mut self) -> Result<()>;
 
@@ -32,7 +32,7 @@ pub trait Exporter: Send {
     fn export(&mut self, sqllog: &Sqllog) -> Result<()>;
 
     /// 批量导出多条日志记录 (默认实现:逐条调用 export)
-    fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         for sqllog in sqllogs {
             self.export(sqllog)?;
         }
@@ -95,134 +95,104 @@ impl ExportStats {
     }
 }
 
-/// 导出器管理器 - 统一管理所有导出器
+/// 导出器管理器 - 管理单个导出器
 pub struct ExporterManager {
-    exporters: Vec<Box<dyn Exporter>>,
+    exporter: Box<dyn Exporter>,
     batch_size: usize,
 }
 
 impl ExporterManager {
-    /// 从配置创建导出器管理器
+    /// 从单个导出器创建管理器
+    pub fn from_exporter(exporter: Box<dyn Exporter>, batch_size: usize) -> Self {
+        Self {
+            exporter,
+            batch_size,
+        }
+    }
+    /// 从配置创建导出器管理器（只支持单个导出器）
     pub fn from_config(config: &Config) -> Result<Self> {
-        let mut exporters: Vec<Box<dyn Exporter>> = Vec::new();
         let batch_size = config.sqllog.batch_size();
 
         info!("初始化导出器管理器...");
 
-        // 创建 CSV 导出器（需启用 feature="csv"）
+        // 优先级：CSV > JSONL > Database
+        // 只创建第一个找到的导出器
+
+        // 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
         {
-            for csv_config in config.exporter.csvs() {
+            if let Some(csv_config) = config.exporter.csv() {
                 let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
-                debug!("添加 CSV 导出器: {}", csv_config.path);
-                exporters.push(Box::new(csv_exporter));
-            }
-        }
-        #[cfg(not(feature = "csv"))]
-        {
-            if !config.exporter.csvs().is_empty() {
-                info!(
-                    "CSV 导出器特性未启用, 跳过 {} 个 CSV 导出配置",
-                    config.exporter.csvs().len()
-                );
+                info!("使用 CSV 导出器: {}", csv_config.path);
+                return Ok(Self {
+                    exporter: Box::new(csv_exporter),
+                    batch_size,
+                });
             }
         }
 
-        // 创建 JSONL 导出器（需启用 feature="jsonl"）
+        // 尝试创建 JSONL 导出器
         #[cfg(feature = "jsonl")]
         {
-            for jsonl_config in config.exporter.jsonls() {
+            if let Some(jsonl_config) = config.exporter.jsonl() {
                 let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
-                debug!("添加 JSONL 导出器: {}", jsonl_config.path);
-                exporters.push(Box::new(jsonl_exporter));
-            }
-        }
-        #[cfg(not(feature = "jsonl"))]
-        {
-            if !config.exporter.jsonls().is_empty() {
-                info!(
-                    "JSONL 导出器特性未启用, 跳过 {} 个 JSONL 导出配置",
-                    config.exporter.jsonls().len()
-                );
+                info!("使用 JSONL 导出器: {}", jsonl_config.path);
+                return Ok(Self {
+                    exporter: Box::new(jsonl_exporter),
+                    batch_size,
+                });
             }
         }
 
-        // 创建数据库导出器
-        for db_config in config.exporter.databases() {
+        // 尝试创建数据库导出器
+        if let Some(db_config) = config.exporter.database() {
             let db_exporter = DatabaseExporter::from_config(db_config);
-            debug!(
-                "添加数据库导出器: {} ({})",
+            info!(
+                "使用数据库导出器: {} ({})",
                 db_config.table_name,
                 db_config.database_type.as_str()
             );
-            exporters.push(Box::new(db_exporter));
+            return Ok(Self {
+                exporter: Box::new(db_exporter),
+                batch_size,
+            });
         }
 
-        info!("导出器管理器初始化完成，共 {} 个导出器", exporters.len());
-
-        Ok(Self {
-            exporters,
-            batch_size,
-        })
+        Err(crate::error::Error::Config(
+            crate::error::ConfigError::NoExporters,
+        ))
     }
 
-    /// 初始化所有导出器
+    /// 初始化导出器
     pub fn initialize(&mut self) -> Result<()> {
-        info!("初始化所有导出器...");
-        for exporter in &mut self.exporters {
-            exporter.initialize()?;
-        }
-        info!("所有导出器初始化完成");
+        info!("初始化导出器...");
+        self.exporter.initialize()?;
+        info!("导出器初始化完成");
         Ok(())
     }
 
-    /// 导出单条日志记录到所有导出器
+    /// 导出单条日志记录
     pub fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
-        for exporter in &mut self.exporters {
-            exporter.export(sqllog)?;
-        }
-        Ok(())
+        self.exporter.export(sqllog)
     }
 
-    /// 批量导出日志记录到所有导出器
+    /// 批量导出日志记录
     pub fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
-        use std::time::Instant;
-        let start = Instant::now();
-        let count = sqllogs.len();
-        if count == 0 {
+        if sqllogs.is_empty() {
             return Ok(());
         }
 
-        let names: Vec<&str> = self.exporters.iter().map(|e| e.name()).collect();
-        info!("批量导出: {} 条记录 -> [{}]", count, names.join(", "));
-
-        for exporter in &mut self.exporters {
-            exporter.export_batch(sqllogs)?;
-        }
-
-        let elapsed = start.elapsed();
-        info!(
-            "批量导出完成: {} 条记录, 用时 {:?} (平均 {:?}/记录)",
-            count,
-            elapsed,
-            elapsed / (count as u32)
-        );
-        Ok(())
+        // 转换为引用的切片
+        let refs: Vec<&Sqllog> = sqllogs.iter().collect();
+        self.exporter.export_batch(&refs)
     }
 
-    /// 完成所有导出器
+    /// 完成导出器
     pub fn finalize(&mut self) -> Result<()> {
-        info!("完成所有导出器...");
-        for exporter in &mut self.exporters {
-            exporter.finalize()?;
-        }
-        info!("所有导出器已完成");
+        info!("完成导出器...");
+        self.exporter.finalize()?;
+        info!("导出器已完成");
         Ok(())
-    }
-
-    /// 获取导出器数量
-    pub fn count(&self) -> usize {
-        self.exporters.len()
     }
 
     /// 获取批量大小配置
@@ -230,29 +200,22 @@ impl ExporterManager {
         self.batch_size
     }
 
-    /// 收集所有导出器的统计信息
-    pub fn stats(&self) -> Vec<(String, ExportStats)> {
-        let mut out = Vec::with_capacity(self.exporters.len());
-        for exp in &self.exporters {
-            if let Some(s) = exp.stats_snapshot() {
-                out.push((exp.name().to_string(), s));
-            }
-        }
-        out
+    /// 获取导出器名称
+    pub fn name(&self) -> &str {
+        self.exporter.name()
     }
 
-    /// 记录各导出器的统计信息到日志
+    /// 获取导出统计信息
+    pub fn stats(&self) -> Option<ExportStats> {
+        self.exporter.stats_snapshot()
+    }
+
+    /// 记录导出器的统计信息到日志
     pub fn log_stats(&self) {
-        let stats = self.stats();
-        if stats.is_empty() {
-            info!("无可用的导出统计信息");
-            return;
-        }
-        info!("导出统计信息:");
-        for (name, s) in stats {
+        if let Some(s) = self.stats() {
             info!(
-                "  - {:<8} => 成功: {}, 失败: {}, 跳过: {} (合计: {}){}",
-                name,
+                "导出统计信息: {} => 成功: {}, 失败: {}, 跳过: {} (合计: {}){}",
+                self.name(),
                 s.exported,
                 s.failed,
                 s.skipped,
@@ -266,6 +229,8 @@ impl ExporterManager {
                     String::new()
                 }
             );
+        } else {
+            info!("无可用的导出统计信息");
         }
     }
 }

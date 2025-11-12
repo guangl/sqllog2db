@@ -38,7 +38,7 @@ fn test_init_command_creates_config() {
     assert!(content.contains("[sqllog]"));
     assert!(content.contains("[error]"));
     assert!(content.contains("[logging]"));
-    assert!(content.contains("[[exporter.csv]]"));
+    assert!(content.contains("[exporter.csv]"));
 }
 
 #[test]
@@ -90,7 +90,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
@@ -135,7 +135,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,
@@ -162,6 +162,7 @@ overwrite = true
     assert_eq!(content.lines().count(), 1);
 }
 
+#[cfg(feature = "jsonl")]
 #[test]
 fn test_jsonl_export_with_empty_logs() {
     let tmp = tempfile::tempdir().unwrap();
@@ -191,7 +192,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.jsonl]]
+[exporter.jsonl]
 path = "{}"
 overwrite = true
 "#,
@@ -245,7 +246,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
+[exporter.database]
 database_type = "sqlite"
 path = "{}"
 overwrite = true
@@ -316,7 +317,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
+[exporter.database]
 database_type = "duckdb"
 path = "{}"
 overwrite = true
@@ -389,15 +390,15 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 
-[[exporter.jsonl]]
+[exporter.jsonl]
 path = "{}"
 overwrite = true
 
-[[exporter.database]]
+[exporter.database]
 database_type = "sqlite"
 path = "{}"
 overwrite = true
@@ -464,7 +465,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
+[exporter.database]
 database_type = "sqlite"
 path = "{}"
 overwrite = true
@@ -531,7 +532,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,
@@ -605,7 +606,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,
@@ -678,7 +679,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,
@@ -729,7 +730,7 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "{}"
 overwrite = true
 "#,

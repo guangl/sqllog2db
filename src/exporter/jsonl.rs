@@ -179,7 +179,7 @@ impl Exporter for JsonlExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         debug!("批量导出 {} 条记录到 JSONL", sqllogs.len());
 
         for sqllog in sqllogs {
@@ -450,7 +450,8 @@ mod tests {
             create_test_sqllog(),
         ];
 
-        let result = exporter.export_batch(&sqllogs);
+        let refs: Vec<&Sqllog> = sqllogs.iter().collect();
+        let result = exporter.export_batch(&refs);
 
         assert!(result.is_ok());
         assert_eq!(exporter.stats.exported, 3);

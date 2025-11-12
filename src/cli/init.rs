@@ -32,10 +32,9 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 [sqllog]
 # SQL 日志目录或文件路径
 path = "sqllogs"
-# 处理线程数 (0 表示自动，根据文件数量与 CPU 核心数决定)
-thread_count = 0
-# 批量提交大小 (0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入)
-batch_size = 0
+# 批量提交大小 (推荐 10000 以获得最佳性能)
+# 0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入
+batch_size = 10000
 
 [error]
 # 解析错误日志（JSON Lines 格式）输出路径
@@ -57,20 +56,22 @@ replace_sql_parameters = false
 scatter = false
 
 # ===================== 导出器配置 =====================
-# 至少需要配置一个导出器 (CSV / JSONL / Database)
+# 只能配置一个导出器 (CSV / JSONL / Database 三选一)
+# 同时配置多个时，按优先级使用：CSV > JSONL > Database
 
-# CSV 导出（可配置多个）
-[[exporter.csv]]
+# 方案 1: CSV 导出（默认）
+[exporter.csv]
 path = "export/sqllog2db.csv"
 overwrite = true
 
-# JSONL 导出（可配置多个）
-[[exporter.jsonl]]
-path = "export/sqllog2db.jsonl"
-overwrite = true
+# 方案 2: JSONL 导出（使用时注释掉上面的 CSV，启用下面的 JSONL）
+# [exporter.jsonl]
+# path = "export/sqllog2db.jsonl"
+# overwrite = true
 
-# 数据库导出（可配置多个）示例：文件型数据库 (SQLite / DuckDB)
-# [[exporter.database]]
+# 方案 3: 数据库导出（使用时注释掉上面的导出器，启用下面的 Database）
+# 文件型数据库示例 (SQLite / DuckDB)
+# [exporter.database]
 # database_type = "sqlite" # 可选: sqlite | duckdb | postgres | oracle | dm
 # path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
 # overwrite = true
@@ -78,7 +79,7 @@ overwrite = true
 # batch_size = 1000
 
 # 网络型数据库示例 (DM/PostgreSQL/Oracle)
-# [[exporter.database]]
+# [exporter.database]
 # database_type = "dm"
 # host = "localhost"
 # port = 5236
@@ -155,8 +156,8 @@ mod tests {
         assert!(content.contains("retention_days"));
         assert!(content.contains("batch_size"));
         assert!(content.contains("[features]"));
-        assert!(content.contains("[[exporter.csv]]"));
-        assert!(content.contains("[[exporter.jsonl]]"));
+        assert!(content.contains("[exporter.csv]"));
+        assert!(content.contains("# [exporter.jsonl]"));
 
         // 清理
         fs::remove_file(test_path).unwrap();

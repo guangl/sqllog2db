@@ -256,7 +256,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let log_path = temp_dir.path().join("errors.jsonl");
 
-        let mut logger = ErrorLogger::new(&log_path)?;
+        let logger = ErrorLogger::new(&log_path)?;
         assert_eq!(logger.count(), 0);
         assert!(log_path.exists());
         assert!(logger.summary_path().ends_with("errors.summary.json"));

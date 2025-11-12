@@ -19,7 +19,8 @@ pub fn open_output_file(path: &Path, overwrite: bool) -> std::io::Result<BufWrit
         .create(true)
         .truncate(overwrite)
         .open(path)?;
-    Ok(BufWriter::new(file))
+    // 使用 8MB 缓冲区以减少系统调用，提升 NVMe SSD 性能
+    Ok(BufWriter::with_capacity(8 * 1024 * 1024, file))
 }
 
 /// 通用的按行缓冲器，负责控制批量大小与统一写出

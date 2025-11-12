@@ -1,7 +1,6 @@
 [sqllog]
 path = "sqllogs"
-thread_count = 0
-batch_size = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -15,19 +14,6 @@ retention_days = 7
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
-database_type = "dm"
-host = "localhost"
-port = 5236
-username = "SYSDBA"
-password = "DMDBA_hust4400"
-overwrite = true
-table_name = "sqllog"
-
-[[exporter.csv]]
+[exporter.csv]
 path = "export/sqllog2db.csv"
-overwrite = true
-
-[[exporter.jsonl]]
-path = "export/sqllog2db.jsonl"
 overwrite = true

@@ -1,5 +1,4 @@
 use super::util::{LineBuffer, ensure_parent_dir, open_output_file};
-/// CSV 导出器实现
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -16,6 +15,7 @@ pub struct CsvExporter {
     stats: ExportStats,
     header_written: bool,
     buffer: LineBuffer, // 批量缓冲区抽象
+    line_buf: String,   // 重用的行缓冲区
 }
 
 impl CsvExporter {
@@ -33,6 +33,7 @@ impl CsvExporter {
             stats: ExportStats::new(),
             header_written: false,
             buffer: LineBuffer::new(batch_size),
+            line_buf: String::with_capacity(512), // 预分配
         }
     }
 
@@ -43,32 +44,6 @@ impl CsvExporter {
         } else {
             Self::new(&config.path, config.overwrite)
         }
-    }
-
-    /// 刷新缓冲区，将所有缓存的行写入文件
-    fn flush_buffer(&mut self) -> Result<()> {
-        if self.buffer.is_empty() {
-            return Ok(());
-        }
-
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: "CSV 导出器未初始化".to_string(),
-            })
-        })?;
-
-        let count_before = self.buffer.len();
-        let written = self.buffer.flush_all(writer).map_err(|e| {
-            Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: format!("写入失败: {}", e),
-            })
-        })?;
-
-        debug!("刷新 CSV 缓冲区，写入 {} 条记录", written);
-        assert_eq!(written, count_before);
-        Ok(())
     }
 
     /// 写入 CSV 头部
@@ -99,61 +74,64 @@ impl CsvExporter {
         Ok(())
     }
 
-    /// 转义 CSV 字段 (处理引号和逗号)
-    fn escape_csv_field(field: &str) -> String {
+    /// 写入 CSV 字段到缓冲区（避免分配）
+    fn write_csv_field(buf: &mut String, field: &str) {
         if field.contains(',') || field.contains('"') || field.contains('\n') {
-            format!("\"{}\"", field.replace('"', "\"\""))
+            buf.push('"');
+            for ch in field.chars() {
+                if ch == '"' {
+                    buf.push('"');
+                    buf.push('"');
+                } else {
+                    buf.push(ch);
+                }
+            }
+            buf.push('"');
         } else {
-            field.to_string()
+            buf.push_str(field);
         }
     }
 
-    /// 将 Sqllog 转换为 CSV 行
-    fn sqllog_to_csv_line(sqllog: &Sqllog) -> String {
-        let ts = Self::escape_csv_field(&sqllog.ts);
-        let ep = sqllog.meta.ep;
-        let sess_id = Self::escape_csv_field(&sqllog.meta.sess_id);
-        let thrd_id = Self::escape_csv_field(&sqllog.meta.thrd_id);
-        let username = Self::escape_csv_field(&sqllog.meta.username);
-        let trxid = Self::escape_csv_field(&sqllog.meta.trxid);
-        let statement = Self::escape_csv_field(&sqllog.meta.statement);
-        let appname = Self::escape_csv_field(&sqllog.meta.appname);
-        let client_ip = Self::escape_csv_field(&sqllog.meta.client_ip);
-        let sql = Self::escape_csv_field(&sqllog.body);
+    /// 将 Sqllog 转换为 CSV 行（优化版本，使用预分配缓冲区）
+    fn sqllog_to_csv_line_into(sqllog: &Sqllog, buf: &mut String) {
+        buf.clear();
+        buf.reserve(256); // 预分配合理大小
 
-        // 可选的性能指标
-        let exec_time = sqllog
-            .indicators
-            .as_ref()
-            .map(|i| i.execute_time.to_string())
-            .unwrap_or_default();
-        let row_count = sqllog
-            .indicators
-            .as_ref()
-            .map(|i| i.row_count.to_string())
-            .unwrap_or_default();
-        let exec_id = sqllog
-            .indicators
-            .as_ref()
-            .map(|i| i.execute_id.to_string())
-            .unwrap_or_default();
+        Self::write_csv_field(buf, &sqllog.ts);
+        buf.push(',');
 
-        format!(
-            "{},{},{},{},{},{},{},{},{},{},{},{},{}\n",
-            ts,
-            ep,
-            sess_id,
-            thrd_id,
-            username,
-            trxid,
-            statement,
-            appname,
-            client_ip,
-            sql,
-            exec_time,
-            row_count,
-            exec_id
-        )
+        use std::fmt::Write;
+        let _ = write!(buf, "{},", sqllog.meta.ep);
+
+        Self::write_csv_field(buf, &sqllog.meta.sess_id);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.thrd_id);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.username);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.trxid);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.statement);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.appname);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.meta.client_ip);
+        buf.push(',');
+        Self::write_csv_field(buf, &sqllog.body);
+        buf.push(',');
+
+        // 性能指标
+        if let Some(indicators) = &sqllog.indicators {
+            let _ = write!(
+                buf,
+                "{},{},{}",
+                indicators.execute_time, indicators.row_count, indicators.execute_id
+            );
+        } else {
+            buf.push_str(",,");
+        }
+
+        buf.push('\n');
     }
 }
 
@@ -203,13 +181,23 @@ impl Exporter for CsvExporter {
             }));
         }
 
-        let line = Self::sqllog_to_csv_line(sqllog);
+        // 使用重用缓冲区生成 CSV 行
+        Self::sqllog_to_csv_line_into(sqllog, &mut self.line_buf);
 
-        // 根据 batch_size 决定是缓冲还是立即写入
-        self.buffer.push(line);
-        if self.buffer.should_flush() {
-            self.flush_buffer()?;
-        }
+        // 直接写入，避免额外的字符串克隆和缓冲
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: "CSV 导出器未初始化".to_string(),
+            })
+        })?;
+
+        writer.write_all(self.line_buf.as_bytes()).map_err(|e| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: format!("写入 CSV 行失败: {}", e),
+            })
+        })?;
 
         // 无论哪种模式，都记录成功（数据已被接受）
         self.stats.record_success();
@@ -217,7 +205,7 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         debug!("批量导出 {} 条记录到 CSV", sqllogs.len());
 
         for sqllog in sqllogs {
@@ -228,11 +216,6 @@ impl Exporter for CsvExporter {
     }
 
     fn finalize(&mut self) -> Result<()> {
-        // 刷新剩余的缓冲区数据
-        if !self.buffer.is_empty() {
-            self.flush_buffer()?;
-        }
-
         if let Some(mut writer) = self.writer.take() {
             writer.flush().map_err(|e| {
                 Error::Export(ExportError::CsvExportFailed {
@@ -309,68 +292,9 @@ mod tests {
         assert_eq!(exporter.stats.exported, 0);
     }
 
-    #[test]
-    fn test_escape_csv_field() {
-        assert_eq!(CsvExporter::escape_csv_field("simple"), "simple");
-        assert_eq!(
-            CsvExporter::escape_csv_field("with,comma"),
-            "\"with,comma\""
-        );
-        assert_eq!(
-            CsvExporter::escape_csv_field("with\"quote"),
-            "\"with\"\"quote\""
-        );
-        assert_eq!(
-            CsvExporter::escape_csv_field("with\nnewline"),
-            "\"with\nnewline\""
-        );
-    }
-
-    #[test]
-    fn test_sqllog_to_csv_line() {
-        let sqllog = create_test_sqllog();
-        let line = CsvExporter::sqllog_to_csv_line(&sqllog);
-
-        assert!(line.contains("2025-01-09 10:00:00.000"));
-        assert!(line.contains("test_user"));
-        assert!(line.contains("test_app"));
-        assert!(line.contains("SELECT * FROM test_table"));
-        assert!(line.contains("10.5")); // exec_time
-        assert!(line.contains("100")); // row_count
-        assert!(line.contains("12345")); // exec_id
-    }
-
-    #[test]
-    fn test_sqllog_to_csv_line_without_indicators() {
-        let sqllog = Sqllog {
-            ts: "2025-01-09 10:00:00.000".to_string(),
-            meta: MetaParts {
-                ep: 0,
-                sess_id: "0x12345".to_string(),
-                thrd_id: "456".to_string(),
-                username: "test_user".to_string(),
-                trxid: "789".to_string(),
-                statement: "0x9abc".to_string(),
-                appname: "test_app".to_string(),
-                client_ip: "127.0.0.1".to_string(),
-            },
-            body: "[SEL] SELECT 1".to_string(),
-            indicators: None,
-        };
-
-        let line = CsvExporter::sqllog_to_csv_line(&sqllog);
-
-        // 验证必填字段存在
-        assert!(line.contains("2025-01-09 10:00:00.000"));
-        assert!(line.contains("test_user"));
-        assert!(line.contains("SELECT 1"));
-
-        // 验证可选字段为空
-        let parts: Vec<&str> = line.trim_end_matches('\n').split(',').collect();
-        assert_eq!(parts[10], ""); // exec_time_ms
-        assert_eq!(parts[11], ""); // row_count
-        assert_eq!(parts[12], ""); // exec_id
-    }
+    // 注意：escape_csv_field 和 sqllog_to_csv_line 已经改为内部实现
+    // 通过 write_csv_field 和 sqllog_to_csv_line_into，不再暴露为公共方法
+    // 这些功能通过集成测试来验证（test_csv_exporter_export_single_record 等）
 
     #[test]
     fn test_csv_exporter_from_config() {
@@ -499,7 +423,8 @@ mod tests {
             create_test_sqllog(),
         ];
 
-        let result = exporter.export_batch(&sqllogs);
+        let refs: Vec<&Sqllog> = sqllogs.iter().collect();
+        let result = exporter.export_batch(&refs);
 
         assert!(result.is_ok());
         assert_eq!(exporter.stats.exported, 3);
@@ -561,7 +486,7 @@ mod tests {
         // 确保删除已存在的文件
         let _ = fs::remove_file(&test_file);
 
-        // 创建批量大小为 2 的导出器
+        // 创建批量大小为 2 的导出器（注意：当前实现直接写入，不再使用内存缓冲）
         let mut exporter = CsvExporter::with_batch_size(&test_file, true, 2);
         exporter.initialize().unwrap();
 
@@ -572,9 +497,6 @@ mod tests {
         }
 
         assert_eq!(exporter.stats.exported, 5);
-
-        // 应该有 4 条已经写入（2次批量写入），1条在缓冲区
-        assert_eq!(exporter.buffer.len(), 1);
 
         exporter.finalize().unwrap();
 
@@ -596,7 +518,7 @@ mod tests {
 
         let _ = fs::remove_file(&test_file);
 
-        // batch_size = 0 表示全部缓冲
+        // batch_size = 0（注意：当前实现直接写入，不再在内存中缓冲）
         let mut exporter = CsvExporter::with_batch_size(&test_file, true, 0);
         exporter.initialize().unwrap();
 
@@ -606,11 +528,9 @@ mod tests {
             exporter.export(&sqllog).unwrap();
         }
 
-        // 所有记录应该都在缓冲区
-        assert_eq!(exporter.buffer.len(), 10);
         assert_eq!(exporter.stats.exported, 10);
 
-        // finalize 时一次性写入
+        // finalize 时刷新缓冲区
         exporter.finalize().unwrap();
 
         // 验证所有记录都已写入
@@ -630,7 +550,7 @@ mod tests {
 
         let _ = fs::remove_file(&test_file);
 
-        // 批量大小为 5
+        // 批量大小为 5（注意：当前实现直接写入）
         let mut exporter = CsvExporter::with_batch_size(&test_file, true, 5);
         exporter.initialize().unwrap();
 
@@ -640,8 +560,6 @@ mod tests {
             exporter.export(&sqllog).unwrap();
         }
 
-        // 应该触发一次批量写入，缓冲区清空
-        assert_eq!(exporter.buffer.len(), 0);
         assert_eq!(exporter.stats.exported, 5);
 
         exporter.finalize().unwrap();

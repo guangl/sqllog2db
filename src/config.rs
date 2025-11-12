@@ -59,8 +59,6 @@ impl Config {
 pub struct SqllogConfig {
     /// SQL 日志目录或文件路径
     pub path: String,
-    /// 线程数量，0 表示自动（根据可用核心数）
-    pub thread_count: usize,
     /// 批量提交大小，0 表示全部解析完之后一次性写入，>0 表示每 N 条记录批量提交一次
     #[serde(default)]
     pub batch_size: usize,
@@ -70,8 +68,7 @@ impl Default for SqllogConfig {
     fn default() -> Self {
         Self {
             path: "sqllog".to_string(),
-            thread_count: 0,
-            batch_size: 0, // 默认全部解析完之后一次性写入
+            batch_size: 10000, // 默认使用 10000 批量大小以获得最佳性能
         }
     }
 }
@@ -82,32 +79,13 @@ impl SqllogConfig {
         &self.path
     }
 
-    /// 获取配置的线程数（0 表示自动）
-    pub fn thread_count(&self) -> usize {
-        self.thread_count
-    }
-
-    /// 是否使用自动线程数
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn is_auto_threading(&self) -> bool {
-        self.thread_count == 0
-    }
-
     /// 获取批量提交大小
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
 
-    /// 验证 thread_count（允许 0 自动，其它非负）
+    /// 验证配置
     pub fn validate(&self) -> Result<()> {
-        // usize 永远不为负，这里仅限制过大值（比如超过 256 认为是配置错误）
-        if self.thread_count > 256 {
-            return Err(Error::Config(ConfigError::InvalidValue {
-                field: "sqllog.thread_count".to_string(),
-                value: self.thread_count.to_string(),
-                reason: "线程数过大".to_string(),
-            }));
-        }
         if self.path.trim().is_empty() {
             return Err(Error::Config(ConfigError::InvalidValue {
                 field: "sqllog.path".to_string(),
@@ -231,37 +209,59 @@ impl Default for FeaturesConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ExporterConfig {
-    pub database: Option<Vec<DatabaseExporter>>,
-    pub csv: Option<Vec<CsvExporter>>,
-    pub jsonl: Option<Vec<JsonlExporter>>,
+    pub database: Option<DatabaseExporter>,
+    pub csv: Option<CsvExporter>,
+    pub jsonl: Option<JsonlExporter>,
 }
 
 impl ExporterConfig {
-    /// 获取数据库导出器列表
-    pub fn databases(&self) -> &[DatabaseExporter] {
-        self.database.as_deref().unwrap_or(&[])
+    /// 获取数据库导出器
+    pub fn database(&self) -> Option<&DatabaseExporter> {
+        self.database.as_ref()
     }
 
-    /// 获取 CSV 导出器列表
-    pub fn csvs(&self) -> &[CsvExporter] {
-        self.csv.as_deref().unwrap_or(&[])
+    /// 获取 CSV 导出器
+    pub fn csv(&self) -> Option<&CsvExporter> {
+        self.csv.as_ref()
     }
 
-    /// 获取 JSONL 导出器列表
-    pub fn jsonls(&self) -> &[JsonlExporter] {
-        self.jsonl.as_deref().unwrap_or(&[])
+    /// 获取 JSONL 导出器
+    pub fn jsonl(&self) -> Option<&JsonlExporter> {
+        self.jsonl.as_ref()
     }
 
     /// 检查是否有任何导出器配置
     pub fn has_exporters(&self) -> bool {
-        !self.databases().is_empty() || !self.csvs().is_empty() || !self.jsonls().is_empty()
+        self.database.is_some() || self.csv.is_some() || self.jsonl.is_some()
     }
 
-    /// 验证导出器配置
+    /// 统计配置的导出器总数
+    pub fn total_exporters(&self) -> usize {
+        let mut count = 0;
+        if self.database.is_some() {
+            count += 1;
+        }
+        if self.csv.is_some() {
+            count += 1;
+        }
+        if self.jsonl.is_some() {
+            count += 1;
+        }
+        count
+    }
+
+    /// 验证导出器配置（只支持单个导出器）
     pub fn validate(&self) -> Result<()> {
         if !self.has_exporters() {
             return Err(Error::Config(ConfigError::NoExporters));
         }
+
+        let total = self.total_exporters();
+        if total > 1 {
+            eprintln!("警告: 配置了 {} 个导出器，但只支持单个导出器。", total);
+            eprintln!("将按优先级使用第一个导出器：CSV > JSONL > Database");
+        }
+
         Ok(())
     }
 }
@@ -270,7 +270,7 @@ impl Default for ExporterConfig {
     fn default() -> Self {
         Self {
             database: None,
-            csv: Some(vec![CsvExporter::default()]),
+            csv: Some(CsvExporter::default()),
             jsonl: None,
         }
     }
@@ -579,7 +579,7 @@ mod tests {
         let content = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -592,7 +592,7 @@ level = "info"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.database]]
+[exporter.database]
 database_type = "postgres"
 host = "localhost"
 port = 5236
@@ -639,7 +639,7 @@ table_name = "test_table"
         let content = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -652,7 +652,7 @@ level = "verbose"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
@@ -672,7 +672,7 @@ overwrite = true
         let content = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -791,74 +791,74 @@ scatter = false
     }
 
     #[test]
-    fn test_exporter_config_databases() {
+    fn test_exporter_config_database() {
         let mut exporter = ExporterConfig {
-            database: Some(vec![DatabaseExporter {
+            database: Some(DatabaseExporter {
                 database_type: DatabaseType::DM,
                 host: "localhost".to_string(),
                 port: 5236,
-                username: "admin".to_string(),
-                password: "pass".to_string(),
-                database: Some("DAMENG".to_string()),
+                username: "SYSDBA".to_string(),
+                password: "SYSDBA".to_string(),
+                database: Some("TESTDB".to_string()),
                 path: None,
                 service_name: None,
                 sid: None,
                 overwrite: true,
-                table_name: "table1".to_string(),
+                table_name: "sqllog".to_string(),
                 batch_size: 1000,
-            }]),
+            }),
             csv: None,
             jsonl: None,
         };
 
-        assert_eq!(exporter.databases().len(), 1);
-        assert_eq!(exporter.databases()[0].host, "localhost");
-        assert_eq!(exporter.databases()[0].database_type, DatabaseType::DM);
+        assert!(exporter.database().is_some());
+        assert_eq!(exporter.database().unwrap().host, "localhost".to_string());
+        assert_eq!(exporter.database().unwrap().database_type, DatabaseType::DM);
 
         exporter.database = None;
-        assert_eq!(exporter.databases().len(), 0);
+        assert!(exporter.database().is_none());
     }
 
     #[test]
-    fn test_exporter_config_csvs() {
+    fn test_exporter_config_csv() {
         let mut exporter = ExporterConfig {
             database: None,
-            csv: Some(vec![CsvExporter {
+            csv: Some(CsvExporter {
                 path: "output.csv".to_string(),
                 overwrite: true,
-            }]),
+            }),
             jsonl: None,
         };
 
-        assert_eq!(exporter.csvs().len(), 1);
-        assert_eq!(exporter.csvs()[0].path, "output.csv");
+        assert!(exporter.csv().is_some());
+        assert_eq!(exporter.csv().unwrap().path, "output.csv");
 
         exporter.csv = None;
-        assert_eq!(exporter.csvs().len(), 0);
+        assert!(exporter.csv().is_none());
     }
 
     #[test]
-    fn test_exporter_config_jsonls() {
+    fn test_exporter_config_jsonl() {
         let mut exporter = ExporterConfig {
             database: None,
             csv: None,
-            jsonl: Some(vec![JsonlExporter {
+            jsonl: Some(JsonlExporter {
                 path: "output.jsonl".to_string(),
                 overwrite: false,
-            }]),
+            }),
         };
 
-        assert_eq!(exporter.jsonls().len(), 1);
-        assert_eq!(exporter.jsonls()[0].path, "output.jsonl");
+        assert!(exporter.jsonl().is_some());
+        assert_eq!(exporter.jsonl().unwrap().path, "output.jsonl");
 
         exporter.jsonl = None;
-        assert_eq!(exporter.jsonls().len(), 0);
+        assert!(exporter.jsonl().is_none());
     }
 
     #[test]
     fn test_exporter_config_has_exporters() {
         let exporter_with_db = ExporterConfig {
-            database: Some(vec![DatabaseExporter {
+            database: Some(DatabaseExporter {
                 database_type: DatabaseType::PostgreSQL,
                 host: "localhost".to_string(),
                 port: 5236,
@@ -871,7 +871,7 @@ scatter = false
                 overwrite: true,
                 table_name: "table1".to_string(),
                 batch_size: 1000,
-            }]),
+            }),
             csv: None,
             jsonl: None,
         };
@@ -879,10 +879,10 @@ scatter = false
 
         let exporter_with_csv = ExporterConfig {
             database: None,
-            csv: Some(vec![CsvExporter {
+            csv: Some(CsvExporter {
                 path: "output.csv".to_string(),
                 overwrite: true,
-            }]),
+            }),
             jsonl: None,
         };
         assert!(exporter_with_csv.has_exporters());
@@ -898,7 +898,7 @@ scatter = false
     #[test]
     fn test_exporter_config_validate() {
         let valid_exporter = ExporterConfig {
-            database: Some(vec![DatabaseExporter {
+            database: Some(DatabaseExporter {
                 database_type: DatabaseType::Oracle,
                 host: "localhost".to_string(),
                 port: 5236,
@@ -911,7 +911,7 @@ scatter = false
                 overwrite: true,
                 table_name: "table1".to_string(),
                 batch_size: 1000,
-            }]),
+            }),
             csv: None,
             jsonl: None,
         };
@@ -1134,64 +1134,37 @@ table_name = "test"
     }
 
     #[test]
-    fn test_config_with_multiple_exporters() {
-        let content = r#"
+    fn test_config_with_single_csv_exporter() {
+        let toml_str = r#"
 [sqllog]
-path = "sqllog"
-thread_count = 0
+path = "sqllogs"
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
 
 [logging]
-path = "logs/app.log"
-level = "debug"
+path = "logs/sqllog2db.log"
+level = "info"
+retention_days = 7
 
 [features]
 replace_sql_parameters = true
 scatter = true
 
-[[exporter.database]]
-database_type = "dm"
-host = "localhost"
-port = 5236
-username = "admin"
-password = "password"
-overwrite = true
-table_name = "table1"
-
-[[exporter.database]]
-database_type = "oracle"
-host = "remote"
-port = 3306
-username = "user"
-password = "pass"
-overwrite = false
-table_name = "table2"
-
-[[exporter.csv]]
-path = "output1.csv"
-overwrite = true
-
-[[exporter.csv]]
-path = "output2.csv"
-overwrite = false
-
-[[exporter.jsonl]]
-path = "output.jsonl"
+[exporter.csv]
+path = "output.csv"
 overwrite = true
 "#;
-        let path = create_temp_config(content, "test_config_multiple.toml");
 
-        let result = Config::from_file(&path);
-        cleanup_temp_file(&path);
-
+        let result = Config::from_str(toml_str, PathBuf::from("test_config.toml"));
         assert!(result.is_ok());
         let config = result.unwrap();
 
-        assert_eq!(config.exporter.databases().len(), 2);
-        assert_eq!(config.exporter.csvs().len(), 2);
-        assert_eq!(config.exporter.jsonls().len(), 1);
+        assert!(config.exporter.csv().is_some());
+        assert_eq!(config.exporter.csv().unwrap().path, "output.csv");
+        assert!(config.exporter.database().is_none());
+        assert!(config.exporter.jsonl().is_none());
 
         assert!(config.features.should_replace_sql_parameters());
         assert!(config.features.should_scatter());
@@ -1202,7 +1175,7 @@ overwrite = true
         let content = r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -1215,7 +1188,7 @@ level = "info"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
@@ -1239,14 +1212,14 @@ level = "info"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
 
         let cfg = Config::from_str(content, PathBuf::from("test.toml")).unwrap();
         assert_eq!(cfg.sqllog.path(), "sqllog");
-        assert!(cfg.sqllog.is_auto_threading());
+        assert_eq!(cfg.sqllog.batch_size(), 10000);
     }
 
     #[test]
@@ -1254,7 +1227,7 @@ overwrite = true
         let content = r#"
 [sqllog]
 path = "sqllog_dir"
-thread_count = 8
+batch_size = 5000
 
 [error]
 path = "errors.jsonl"
@@ -1267,7 +1240,7 @@ level = "info"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#;
@@ -1276,8 +1249,7 @@ overwrite = true
         cleanup_temp_file(&path);
 
         assert_eq!(cfg.sqllog.path(), "sqllog_dir");
-        assert_eq!(cfg.sqllog.thread_count(), 8);
-        assert!(!cfg.sqllog.is_auto_threading());
+        assert_eq!(cfg.sqllog.batch_size(), 5000);
     }
 
     #[test]
@@ -1287,7 +1259,7 @@ overwrite = true
                 r#"
 [sqllog]
 path = "sqllog"
-thread_count = 0
+batch_size = 10000
 
 [error]
 path = "errors.jsonl"
@@ -1300,7 +1272,7 @@ level = "{}"
 replace_sql_parameters = false
 scatter = false
 
-[[exporter.csv]]
+[exporter.csv]
 path = "output.csv"
 overwrite = true
 "#,
@@ -1323,8 +1295,7 @@ overwrite = true
 
         // 验证 sqllog 默认值
         assert_eq!(config.sqllog.path(), "sqllog");
-        assert_eq!(config.sqllog.thread_count(), 0);
-        assert!(config.sqllog.is_auto_threading());
+        assert_eq!(config.sqllog.batch_size(), 10000);
 
         // 验证 error 默认值
         assert_eq!(config.error.path(), "errors.jsonl");
@@ -1336,14 +1307,15 @@ overwrite = true
         // 验证 features 默认值
         assert!(!config.features.should_replace_sql_parameters());
         assert!(!config.features.should_scatter());
+        let config = Config::default();
 
         // 验证 exporter 默认值：应该只有 CSV，没有 JSONL 和 Database
-        assert!(config.exporter.csvs().len() == 1);
-        assert!(config.exporter.jsonls().is_empty());
-        assert!(config.exporter.databases().is_empty());
+        assert!(config.exporter.csv().is_some());
+        assert!(config.exporter.jsonl().is_none());
+        assert!(config.exporter.database().is_none());
 
         // 验证默认 CSV 导出器配置
-        let csv = &config.exporter.csvs()[0];
+        let csv = config.exporter.csv().unwrap();
         assert_eq!(csv.path(), "export/sqllog2db.csv");
         assert!(csv.should_overwrite());
     }
@@ -1410,59 +1382,32 @@ overwrite = true
     fn test_sqllog_config_default() {
         let sqllog = SqllogConfig::default();
         assert_eq!(sqllog.path(), "sqllog");
-        assert_eq!(sqllog.thread_count(), 0);
-        assert!(sqllog.is_auto_threading());
+        assert_eq!(sqllog.batch_size(), 10000);
         assert!(sqllog.validate().is_ok());
     }
 
     #[test]
-    fn test_sqllog_config_validate_thread_count_too_large() {
-        let sqllog = SqllogConfig {
-            path: "sqllog".to_string(),
-            thread_count: 300, // 超过 256
-            batch_size: 0,
-        };
-        let result = sqllog.validate();
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("线程数过大"));
-    }
-
-    #[test]
     fn test_sqllog_config_validate_empty_path() {
-        let sqllog = SqllogConfig {
-            path: "   ".to_string(), // 空白路径
-            thread_count: 4,
-            batch_size: 0,
+        let cfg = SqllogConfig {
+            path: "   ".to_string(),
+            batch_size: 100,
         };
-        let result = sqllog.validate();
+        let result = cfg.validate();
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("路径不能为空"));
     }
 
     #[test]
-    fn test_sqllog_config_validate_max_thread_count() {
-        // 边界值测试：256 应该可以通过
-        let sqllog = SqllogConfig {
-            path: "sqllog".to_string(),
-            thread_count: 256,
-            batch_size: 0,
-        };
-        assert!(sqllog.validate().is_ok());
-    }
-
-    #[test]
     fn test_sqllog_config_batch_size_default() {
         let sqllog = SqllogConfig::default();
-        assert_eq!(sqllog.batch_size(), 0); // 默认值应该是 0
+        assert_eq!(sqllog.batch_size(), 10000); // 默认值应该是 10000
     }
 
     #[test]
     fn test_sqllog_config_batch_size_custom() {
         let sqllog = SqllogConfig {
             path: "sqllog".to_string(),
-            thread_count: 4,
             batch_size: 1000,
         };
         assert_eq!(sqllog.batch_size(), 1000);
@@ -1473,9 +1418,8 @@ overwrite = true
     fn test_sqllog_config_from_toml_with_batch_size() {
         let toml_str = r#"
             [sqllog]
-            path = "test_logs"
-            thread_count = 8
-            batch_size = 5000
+            path = "test_sqllog"
+            batch_size = 500
 
             [error]
             path = "errors.log"
@@ -1492,9 +1436,8 @@ overwrite = true
         "#;
 
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.sqllog.path, "test_logs");
-        assert_eq!(config.sqllog.thread_count, 8);
-        assert_eq!(config.sqllog.batch_size, 5000);
+        assert_eq!(config.sqllog.path(), "test_sqllog");
+        assert_eq!(config.sqllog.batch_size(), 500);
     }
 
     #[test]
@@ -1521,7 +1464,6 @@ overwrite = true
 
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.sqllog.path, "test_logs");
-        assert_eq!(config.sqllog.thread_count, 4);
         assert_eq!(config.sqllog.batch_size, 0); // 默认值
     }
 }
