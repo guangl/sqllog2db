@@ -174,89 +174,6 @@ overwrite = true
 - `logging.retention_days` 必须在 1-365 之间
 
 > **注意**：从 v0.1.1 开始，配置格式已从数组格式 `[[exporter.csv]]` 改为单个导出器格式 `[exporter.csv]`。
-```
-
-> Windows 路径注意事项：本工具会为 `logging.path` 的父目录自动创建目录；建议将 `logging.path` 设置为“文件路径”，如 `logs/sqllog2db.log`。
-
----
-
-## 配置文件说明（config.toml）
-
-以下为 `sqllog2db init` 生成的默认模版（可根据需要修改）：
-
-```toml
-# SQL 日志导出工具默认配置文件 (请根据需要修改)
-
-[sqllog]
-# SQL 日志目录或文件路径
-path = "sqllogs"
-# 处理线程数 (0 表示自动，根据文件数量与 CPU 核心数决定)
-thread_count = 0
-# 批量提交大小 (0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入)
-batch_size = 0
-
-[error]
-# 解析错误日志（JSON Lines 格式）输出路径
-path = "errors.jsonl"
-
-[logging]
-# 应用日志输出目录或文件路径 (当前版本要求为“文件路径”，例如 logs/sqllog2db.log)
-# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
-path = "logs/sqllog2db.log"
-# 日志级别: trace | debug | info | warn | error
-level = "info"
-# 日志保留天数 (1-365) - 用于滚动文件最大保留数量
-retention_days = 7
-
-[features]
-# 是否替换 SQL 中的参数占位符（如 ? -> 实际值）
-replace_sql_parameters = false
-# 是否启用分散导出（按日期或其他维度拆分输出文件）
-scatter = false
-
-# ===================== 导出器配置 =====================
-# 至少需要配置一个导出器 (CSV / JSONL / Database)
-
-# CSV 导出（可配置多个）
-[[exporter.csv]]
-path = "export/sqllog2db.csv"
-overwrite = true
-
-# JSONL 导出（可配置多个）
-[[exporter.jsonl]]
-path = "export/sqllog2db.jsonl"
-overwrite = true
-
-# 数据库导出（可配置多个）示例：文件型数据库 (SQLite / DuckDB)
-# [[exporter.database]]
-# database_type = "sqlite" # 可选: sqlite | duckdb | postgres | oracle | dm
-# path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
-# overwrite = true
-# table_name = "sqllog"
-# batch_size = 1000
-
-# 网络型数据库示例 (DM/PostgreSQL/Oracle)
-# [[exporter.database]]
-# database_type = "dm"
-# host = "localhost"
-# port = 5236
-# username = "SYSDBA"
-# password = "SYSDBA"
-# overwrite = true
-# table_name = "sqllog"
-# batch_size = 1000
-# database = "TEST"          # 可选 (postgres/dm)
-# service_name = "ORCL"       # Oracle 可选（与 sid 二选一）
-# sid = "ORCLSID"             # Oracle 可选（与 service_name 二选一）
-```
-
-要点：
-- 至少配置一个导出器（CSV/JSONL/Database 任一）
-- `logging.retention_days` 必须在 1-365 之间
-- `sqllog.thread_count` 为 0 时自动；最多建议 ≤ 256
-- 数据库导出需要根据 `database_type` 与实际环境补充必要字段
-
----
 
 ## 导出与错误日志
 
@@ -274,13 +191,13 @@ overwrite = true
 
 ## 功能开关与编译特性（features）
 
-- 默认启用：`csv`, `jsonl`
-- 可选启用：`sqlite`, `duckdb`
+- 默认启用：`csv`
+- 可选启用：`jsonl`, `sqlite`, `duckdb`
 
 示例：
 
 ```powershell
-# 默认（CSV+JSONL）
+# 默认（CSV）
 cargo build --release
 
 # 启用 SQLite
@@ -296,7 +213,7 @@ echo "启用 SQLite 和 DuckDB"
 cargo build --release --features "sqlite duckdb"
 ```
 
-> 提示：如果仅使用文件导出（CSV/JSONL），不启用数据库相关特性可显著减小二进制体积。
+> 提示：如果仅使用文件导出（CSV），不启用数据库相关特性可显著减小二进制体积。
 
 ---
 
@@ -379,5 +296,5 @@ cargo bench --bench performance
 
 ## 致谢
 
-- 依赖：`clap`、`tracing`、`serde`、`serde_json`、`rayon`（并行）、`rusqlite`/`duckdb`（特性可选）等
+- 依赖：`clap`、`tracing`、`serde`、`serde_json`、`rusqlite`/`duckdb`（特性可选）等
 - 日志/错误与导出架构参考了业内通用实践，并针对体积做了减法优化
