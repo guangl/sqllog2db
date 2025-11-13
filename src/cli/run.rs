@@ -39,7 +39,7 @@ fn process_log_file(
     error_logger: &mut ErrorLogger,
     stats: &mut BatchStats,
 ) -> Result<()> {
-    info!("处理文件: {}", file_path);
+    info!("Processing file: {}", file_path);
 
     match dm_database_parser_sqllog::iter_records_from_file(file_path) {
         Ok(iter) => {
@@ -61,14 +61,14 @@ fn process_log_file(
                         }
 
                         if stats.total % log_every == 0 {
-                            info!("已解析 {} 条记录...", stats.total);
+                            info!("Parsed {} records...", stats.total);
                         }
                     }
                     Err(e) => {
                         stats.record_error();
                         // 记录解析错误
                         if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                            warn!("记录解析错误失败: {}", log_err);
+                            warn!("Failed to record parse error: {}", log_err);
                         }
                     }
                 }
@@ -76,9 +76,9 @@ fn process_log_file(
         }
         Err(e) => {
             stats.record_error();
-            warn!("无法打开文件 {}: {}", file_path, e);
+            warn!("Failed to open file {}: {}", file_path, e);
             if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                warn!("记录文件错误失败: {}", log_err);
+                warn!("Failed to record file error: {}", log_err);
             }
         }
     }
@@ -88,25 +88,25 @@ fn process_log_file(
 
 /// 运行日志导出任务（单线程、单导出器架构）
 pub fn handle_run(cfg: &Config) -> Result<()> {
-    info!("开始运行 SQL 日志导出任务");
+    info!("Starting SQL log export task");
 
     // 第一步：创建 SQL 日志解析器
     let parser = SqllogParser::new(cfg.sqllog.directory());
-    info!("SQL 日志输入目录: {}", parser.path().display());
+    info!("SQL log input directory: {}", parser.path().display());
 
     // 第二步：创建导出器管理器（单个导出器）
     let mut exporter_manager = ExporterManager::from_config(cfg)?;
-    info!("使用导出器: {}", exporter_manager.name());
+    info!("Using exporter: {}", exporter_manager.name());
 
     // 第三步：创建错误日志记录器
     let mut error_logger = ErrorLogger::new(cfg.error.file())?;
 
     // 第四步：初始化导出器
-    info!("初始化导出器...");
+    info!("Initializing exporters...");
     exporter_manager.initialize()?;
 
     // 第五步：解析 SQL 日志（流式）并导出
-    info!("解析并导出 SQL 日志（流式）...");
+    info!("Parsing and exporting SQL logs (streaming)...");
     let batch_size = exporter_manager.batch_size();
     let mut stats = BatchStats::new();
     let mut local_buf: Vec<Sqllog> = Vec::new();
@@ -120,13 +120,13 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     let log_files = parser.log_files()?;
 
     if log_files.is_empty() {
-        warn!("没有找到任何日志文件");
+        warn!("No log files found");
         exporter_manager.finalize()?;
         error_logger.finalize()?;
         return Ok(());
     }
 
-    info!("找到 {} 个日志文件", log_files.len());
+    info!("Found {} log files", log_files.len());
 
     // 遍历每个日志文件
     for log_file in log_files {
@@ -144,35 +144,35 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
 
     // 刷新剩余批次
     if !local_buf.is_empty() {
-        info!("导出最后一批: {} 条记录", local_buf.len());
+        info!("Exporting last batch: {} records", local_buf.len());
         exporter_manager.export_batch(&local_buf)?;
         local_buf.clear();
     }
 
     if stats.total == 0 {
-        warn!("没有解析到任何 SQL 日志记录");
+        warn!("No SQL log records parsed");
         exporter_manager.finalize()?;
         error_logger.finalize()?;
         return Ok(());
     }
 
-    info!("成功解析 {} 条 SQL 日志记录", stats.total);
+    info!("Successfully parsed {} SQL log records", stats.total);
     if stats.error_count > 0 {
-        warn!("解析过程中遇到 {} 个错误", stats.error_count);
+        warn!("Encountered {} errors during parsing", stats.error_count);
     }
 
     // 第六步：完成导出
-    info!("完成导出...");
+    info!("Export finished...");
     exporter_manager.finalize()?;
 
     // 第七步：完成错误日志记录（生成 summary 指标文件）
     error_logger.finalize()?;
-    info!("错误指标摘要文件: {}", error_logger.summary_path());
+    info!("Error summary file: {}", error_logger.summary_path());
 
     // 展示统计信息
     exporter_manager.log_stats();
 
-    info!("✓ SQL 日志导出任务完成！");
+    info!("✓ SQL log export task completed!");
     info!("  - 解析记录数: {}", stats.total);
     info!("  - 解析错误数: {}", stats.error_count);
     info!("  - 导出器: {}", exporter_manager.name());

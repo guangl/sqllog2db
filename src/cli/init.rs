@@ -7,12 +7,12 @@ use log::{debug, error, info, warn};
 pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
     let path = Path::new(output_path);
 
-    info!("准备生成配置文件: {}", output_path);
+    info!("Preparing to generate configuration file: {}", output_path);
 
     // 检查文件是否已存在
     if path.exists() && !force {
-        error!("配置文件已存在: {}", output_path);
-        info!("提示: 使用 --force 参数强制覆盖");
+        error!("Configuration file already exists: {}", output_path);
+        info!("Tip: use --force to overwrite");
         return Err(crate::error::Error::File(
             crate::error::FileError::AlreadyExists {
                 path: path.to_path_buf(),
@@ -21,11 +21,11 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
     }
 
     if path.exists() && force {
-        warn!("将覆盖已存在的配置文件");
+        warn!("Will overwrite existing configuration file");
     }
 
     // 生成默认配置内容
-    debug!("生成默认配置内容...");
+    debug!("Generating default configuration content...");
     let default_config = r#"# SQL 日志导出工具默认配置文件 (请根据需要修改)
 
 [sqllog]
@@ -87,7 +87,7 @@ overwrite = true
     // 创建目录（如果需要）
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            info!("创建目录: {}", parent.display());
+            info!("Creating directory: {}", parent.display());
             fs::create_dir_all(parent).map_err(|e| {
                 crate::error::Error::File(crate::error::FileError::CreateDirectoryFailed {
                     path: parent.to_path_buf(),
@@ -98,7 +98,7 @@ overwrite = true
     }
 
     // 写入配置文件
-    debug!("写入配置文件...");
+    debug!("Writing configuration file...");
     fs::write(path, default_config).map_err(|e| {
         crate::error::Error::File(crate::error::FileError::WriteFailed {
             path: path.to_path_buf(),
@@ -107,15 +107,15 @@ overwrite = true
     })?;
 
     if force && path.exists() {
-        info!("配置文件已覆盖: {}", output_path);
+        info!("Configuration file overwritten: {}", output_path);
     } else {
-        info!("配置文件已生成: {}", output_path);
+        info!("Configuration file generated: {}", output_path);
     }
 
-    info!("下一步:");
-    info!("  1. 编辑配置文件: {}", output_path);
-    info!("  2. 验证配置: sqllog2db validate -c {}", output_path);
-    info!("  3. 运行导出: sqllog2db run -c {}", output_path);
+    info!("Next steps:");
+    info!("  1. Edit configuration file: {}", output_path);
+    info!("  2. Validate configuration: sqllog2db validate -c {}", output_path);
+    info!("  3. Run export: sqllog2db run -c {}", output_path);
 
     Ok(())
 }

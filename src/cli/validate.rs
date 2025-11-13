@@ -8,14 +8,14 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("配置验证已在 main 中完成");
 
     info!("SQL日志输入目录: {}", cfg.sqllog.directory());
-    info!("批量大小: {}", cfg.sqllog.batch_size());
+    info!("Batch size: {}", cfg.sqllog.batch_size());
     info!("日志级别: {}", cfg.logging.level());
     info!("日志文件: {}", cfg.logging.file());
     info!("日志保留: {} 天", cfg.logging.retention_days());
     info!("错误日志: {}", cfg.error.file());
 
     info!(
-        "功能特性 - 替换 SQL 参数: {}, 生成散列表: {}",
+           "Feature flags - replace SQL params: {}, generate hash: {}",
         if cfg.features.should_replace_sql_parameters() {
             "启用"
         } else {
@@ -31,19 +31,19 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     // 导出配置（只支持单个导出器）
     if let Some(csv) = &cfg.exporter.csv {
         info!(
-            "CSV导出: {} (覆盖: {})",
-            csv.file,
-            if csv.overwrite { "是" } else { "否" }
+                "CSV export: {} (overwrite: {})",
+                csv.file,
+                if csv.overwrite { "yes" } else { "no" }
         );
     }
     #[cfg(feature = "sqlite")]
     if cfg.exporter.csv.is_none() {
         if let Some(sqlite) = &cfg.exporter.sqlite {
             info!(
-                "SQLite导出: {} -> {} (覆盖: {})",
-                sqlite.file,
-                sqlite.table_name,
-                if sqlite.overwrite { "是" } else { "否" }
+                    "SQLite export: {} -> {} (overwrite: {})",
+                    sqlite.file,
+                    sqlite.table_name,
+                    if sqlite.overwrite { "yes" } else { "no" }
             );
         } else {
             info!("导出器: 未配置");

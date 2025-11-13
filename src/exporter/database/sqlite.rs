@@ -49,7 +49,7 @@ impl SQLiteExporter {
         let conn = self.connection.as_mut().ok_or_else(|| {
             Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
-                reason: "数据库未连接".to_string(),
+                reason: "Database not connected".to_string(),
             })
         })?;
 
@@ -60,7 +60,7 @@ impl SQLiteExporter {
         let tx = conn.transaction().map_err(|e| {
             Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
-                reason: format!("创建事务失败: {}", e),
+                reason: format!("Failed to create transaction: {}", e),
             })
         })?;
 
@@ -68,7 +68,7 @@ impl SQLiteExporter {
             let mut stmt = tx.prepare(&insert_sql).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
-                    reason: format!("准备插入语句失败: {}", e),
+                    reason: format!("Failed to prepare insert statement: {}", e),
                 })
             })?;
 
@@ -91,7 +91,7 @@ impl SQLiteExporter {
                 .map_err(|e| {
                     Error::Database(DatabaseError::DatabaseExportFailed {
                         table_name: self.table_name.clone(),
-                        reason: format!("插入数据失败: {}", e),
+                        reason: format!("Failed to insert data: {}", e),
                     })
                 })?;
 
@@ -102,11 +102,11 @@ impl SQLiteExporter {
         tx.commit().map_err(|e| {
             Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
-                reason: format!("提交事务失败: {}", e),
+                reason: format!("Failed to commit transaction: {}", e),
             })
         })?;
 
-        debug!("SQLite 刷新 {} 条记录", count);
+        debug!("SQLite flushed {} records", count);
         self.pending_records.clear();
         Ok(())
     }
@@ -114,14 +114,14 @@ impl SQLiteExporter {
 
 impl Exporter for SQLiteExporter {
     fn initialize(&mut self) -> Result<()> {
-        info!("初始化 SQLite 导出器: {}", self.path);
+        info!("Initializing SQLite exporter: {}", self.path);
 
         // 确保父目录存在
         if let Some(parent) = Path::new(&self.path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
-                    reason: format!("创建目录失败: {}", e),
+                    reason: format!("Failed to create directory: {}", e),
                 })
             })?;
         }
@@ -131,7 +131,7 @@ impl Exporter for SQLiteExporter {
             std::fs::remove_file(&self.path).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
-                    reason: format!("删除旧数据库文件失败: {}", e),
+                    reason: format!("Failed to remove old database file: {}", e),
                 })
             })?;
         }
@@ -140,7 +140,7 @@ impl Exporter for SQLiteExporter {
         let conn = Connection::open(&self.path).map_err(|e| {
             Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
-                reason: format!("打开数据库失败: {}", e),
+                reason: format!("Failed to open database: {}", e),
             })
         })?;
 
@@ -154,7 +154,7 @@ impl Exporter for SQLiteExporter {
         .map_err(|e| {
             Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
-                reason: format!("设置 PRAGMA 失败: {}", e),
+                reason: format!("Failed to set PRAGMA: {}", e),
             })
         })?;
 
@@ -164,20 +164,20 @@ impl Exporter for SQLiteExporter {
             conn.execute(&drop_sql, []).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
-                    reason: format!("删除表失败: {}", e),
+                    reason: format!("Failed to drop table: {}", e),
                 })
             })?;
             let create_sql = create_table_sql(&self.table_name);
             conn.execute(&create_sql, []).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
-                    reason: format!("创建表失败: {}", e),
+                    reason: format!("Failed to create table: {}", e),
                 })
             })?;
         }
 
         self.connection = Some(conn);
-        info!("SQLite 导出器初始化完成");
+        info!("SQLite exporter initialized");
         Ok(())
     }
 
@@ -213,7 +213,7 @@ impl Exporter for SQLiteExporter {
             drop(conn);
         }
 
-        info!("SQLite 导出完成: {} 条记录", self.stats.exported);
+        info!("SQLite export finished: {} records", self.stats.exported);
         Ok(())
     }
 

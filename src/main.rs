@@ -31,13 +31,13 @@ fn main() -> Result<()> {
             let path = Path::new(config);
             let cfg = match Config::from_file(path) {
                 Ok(c) => {
-                    eprintln!("已加载配置文件: {}", config);
+                    eprintln!("Loaded configuration file: {}", config);
                     c
                 }
                 Err(e) => {
                     if let error::Error::Config(error::ConfigError::NotFound(_)) = &e {
-                        eprintln!("未找到配置文件: {},使用默认配置", config);
-                        eprintln!("提示: 运行 'sqllog2db init' 生成配置文件");
+                        eprintln!("Configuration file not found: {}, using default configuration", config);
+                        eprintln!("Tip: run 'sqllog2db init' to generate a configuration file");
                         Config::default()
                     } else {
                         return Err(e);
@@ -47,11 +47,11 @@ fn main() -> Result<()> {
 
             // 验证配置
             cfg.validate()?;
-            eprintln!("配置验证通过");
+            eprintln!("Configuration validation passed");
 
             // 初始化日志系统
             logging::init_logging(&cfg.logging)?;
-            info!("应用程序启动");
+            info!("Application started");
 
             // 分发到具体命令
             match &cli.command {
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
             }
         }
         None => {
-            eprintln!("请指定子命令。使用 --help 查看可用命令。");
+            eprintln!("Please specify a subcommand. Use --help to see available commands.");
             std::process::exit(1);
         }
     }

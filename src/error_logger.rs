@@ -79,7 +79,7 @@ impl ErrorLogger {
                 })
             })?;
 
-        info!("错误日志记录器已初始化: {}", path_str);
+        info!("Error logger initialized: {}", path_str);
 
         // summary 文件路径处理（使用文本后缀）
         let summary_path = format!("{}.summary.txt", path_str);
@@ -146,7 +146,7 @@ impl ErrorLogger {
         self.writer.flush().map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
                 path: PathBuf::from(&self.path),
-                reason: format!("刷新失败: {}", e),
+                reason: format!("Flush failed: {}", e),
             })
         })?;
         Ok(())
@@ -179,13 +179,13 @@ impl ErrorLogger {
 
         if self.count > 0 {
             info!(
-                "错误日志已写入: {} ({} 条错误记录, 分类: {:?})",
+                "Error log written: {} ({} records, categories: {:?})",
                 self.path, self.count, self.metrics.by_category
             );
-            info!("错误指标摘要: {}", self.summary_path);
+            info!("Error summary: {}", self.summary_path);
         } else {
             debug!(
-                "无错误记录需要写入 (summary 仍已生成) {}",
+                "No error records to write (summary still generated) {}",
                 self.summary_path
             );
         }

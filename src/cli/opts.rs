@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 
 /// SQL 日志导出工具
 #[derive(Debug, Parser)]
-#[command(name = "sqllog2db", version, about = "SQL 日志导出工具")]
+#[command(name = "sqllog2db", version, about = "SQL log exporter tool")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,

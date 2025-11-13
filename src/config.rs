@@ -95,7 +95,7 @@ impl SqllogConfig {
             return Err(Error::Config(ConfigError::InvalidValue {
                 field: "sqllog.directory".to_string(),
                 value: self.directory.clone(),
-                reason: "输入目录不能为空".to_string(),
+                reason: "Input directory cannot be empty".to_string(),
             }));
         }
         Ok(())
@@ -169,7 +169,7 @@ impl LoggingConfig {
             return Err(Error::Config(ConfigError::InvalidValue {
                 field: "logging.retention_days".to_string(),
                 value: self.retention_days.to_string(),
-                reason: "保留天数必须在 1-365 之间".to_string(),
+                reason: "Retention days must be between 1 and 365".to_string(),
             }));
         }
 
@@ -268,8 +268,8 @@ impl ExporterConfig {
 
         let total = self.total_exporters();
         if total > 1 {
-            eprintln!("警告: 配置了 {} 个导出器，但只支持单个导出器。", total);
-            eprintln!("将按优先级使用第一个导出器：CSV > SQLite");
+            eprintln!("Warning: {} exporters configured, but only one is supported.", total);
+            eprintln!("Will use the first exporter by priority: CSV > SQLite");
         }
 
         Ok(())

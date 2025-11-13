@@ -73,7 +73,7 @@ impl CsvExporter {
         let writer = self.writer.as_mut().ok_or_else(|| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: "CSV 导出器未初始化".to_string(),
+                reason: "CSV exporter not initialized".to_string(),
             })
         })?;
 
@@ -81,12 +81,12 @@ impl CsvExporter {
         writer.write_all(CSV_HEADER.as_bytes()).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("写入 CSV 头部失败: {}", e),
+                reason: format!("Failed to write CSV header: {}", e),
             })
         })?;
 
         self.header_written = true;
-        debug!("CSV 头部已写入");
+        debug!("CSV header written");
         Ok(())
     }
 
@@ -153,12 +153,12 @@ impl CsvExporter {
 
 impl Exporter for CsvExporter {
     fn initialize(&mut self) -> Result<()> {
-        info!("初始化 CSV 导出器: {}", self.path.display());
+        info!("Initializing CSV exporter: {}", self.path.display());
 
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("创建目录失败: {}", e),
+                    reason: format!("Failed to create directory: {}", e),
             })
         })?;
 
@@ -181,7 +181,7 @@ impl Exporter for CsvExporter {
         let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("打开文件失败: {}", e),
+                    reason: format!("Failed to open file: {}", e),
             })
         })?;
         self.writer = Some(BufWriter::new(file));
@@ -193,7 +193,7 @@ impl Exporter for CsvExporter {
             self.write_header()?;
         }
 
-        info!("CSV 导出器初始化成功: {}", self.path.display());
+        info!("CSV exporter initialized: {}", self.path.display());
         Ok(())
     }
 
@@ -202,7 +202,7 @@ impl Exporter for CsvExporter {
         if self.writer.is_none() {
             return Err(Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: "CSV 导出器未初始化".to_string(),
+                reason: "CSV exporter not initialized".to_string(),
             }));
         }
 
@@ -213,14 +213,14 @@ impl Exporter for CsvExporter {
         let writer = self.writer.as_mut().ok_or_else(|| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: "CSV 导出器未初始化".to_string(),
+                reason: "CSV exporter not initialized".to_string(),
             })
         })?;
 
         writer.write_all(self.line_buf.as_bytes()).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("写入 CSV 行失败: {}", e),
+                reason: format!("Failed to write CSV row: {}", e),
             })
         })?;
 
@@ -231,7 +231,7 @@ impl Exporter for CsvExporter {
     }
 
     fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
-        debug!("批量导出 {} 条记录到 CSV", sqllogs.len());
+        debug!("Exported {} records to CSV in batch", sqllogs.len());
 
         for sqllog in sqllogs {
             self.export(sqllog)?;
@@ -245,18 +245,18 @@ impl Exporter for CsvExporter {
             writer.flush().map_err(|e| {
                 Error::Export(ExportError::CsvExportFailed {
                     path: self.path.clone(),
-                    reason: format!("刷新缓冲区失败: {}", e),
+                    reason: format!("Failed to flush buffer: {}", e),
                 })
             })?;
 
             info!(
-                "CSV 导出完成: {} (成功: {}, 失败: {})",
+                "CSV export finished: {} (success: {}, failed: {})",
                 self.path.display(),
                 self.stats.exported,
                 self.stats.failed
             );
         } else {
-            warn!("CSV 导出器未初始化或已完成");
+            warn!("CSV exporter not initialized or already finished");
         }
 
         Ok(())
@@ -275,7 +275,7 @@ impl Drop for CsvExporter {
     fn drop(&mut self) {
         if self.writer.is_some() {
             if let Err(e) = self.finalize() {
-                warn!("CSV 导出器 Drop 时完成操作失败: {}", e);
+                warn!("CSV exporter finalization on Drop failed: {}", e);
             }
         }
     }

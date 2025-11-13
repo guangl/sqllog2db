@@ -43,11 +43,11 @@ impl SqllogParser {
 
         if path.is_file() {
             // 单个文件
-            info!("解析单个日志文件: {}", path.display());
+            info!("Parsing single log file: {}", path.display());
             log_files.push(path.clone());
         } else if path.is_dir() {
             // 目录：扫描所有 .log 文件
-            info!("扫描日志目录: {}", path.display());
+            info!("Scanning log directory: {}", path.display());
 
             let entries = std::fs::read_dir(path).map_err(|e| {
                 Error::Parser(ParserError::ReadDirFailed {
@@ -70,7 +70,7 @@ impl SqllogParser {
                 if entry_path.is_file() {
                     if let Some(ext) = entry_path.extension() {
                         if ext == "log" {
-                            debug!("发现日志文件: {}", entry_path.display());
+                            debug!("Found log file: {}", entry_path.display());
                             log_files.push(entry_path);
                         }
                     }
@@ -78,9 +78,9 @@ impl SqllogParser {
             }
 
             if log_files.is_empty() {
-                warn!("目录 {} 中没有找到 .log 文件", path.display());
+                warn!("No .log files found in directory {}", path.display());
             } else {
-                info!("找到 {} 个日志文件", log_files.len());
+                info!("Found {} log files", log_files.len());
             }
         } else {
             return Err(Error::Parser(ParserError::InvalidPath {

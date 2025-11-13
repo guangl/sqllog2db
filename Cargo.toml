@@ -20,6 +20,8 @@ exclude = [
     "/.gitignore",
     "/sqllogs/*",
     "/targets/*",
+    "config.toml",
+    "CHANGELOG.md",
 ]
 
 [[bin]]

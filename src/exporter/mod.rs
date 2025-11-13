@@ -89,7 +89,7 @@ impl ExporterManager {
     pub fn from_config(config: &Config) -> Result<Self> {
         let batch_size = config.sqllog.batch_size();
 
-        info!("初始化导出器管理器...");
+        info!("Initializing exporter manager...");
 
         // 优先级：CSV > SQLite
 
@@ -97,7 +97,7 @@ impl ExporterManager {
         #[cfg(feature = "csv")]
         if let Some(csv_config) = config.exporter.csv() {
             let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
-            info!("使用 CSV 导出器: {}", csv_config.file);
+            info!("Using CSV exporter: {}", csv_config.file);
             return Ok(Self {
                 exporter: Box::new(csv_exporter),
                 batch_size,
@@ -114,7 +114,7 @@ impl ExporterManager {
                 sqlite_config.append,
                 batch_size,
             );
-            info!("使用 SQLite 导出器: {}", sqlite_config.file);
+            info!("Using SQLite exporter: {}", sqlite_config.file);
             return Ok(Self {
                 exporter: Box::new(exporter),
                 batch_size,
@@ -127,9 +127,9 @@ impl ExporterManager {
     }
     /// 初始化导出器
     pub fn initialize(&mut self) -> Result<()> {
-        info!("初始化导出器...");
+        info!("Initializing exporters...");
         self.exporter.initialize()?;
-        info!("导出器初始化完成");
+        info!("Exporters initialized");
         Ok(())
     }
 
@@ -146,9 +146,9 @@ impl ExporterManager {
 
     /// 完成导出器
     pub fn finalize(&mut self) -> Result<()> {
-        info!("完成导出器...");
+        info!("Finalizing exporters...");
         self.exporter.finalize()?;
-        info!("导出器已完成");
+        info!("Exporters finished");
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl ExporterManager {
     pub fn log_stats(&self) {
         if let Some(s) = self.stats() {
             info!(
-                "导出统计信息: {} => 成功: {}, 失败: {}, 跳过: {} (合计: {}){}",
+                "Export stats: {} => success: {}, failed: {}, skipped: {} (total: {}){}",
                 self.name(),
                 s.exported,
                 s.failed,
@@ -179,7 +179,7 @@ impl ExporterManager {
                 s.total(),
                 if s.flush_operations > 0 {
                     format!(
-                        " | 刷新:{} 次 (最近 {} 条)",
+                        " | flushed:{} times (recent {} entries)",
                         s.flush_operations, s.last_flush_size
                     )
                 } else {
@@ -187,7 +187,7 @@ impl ExporterManager {
                 }
             );
         } else {
-            info!("无可用的导出统计信息");
+            info!("No export statistics available");
         }
     }
 }

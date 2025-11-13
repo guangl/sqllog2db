@@ -31,7 +31,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     let parent_dir = log_path.parent().ok_or_else(|| {
         Error::File(FileError::CreateDirectoryFailed {
             path: log_path.to_path_buf(),
-            reason: "无法获取父目录".to_string(),
+            reason: "Failed to get parent directory".to_string(),
         })
     })?;
 
@@ -52,7 +52,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         .ok_or_else(|| {
             Error::File(FileError::CreateDirectoryFailed {
                 path: log_path.to_path_buf(),
-                reason: "无效的文件名".to_string(),
+                reason: "Invalid filename".to_string(),
             })
         })?;
 
@@ -128,12 +128,12 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     log::set_boxed_logger(Box::new(logger)).map_err(|e: SetLoggerError| {
         Error::File(FileError::CreateDirectoryFailed {
             path: log_file_path.clone(),
-            reason: format!("设置日志器失败: {}", e),
+            reason: format!("Failed to set logger: {}", e),
         })
     })?;
 
     log::info!(
-        "日志系统初始化完成 - 级别: {:?}, 文件: {}, 保留天数: {}",
+        "Logging initialized - level: {:?}, file: {}, retention_days: {}",
         level,
         config.file,
         config.retention_days()
