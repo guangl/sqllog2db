@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2025-01-XX
+## [0.1.2] - 2025-11-13
 
 ### Changed
 - **配置字段命名统一**: 将 `path` 字段改为更明确的命名以区分目录和文件
@@ -15,10 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `exporter.csv.path` → `exporter.csv.file` (输出文件)
   - `exporter.jsonl.path` → `exporter.jsonl.file` (输出文件)
   - `exporter.database.path` → `exporter.database.file` (输出文件)
-- 旧的 `path` 字段名通过 `serde(alias)` 保持向后兼容，无需修改现有配置文件
+- 旧的 `path` 字段名通过 `serde(alias)` 保持向后兼容，无需立即修改现有配置文件
 
-### Added
-- 添加 `docs/PATH_NAMING_UPDATE.md` 文档，详细说明字段命名更新和迁移指南
+### Removed
+- 移除过时的性能分析文档（PARSER_PERFORMANCE_ANALYSIS.md, PERFORMANCE.md）
+- 移除架构简化说明文档（SIMPLIFICATION.md）
+- 清理临时测试文件（test.log, test.out, test_output.txt）
+
+### Performance
+- **once_cell 优化**：
+  - CSV 头部字符串缓存（避免重复构造）
+  - 日志级别映射 HashMap 缓存（优化解析性能）
 
 ## [0.1.1] - 2025-01-XX
 

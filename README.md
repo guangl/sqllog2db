@@ -21,26 +21,24 @@
 - [GitHub 仓库](https://github.com/guangl/sqllog2db)
 - [GitHub Releases](https://github.com/guangl/sqllog2db/releases)
 - [CHANGELOG](./CHANGELOG.md)
-- [性能测试报告](./docs/PERFORMANCE.md)
-- [架构简化说明](./docs/SIMPLIFICATION.md)
 
 ---
 
 ## 功能特性
 
-- 流式解析 SQL 日志：单线程顺序处理，性能优秀且可预测
-- 单导出目标（简化架构）：
+- **流式解析 SQL 日志**：单线程顺序处理，性能优秀且可预测
+- **单导出目标**（简化架构）：
   - CSV（默认特性）
   - JSONL（默认特性）
   - SQLite / DuckDB（可选特性）
-- 批量导出：支持按条数进行批量 flush（推荐 10000 条/批）
+- **批量导出**：支持按条数进行批量 flush（推荐 10000 条/批）
   - `batch_size > 0`: 每 N 条记录 flush 一次
   - `batch_size = 0`: 累积所有记录，最后一次性 flush
-- 错误记录：
+- **错误记录**：
   - 所有解析失败按 JSONL 逐条写入 `errors.jsonl`
   - 生成 `errors.summary.json`，包含总数、分类与子类统计
-- 日志系统：每日滚动、保留天数可配（1-365）
-- 二进制体积优化：feature gating + release 优化配置（LTO、opt-level=z、panic=abort）
+- **日志系统**：每日滚动、保留天数可配（1-365）
+- **二进制体积优化**：feature gating + release 优化配置（LTO、opt-level=z、panic=abort）
 
 ---
 
@@ -109,6 +107,73 @@ sqllog2db validate -c config.toml
 
 ```powershell
 sqllog2db run -c config.toml
+```
+
+---
+
+## 配置文件说明（config.toml）
+
+以下为 `sqllog2db init` 生成的默认模版（可根据需要修改）：
+
+```toml
+# SQL 日志导出工具配置文件
+
+[sqllog]
+# SQL 日志输入目录（可包含多个日志文件）
+directory = "sqllogs"
+# 批量提交大小 (0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入)
+# 推荐值: 10000 (最佳性能)
+batch_size = 10000
+
+[error]
+# 解析错误日志输出文件路径（JSON Lines 格式）
+file = "errors.jsonl"
+
+[logging]
+# 应用日志输出文件路径
+file = "logs/sqllog2db.log"
+# 日志级别: trace | debug | info | warn | error
+level = "info"
+# 日志保留天数 (1-365) - 用于滚动文件最大保留数量
+retention_days = 7
+
+[features]
+# 是否替换 SQL 中的参数占位符（如 ? -> 实际值）
+replace_sql_parameters = false
+# 是否启用分散导出（按日期或其他维度拆分输出文件）
+scatter = false
+
+# ===================== 导出器配置 =====================
+# 只支持单个导出器，按优先级选择：CSV > JSONL > Database
+
+# CSV 导出
+[exporter.csv]
+file = "export/sqllog2db.csv"
+overwrite = true
+
+# JSONL 导出（如果同时配置了 CSV，此项将被忽略）
+# [exporter.jsonl]
+# file = "export/sqllog2db.jsonl"
+# overwrite = true
+
+# 数据库导出示例：文件型数据库 (SQLite / DuckDB)
+# [exporter.database]
+# database_type = "sqlite" # 可选: sqlite | duckdb
+# file = "export/sqllog2db.sqlite"
+# overwrite = true
+# table_name = "sqllog"
+```
+
+**配置说明：**
+- **字段命名更新（v0.1.2）**：
+  - `sqllog.path` → `sqllog.directory` (输入目录)
+  - 所有 `path` 字段 → `file` (输出文件)
+  - 旧字段名仍然兼容，但建议使用新名称
+- 只支持单个导出器，如配置多个将按优先级选择第一个
+- `batch_size = 10000` 提供最佳性能
+- `logging.retention_days` 必须在 1-365 之间
+
+> **注意**：从 v0.1.1 开始，配置格式已从数组格式 `[[exporter.csv]]` 改为单个导出器格式 `[exporter.csv]`。
 ```
 
 > Windows 路径注意事项：本工具会为 `logging.path` 的父目录自动创建目录；建议将 `logging.path` 设置为“文件路径”，如 `logs/sqllog2db.log`。
@@ -257,18 +322,22 @@ cargo test --features duckdb
 
 ### 性能测试结果
 
-**测试环境**: ~1.1GB SQL 日志文件，约 320 万条记录
+**测试环境**: ~1.1GB SQL 日志文件，约 320 万条记录（单线程模式）
 
 | 配置 | 平均用时 | 吞吐量 | 相对性能 |
 |------|---------|--------|---------|
-| **batch_size=10000 (推荐)** | **8.88s** | **~362K 条/秒** | 100% (最快) |
-| batch_size=50000 | 9.24s | ~348K 条/秒 | 104% |
-| batch_size=1000 | 9.34s | ~344K 条/秒 | 105% |
-| batch_size=0 (全部累积) | 9.64s | ~334K 条/秒 | 108% |
+| **batch_size=10000 (推荐)** | **8.11s** | **~397K 条/秒** | 100% (最快) |
+| batch_size=50000 | 8.43s | ~382K 条/秒 | 104% |
+| batch_size=1000 | 8.67s | ~371K 条/秒 | 107% |
+| batch_size=0 (全部累积) | 9.15s | ~352K 条/秒 | 113% |
 
 **结论**: 默认配置 `batch_size=10000` 提供最佳性能，在 I/O 效率和内存占用之间达到最佳平衡。
 
-详细性能分析请参考：[性能测试报告](docs/PERFORMANCE.md)
+**性能瓶颈分析**（NVMe SSD 测试）：
+- 解析：5.62s (69%) - 主要瓶颈
+- CSV 格式化：1.51s (19%)
+- 文件写入：0.22s (3%)
+- 其他开销：0.76s (9%)
 
 运行性能测试：
 ```bash
@@ -285,15 +354,20 @@ cargo bench --bench performance
 
 ## 故障排查
 
-- 程序无法启动 / 配置解析失败：
+- **程序无法启动 / 配置解析失败**：
   - 使用 `sqllog2db validate -c config.toml` 检查配置
-  - 确保 `logging.path` 为合法的“文件路径”，其父目录可创建
-- 未生成导出文件：
-  - 确认日志目录下是否存在 `.log` 文件
+  - 确保使用新的字段名称（v0.1.2+）：`directory` 和 `file` 而非 `path`
+  - 确保 `logging.file` 为合法的文件路径，其父目录可创建
+- **未生成导出文件**：
+  - 确认 `sqllog.directory` 下是否存在 `.log` 文件
   - 查看应用日志与 `errors.jsonl` 定位问题
-- 数据库导出失败：
-  - 检查 `database_type` 与对应字段（文件型使用 `path`；网络型使用 host/port/用户名/密码/可选 database 等）
+  - 检查是否配置了导出器（至少配置一个：CSV/JSONL/Database）
+- **数据库导出失败**：
+  - 检查 `database_type` 与对应字段（文件型使用 `file`）
   - 确保编译时已启用对应特性（`sqlite` 或 `duckdb`）
+- **配置迁移问题**：
+  - v0.1.2 更新了字段命名，但保持向后兼容
+  - 旧配置文件仍可使用，但建议更新到新字段名
 
 ---
 
