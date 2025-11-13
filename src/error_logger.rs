@@ -146,46 +146,7 @@ impl ErrorLogger {
         self.log_error(record)
     }
 
-    /// 记录任意应用内部错误（按错误类型归类）
-    pub fn log_app_error(&mut self, file_path: &str, error: &crate::error::Error) -> Result<()> {
-        use crate::error::Error as E;
-        let (category, detail) = match error {
-            E::Config(_) => ("config", error.to_string()),
-            E::File(_) => ("file", error.to_string()),
-            E::Database(_) => ("database", error.to_string()),
-            E::Parse(parse_err) => {
-                // 内部 ParseError 细分
-                let variant = match parse_err {
-                    crate::error::ParseError::SqlLogParseFailed { .. } => "SqlLogParseFailed",
-                    crate::error::ParseError::InvalidSql { .. } => "InvalidSql",
-                    crate::error::ParseError::InvalidTimestamp { .. } => "InvalidTimestamp",
-                    crate::error::ParseError::InvalidNumber { .. } => "InvalidNumber",
-                    crate::error::ParseError::CsvParseFailed { .. } => "CsvParseFailed",
-                    crate::error::ParseError::JsonParseFailed { .. } => "JsonParseFailed",
-                };
-                self.metrics.incr_parse_variant(variant);
-                ("parse", error.to_string())
-            }
-            E::Parser(_) => ("parser", error.to_string()),
-            E::Export(_) => ("export", error.to_string()),
-            E::Io(_) => ("io", error.to_string()),
-            E::Other(_) => ("other", error.to_string()),
-        };
-
-        self.metrics.incr_category(category);
-
-        let record = ParseErrorRecord {
-            timestamp: chrono::Local::now()
-                .format("%Y-%m-%d %H:%M:%S%.3f")
-                .to_string(),
-            file_path: file_path.to_string(),
-            error_message: detail,
-            raw_content: None,
-            line_number: None,
-        };
-        self.log_error(record)
-    }
-
+    /// 完成错误记录并生成 summary.json
     /// 刷新缓冲区
     pub fn flush(&mut self) -> Result<()> {
         self.writer.flush().map_err(|e| {
@@ -198,14 +159,6 @@ impl ErrorLogger {
     }
 
     /// 获取已记录的错误数量
-    pub fn count(&self) -> usize {
-        self.count
-    }
-
-    /// 获取错误日志文件路径
-    pub fn path(&self) -> &str {
-        &self.path
-    }
 
     /// 完成记录并显示统计信息
     pub fn finalize(&mut self) -> Result<()> {
@@ -257,7 +210,6 @@ mod tests {
         let log_path = temp_dir.path().join("errors.jsonl");
 
         let logger = ErrorLogger::new(&log_path)?;
-        assert_eq!(logger.count(), 0);
         assert!(log_path.exists());
         assert!(logger.summary_path().ends_with("errors.summary.json"));
 
@@ -280,7 +232,6 @@ mod tests {
         };
 
         logger.log_error(record)?;
-        assert_eq!(logger.count(), 1);
 
         logger.finalize()?;
 
@@ -311,7 +262,6 @@ mod tests {
             logger.log_error(record)?;
         }
 
-        assert_eq!(logger.count(), 5);
         logger.finalize()?;
 
         // 验证文件有5行

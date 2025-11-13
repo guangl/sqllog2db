@@ -371,13 +371,6 @@ pub struct DatabaseExporter {
     pub overwrite: bool,
     /// 目标表名
     pub table_name: String,
-    /// 批量导入大小 (可选，默认 1000)
-    #[serde(default = "default_db_batch_size")]
-    pub batch_size: usize,
-}
-
-fn default_db_batch_size() -> usize {
-    1000
 }
 
 impl DatabaseExporter {
@@ -805,7 +798,6 @@ scatter = false
                 sid: None,
                 overwrite: true,
                 table_name: "sqllog".to_string(),
-                batch_size: 1000,
             }),
             csv: None,
             jsonl: None,
@@ -870,7 +862,6 @@ scatter = false
                 sid: None,
                 overwrite: true,
                 table_name: "table1".to_string(),
-                batch_size: 1000,
             }),
             csv: None,
             jsonl: None,
@@ -910,7 +901,6 @@ scatter = false
                 sid: None,
                 overwrite: true,
                 table_name: "table1".to_string(),
-                batch_size: 1000,
             }),
             csv: None,
             jsonl: None,
@@ -939,7 +929,6 @@ scatter = false
             sid: None,
             overwrite: true,
             table_name: "my_table".to_string(),
-            batch_size: 1000,
         };
 
         assert_eq!(db.database_type, DatabaseType::SQLite);
@@ -1041,7 +1030,6 @@ table_name = "test"
             sid: None,
             overwrite: false,
             table_name: "logs".to_string(),
-            batch_size: 1000,
         };
         assert_eq!(
             pg_db.build_connection_string(),
@@ -1062,7 +1050,6 @@ table_name = "test"
             sid: None,
             overwrite: true,
             table_name: "events".to_string(),
-            batch_size: 1000,
         };
         assert_eq!(sqlite_db.build_connection_string(), "/data/app.db");
         assert!(sqlite_db.is_file_based());
@@ -1080,7 +1067,6 @@ table_name = "test"
             sid: None,
             overwrite: false,
             table_name: "audit_logs".to_string(),
-            batch_size: 1000,
         };
         assert_eq!(
             oracle_db.build_connection_string(),
@@ -1101,7 +1087,6 @@ table_name = "test"
             sid: None,
             overwrite: true,
             table_name: "sqllog".to_string(),
-            batch_size: 1000,
         };
         assert_eq!(
             dm_db.build_connection_string(),

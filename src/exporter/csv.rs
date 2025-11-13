@@ -1,4 +1,4 @@
-use super::util::{LineBuffer, ensure_parent_dir, open_output_file};
+use super::util::{ensure_parent_dir, open_output_file};
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -14,8 +14,7 @@ pub struct CsvExporter {
     writer: Option<BufWriter<File>>,
     stats: ExportStats,
     header_written: bool,
-    buffer: LineBuffer, // 批量缓冲区抽象
-    line_buf: String,   // 重用的行缓冲区
+    line_buf: String, // 重用的行缓冲区
 }
 
 impl CsvExporter {
@@ -25,14 +24,13 @@ impl CsvExporter {
     }
 
     /// 创建新的 CSV 导出器（指定批量大小）
-    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, batch_size: usize) -> Self {
+    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, _batch_size: usize) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
             overwrite,
             writer: None,
             stats: ExportStats::new(),
             header_written: false,
-            buffer: LineBuffer::new(batch_size),
             line_buf: String::with_capacity(512), // 预分配
         }
     }
@@ -306,7 +304,6 @@ mod tests {
         let exporter = CsvExporter::from_config(&config, 0);
         assert_eq!(exporter.path, PathBuf::from("output.csv"));
         assert!(!exporter.overwrite);
-        assert_eq!(exporter.buffer.len(), 0);
     }
 
     #[test]
@@ -319,8 +316,6 @@ mod tests {
         let exporter = CsvExporter::from_config(&config, 500);
         assert_eq!(exporter.path, PathBuf::from("output.csv"));
         assert!(exporter.overwrite);
-        // LineBuffer 批次大小为 500，这里无法直接读取，验证为初始化成功且无缓冲内容
-        assert_eq!(exporter.buffer.len(), 0);
     }
 
     #[test]

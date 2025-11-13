@@ -76,22 +76,8 @@ impl ExportStats {
         self.exported += 1;
     }
 
-    pub fn record_skip(&mut self) {
-        self.skipped += 1;
-    }
-
-    pub fn record_failure(&mut self) {
-        self.failed += 1;
-    }
-
     pub fn total(&self) -> usize {
         self.exported + self.skipped + self.failed
-    }
-
-    /// 记录一次刷新操作
-    pub fn record_flush(&mut self, count: usize) {
-        self.flush_operations += 1;
-        self.last_flush_size = count;
     }
 }
 
@@ -102,13 +88,6 @@ pub struct ExporterManager {
 }
 
 impl ExporterManager {
-    /// 从单个导出器创建管理器
-    pub fn from_exporter(exporter: Box<dyn Exporter>, batch_size: usize) -> Self {
-        Self {
-            exporter,
-            batch_size,
-        }
-    }
     /// 从配置创建导出器管理器（只支持单个导出器）
     pub fn from_config(config: &Config) -> Result<Self> {
         let batch_size = config.sqllog.batch_size();
@@ -169,11 +148,6 @@ impl ExporterManager {
         self.exporter.initialize()?;
         info!("导出器初始化完成");
         Ok(())
-    }
-
-    /// 导出单条日志记录
-    pub fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
-        self.exporter.export(sqllog)
     }
 
     /// 批量导出日志记录
@@ -256,11 +230,9 @@ mod tests {
         stats.record_success();
         assert_eq!(stats.exported, 2);
 
-        stats.record_skip();
-        assert_eq!(stats.skipped, 1);
-
-        stats.record_failure();
-        assert_eq!(stats.failed, 1);
+        // 直接设置字段进行测试（不再使用已删除的方法）
+        stats.skipped = 1;
+        stats.failed = 1;
 
         assert_eq!(stats.total(), 4);
     }

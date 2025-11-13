@@ -181,7 +181,6 @@ mod tests {
             sid: None,
             overwrite: true,
             table_name: "logs".to_string(),
-            batch_size: 1000,
         };
 
         let mut exporter = DatabaseExporter::from_config(&cfg);
@@ -228,7 +227,6 @@ mod tests {
             sid: None,
             overwrite: false,
             table_name: "sqllog".to_string(),
-            batch_size: 1000,
         };
         let exporter = DatabaseExporter::from_config(&cfg);
         assert_eq!(exporter.name(), "dm");
