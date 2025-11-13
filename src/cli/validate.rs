@@ -15,7 +15,7 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("错误日志: {}", cfg.error.file());
 
     info!(
-        "功能特性 - 替换SQL参数: {}, 分散导出: {}",
+        "功能特性 - 替换 SQL 参数: {}, 生成散列表: {}",
         if cfg.features.should_replace_sql_parameters() {
             "启用"
         } else {
@@ -29,26 +29,28 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     );
 
     // 导出配置（只支持单个导出器）
-    if let Some(db) = &cfg.exporter.database {
-        let location = match (&db.file, &db.host, db.port) {
-            (Some(file), _, _) => file.clone(),
-            (None, Some(host), Some(port)) => format!("{}:{}", host, port),
-            _ => "未配置".to_string(),
-        };
-        info!(
-            "数据库导出: {} ({} -> {} 覆盖: {})",
-            db.database_type.as_str(),
-            location,
-            db.table_name,
-            if db.overwrite { "是" } else { "否" }
-        );
-    } else if let Some(csv) = &cfg.exporter.csv {
+    if let Some(csv) = &cfg.exporter.csv {
         info!(
             "CSV导出: {} (覆盖: {})",
             csv.file,
             if csv.overwrite { "是" } else { "否" }
         );
-    } else {
+    }
+    #[cfg(feature = "sqlite")]
+    if cfg.exporter.csv.is_none() {
+        if let Some(sqlite) = &cfg.exporter.sqlite {
+            info!(
+                "SQLite导出: {} -> {} (覆盖: {})",
+                sqlite.file,
+                sqlite.table_name,
+                if sqlite.overwrite { "是" } else { "否" }
+            );
+        } else {
+            info!("导出器: 未配置");
+        }
+    }
+    #[cfg(not(feature = "sqlite"))]
+    if cfg.exporter.csv.is_none() {
         info!("导出器: 未配置");
     }
 

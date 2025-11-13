@@ -13,22 +13,19 @@ pub struct SQLiteExporter {
     path: String,
     table_name: String,
     overwrite: bool,
+    append: bool,
     batch_size: usize,
     stats: ExportStats,
     pending_records: Vec<Sqllog>,
 }
 
 impl SQLiteExporter {
-    /// 创建新的 SQLite 导出器
-    pub fn new(path: String, table_name: String, overwrite: bool) -> Self {
-        Self::with_batch_size(path, table_name, overwrite, 10000)
-    }
-
     /// 创建带有自定义批量大小的 SQLite 导出器
     pub fn with_batch_size(
         path: String,
         table_name: String,
         overwrite: bool,
+        append: bool,
         batch_size: usize,
     ) -> Self {
         Self {
@@ -36,6 +33,7 @@ impl SQLiteExporter {
             path,
             table_name,
             overwrite,
+            append,
             batch_size,
             stats: ExportStats::new(),
             pending_records: Vec::with_capacity(batch_size),
@@ -128,8 +126,8 @@ impl Exporter for SQLiteExporter {
             })?;
         }
 
-        // 如果需要覆盖，删除旧文件
-        if self.overwrite && Path::new(&self.path).exists() {
+        // 仅在非 append 模式且 overwrite 时删除旧文件
+        if !self.append && self.overwrite && Path::new(&self.path).exists() {
             std::fs::remove_file(&self.path).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
@@ -160,8 +158,8 @@ impl Exporter for SQLiteExporter {
             })
         })?;
 
-        // 创建表
-        if self.overwrite {
+        // 仅在非 append 模式且 overwrite 时重建表
+        if !self.append && self.overwrite {
             let drop_sql = drop_table_sql(&self.table_name);
             conn.execute(&drop_sql, []).map_err(|e| {
                 Error::Database(DatabaseError::DatabaseExportFailed {
@@ -169,15 +167,14 @@ impl Exporter for SQLiteExporter {
                     reason: format!("删除表失败: {}", e),
                 })
             })?;
+            let create_sql = create_table_sql(&self.table_name);
+            conn.execute(&create_sql, []).map_err(|e| {
+                Error::Database(DatabaseError::DatabaseExportFailed {
+                    table_name: self.table_name.clone(),
+                    reason: format!("创建表失败: {}", e),
+                })
+            })?;
         }
-
-        let create_sql = create_table_sql(&self.table_name);
-        conn.execute(&create_sql, []).map_err(|e| {
-            Error::Database(DatabaseError::DatabaseExportFailed {
-                table_name: self.table_name.clone(),
-                reason: format!("创建表失败: {}", e),
-            })
-        })?;
 
         self.connection = Some(conn);
         info!("SQLite 导出器初始化完成");

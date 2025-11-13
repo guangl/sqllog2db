@@ -1,4 +1,4 @@
-use super::util::{ensure_parent_dir, open_output_file};
+use super::util::ensure_parent_dir;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -23,6 +23,7 @@ fn needs_quoting(field: &str) -> bool {
 pub struct CsvExporter {
     path: PathBuf,
     overwrite: bool,
+    append: bool,
     writer: Option<BufWriter<File>>,
     stats: ExportStats,
     header_written: bool,
@@ -36,24 +37,31 @@ impl CsvExporter {
     }
 
     /// 创建新的 CSV 导出器（指定批量大小）
-    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, _batch_size: usize) -> Self {
+    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, batch_size: usize) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
             overwrite,
+            append: false,
             writer: None,
             stats: ExportStats::new(),
             header_written: false,
-            line_buf: String::with_capacity(512), // 预分配
+            line_buf: String::with_capacity(batch_size),
         }
     }
 
     /// 从配置创建 CSV 导出器，支持自定义批量大小
     pub fn from_config(config: &crate::config::CsvExporter, batch_size: usize) -> Self {
-        if batch_size > 0 {
+        let mut exporter = if batch_size > 0 {
             Self::with_batch_size(&config.file, config.overwrite, batch_size)
         } else {
             Self::new(&config.file, config.overwrite)
+        };
+        // 追加模式优先级高于 overwrite
+        if config.append {
+            exporter.overwrite = false;
+            exporter.append = true;
         }
+        exporter
     }
 
     /// 写入 CSV 头部
@@ -147,7 +155,6 @@ impl Exporter for CsvExporter {
     fn initialize(&mut self) -> Result<()> {
         info!("初始化 CSV 导出器: {}", self.path.display());
 
-        // 使用 util 模块创建父目录
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
@@ -155,26 +162,36 @@ impl Exporter for CsvExporter {
             })
         })?;
 
-        // 检查文件是否已存在
-        if self.path.exists() && !self.overwrite {
-            return Err(Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: "文件已存在(使用 overwrite=true 覆盖)".to_string(),
-            }));
-        }
+        // 判断 append 模式（基于实例字段，不再读取全局默认配置）
+        let append_mode = self.append;
+        let file_exists = self.path.exists();
 
-        // 使用 util 模块打开文件
-        let writer = open_output_file(&self.path, self.overwrite).map_err(|e| {
+        let file = if append_mode {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)
+        } else {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(self.overwrite)
+                .open(&self.path)
+        };
+        let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
                 reason: format!("打开文件失败: {}", e),
             })
         })?;
+        self.writer = Some(BufWriter::new(file));
 
-        self.writer = Some(writer);
-
-        // 写入头部
-        self.write_header()?;
+        // 追加模式且文件已存在，不写表头
+        if append_mode && file_exists {
+            self.header_written = true;
+        } else {
+            self.write_header()?;
+        }
 
         info!("CSV 导出器初始化成功: {}", self.path.display());
         Ok(())

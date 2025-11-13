@@ -2,8 +2,7 @@
 ///
 /// 支持的导出目标:
 /// - CSV 文件
-///
-/// - 数据库 (SQLite, DM)
+/// - SQLite 数据库
 use crate::config::Config;
 use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
@@ -11,14 +10,14 @@ use tracing::info;
 
 #[cfg(feature = "csv")]
 mod csv;
-#[cfg(any(feature = "sqlite", feature = "dm"))]
+#[cfg(feature = "sqlite")]
 pub mod database;
-//
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
-//
+#[cfg(feature = "sqlite")]
+pub use database::SQLiteExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -86,133 +85,46 @@ pub struct ExporterManager {
 }
 
 impl ExporterManager {
-    /// 从配置创建导出器管理器（只支持单个导出器）
+    /// 从配置创建导出器管理器
     pub fn from_config(config: &Config) -> Result<Self> {
         let batch_size = config.sqllog.batch_size();
 
         info!("初始化导出器管理器...");
 
-        // 优先级：CSV > Database
-        // 只创建第一个找到的导出器
+        // 优先级：CSV > SQLite
 
-        // 尝试创建 CSV 导出器
+        // 1. 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
-        {
-            if let Some(csv_config) = config.exporter.csv() {
-                let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
-                info!("使用 CSV 导出器: {}", csv_config.file);
-                return Ok(Self {
-                    exporter: Box::new(csv_exporter),
-                    batch_size,
-                });
-            }
+        if let Some(csv_config) = config.exporter.csv() {
+            let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
+            info!("使用 CSV 导出器: {}", csv_config.file);
+            return Ok(Self {
+                exporter: Box::new(csv_exporter),
+                batch_size,
+            });
         }
 
-        // 尝试创建数据库导出器
-        if let Some(db_config) = &config.exporter.database {
-            match db_config.database_type {
-                crate::config::DatabaseType::SQLite => {
-                    #[cfg(feature = "sqlite")]
-                    {
-                        use crate::exporter::database::SQLiteExporter;
-                        let file = db_config.file.as_ref().ok_or_else(|| {
-                            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.file".to_string(),
-                                value: "None".to_string(),
-                                reason: "SQLite 需要 file 字段".to_string(),
-                            })
-                        })?;
-                        let exporter = SQLiteExporter::with_batch_size(
-                            file.clone(),
-                            db_config.table_name.clone(),
-                            db_config.overwrite,
-                            batch_size,
-                        );
-                        info!("使用 SQLite 导出器: {}", file);
-                        return Ok(Self {
-                            exporter: Box::new(exporter),
-                            batch_size,
-                        });
-                    }
-                    #[cfg(not(feature = "sqlite"))]
-                    {
-                        return Err(crate::error::Error::Config(
-                            crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.database_type".to_string(),
-                                value: "sqlite".to_string(),
-                                reason: "SQLite 特性未启用，请使用 --features sqlite 编译"
-                                    .to_string(),
-                            },
-                        ));
-                    }
-                }
-                crate::config::DatabaseType::Dm => {
-                    #[cfg(feature = "dm")]
-                    {
-                        use crate::exporter::database::DmExporter;
-                        let host = db_config.host.as_ref().ok_or_else(|| {
-                            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.host".to_string(),
-                                value: "None".to_string(),
-                                reason: "DM 需要 host 字段".to_string(),
-                            })
-                        })?;
-                        let port = db_config.port.ok_or_else(|| {
-                            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.port".to_string(),
-                                value: "None".to_string(),
-                                reason: "DM 需要 port 字段".to_string(),
-                            })
-                        })?;
-                        let username = db_config.username.as_ref().ok_or_else(|| {
-                            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.username".to_string(),
-                                value: "None".to_string(),
-                                reason: "DM 需要 username 字段".to_string(),
-                            })
-                        })?;
-                        let password = db_config.password.as_ref().ok_or_else(|| {
-                            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.password".to_string(),
-                                value: "None".to_string(),
-                                reason: "DM 需要 password 字段".to_string(),
-                            })
-                        })?;
-
-                        let exporter = DmExporter::with_batch_size(
-                            host.clone(),
-                            port,
-                            username.clone(),
-                            password.clone(),
-                            db_config.table_name.clone(),
-                            db_config.overwrite,
-                            batch_size,
-                        );
-                        info!("使用 DM 导出器: {}:{}", host, port);
-                        return Ok(Self {
-                            exporter: Box::new(exporter),
-                            batch_size,
-                        });
-                    }
-                    #[cfg(not(feature = "dm"))]
-                    {
-                        return Err(crate::error::Error::Config(
-                            crate::error::ConfigError::InvalidValue {
-                                field: "exporter.database.database_type".to_string(),
-                                value: "dm".to_string(),
-                                reason: "DM 特性未启用，请使用 --features dm 编译".to_string(),
-                            },
-                        ));
-                    }
-                }
-            }
+        // 2. 尝试创建 SQLite 导出器
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite_config) = config.exporter.sqlite() {
+            let exporter = SQLiteExporter::with_batch_size(
+                sqlite_config.file.clone(),
+                sqlite_config.table_name.clone(),
+                sqlite_config.overwrite,
+                sqlite_config.append,
+                batch_size,
+            );
+            info!("使用 SQLite 导出器: {}", sqlite_config.file);
+            return Ok(Self {
+                exporter: Box::new(exporter),
+                batch_size,
+            });
         }
 
         Err(crate::error::Error::Config(
             crate::error::ConfigError::NoExporters,
         ))
     }
-
     /// 初始化导出器
     pub fn initialize(&mut self) -> Result<()> {
         info!("初始化导出器...");
