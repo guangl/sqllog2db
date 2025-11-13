@@ -1,8 +1,7 @@
-use tracing::{debug, error, info, warn};
-
 use crate::error::Result;
 use std::fs;
 use std::path::Path;
+use tracing::{debug, error, info, warn};
 
 /// 生成默认配置文件
 pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
@@ -83,9 +82,6 @@ overwrite = true
 # overwrite = true
 # table_name = "sqllog"
 # batch_size = 1000
-# database = "TEST"          # 可选 (postgres/dm)
-# service_name = "ORCL"       # Oracle 可选（与 sid 二选一）
-# sid = "ORCLSID"             # Oracle 可选（与 service_name 二选一）
 "#;
 
     // 创建目录（如果需要）

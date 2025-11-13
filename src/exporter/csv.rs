@@ -13,6 +13,12 @@ static CSV_HEADER: Lazy<&str> = Lazy::new(
     || "timestamp,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n",
 );
 
+/// 检查字段是否需要引号包围
+#[inline]
+fn needs_quoting(field: &str) -> bool {
+    field.contains(',') || field.contains('"') || field.contains('\n')
+}
+
 /// CSV 导出器 - 将 SQL 日志导出为 CSV 格式
 pub struct CsvExporter {
     path: PathBuf,
@@ -78,7 +84,7 @@ impl CsvExporter {
 
     /// 写入 CSV 字段到缓冲区（避免分配）
     fn write_csv_field(buf: &mut String, field: &str) {
-        if field.contains(',') || field.contains('"') || field.contains('\n') {
+        if needs_quoting(field) {
             buf.push('"');
             for ch in field.chars() {
                 if ch == '"' {

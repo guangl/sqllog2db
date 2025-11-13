@@ -84,7 +84,12 @@ pub enum FileError {
 
 /// 数据库错误
 #[derive(Debug, Error)]
-pub enum DatabaseError {}
+pub enum DatabaseError {
+    /// 数据库导出失败
+    #[error("数据库导出失败 ({table_name}): {reason}")]
+    #[allow(dead_code)]
+    DatabaseExportFailed { table_name: String, reason: String },
+}
 
 /// 解析错误
 #[derive(Debug, Error)]

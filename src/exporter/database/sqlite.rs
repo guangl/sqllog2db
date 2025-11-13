@@ -1,6 +1,6 @@
 /// SQLite 导出器 - 使用批量事务优化插入性能
 use crate::constants::{create_table_sql, drop_table_sql, insert_sql};
-use crate::error::{Error, ExportError, Result};
+use crate::error::{DatabaseError, Error, Result};
 use crate::exporter::{ExportStats, Exporter};
 use dm_database_parser_sqllog::Sqllog;
 use rusqlite::{Connection, params};
@@ -49,7 +49,7 @@ impl SQLiteExporter {
         }
 
         let conn = self.connection.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: "数据库未连接".to_string(),
             })
@@ -60,7 +60,7 @@ impl SQLiteExporter {
 
         // 使用事务批量插入
         let tx = conn.transaction().map_err(|e| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: format!("创建事务失败: {}", e),
             })
@@ -68,7 +68,7 @@ impl SQLiteExporter {
 
         {
             let mut stmt = tx.prepare(&insert_sql).map_err(|e| {
-                Error::Export(ExportError::DatabaseExportFailed {
+                Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
                     reason: format!("准备插入语句失败: {}", e),
                 })
@@ -91,7 +91,7 @@ impl SQLiteExporter {
                     record.indicators.as_ref().map(|i| i.execute_id),
                 ])
                 .map_err(|e| {
-                    Error::Export(ExportError::DatabaseExportFailed {
+                    Error::Database(DatabaseError::DatabaseExportFailed {
                         table_name: self.table_name.clone(),
                         reason: format!("插入数据失败: {}", e),
                     })
@@ -102,7 +102,7 @@ impl SQLiteExporter {
         }
 
         tx.commit().map_err(|e| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: format!("提交事务失败: {}", e),
             })
@@ -131,7 +131,7 @@ impl Exporter for SQLiteExporter {
         // 如果需要覆盖，删除旧文件
         if self.overwrite && Path::new(&self.path).exists() {
             std::fs::remove_file(&self.path).map_err(|e| {
-                Error::Export(ExportError::DatabaseExportFailed {
+                Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
                     reason: format!("删除旧数据库文件失败: {}", e),
                 })
@@ -140,7 +140,7 @@ impl Exporter for SQLiteExporter {
 
         // 打开数据库连接
         let conn = Connection::open(&self.path).map_err(|e| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: format!("打开数据库失败: {}", e),
             })
@@ -154,7 +154,7 @@ impl Exporter for SQLiteExporter {
              PRAGMA temp_store = MEMORY;",
         )
         .map_err(|e| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: format!("设置 PRAGMA 失败: {}", e),
             })
@@ -164,7 +164,7 @@ impl Exporter for SQLiteExporter {
         if self.overwrite {
             let drop_sql = drop_table_sql(&self.table_name);
             conn.execute(&drop_sql, []).map_err(|e| {
-                Error::Export(ExportError::DatabaseExportFailed {
+                Error::Database(DatabaseError::DatabaseExportFailed {
                     table_name: self.table_name.clone(),
                     reason: format!("删除表失败: {}", e),
                 })
@@ -173,7 +173,7 @@ impl Exporter for SQLiteExporter {
 
         let create_sql = create_table_sql(&self.table_name);
         conn.execute(&create_sql, []).map_err(|e| {
-            Error::Export(ExportError::DatabaseExportFailed {
+            Error::Database(DatabaseError::DatabaseExportFailed {
                 table_name: self.table_name.clone(),
                 reason: format!("创建表失败: {}", e),
             })
