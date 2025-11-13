@@ -269,6 +269,8 @@ impl Default for ExporterConfig {
 pub enum DatabaseType {
     /// SQLite 数据库
     SQLite,
+    /// DM（达梦）数据库
+    Dm,
 }
 
 impl DatabaseType {
@@ -276,6 +278,7 @@ impl DatabaseType {
     pub fn as_str(&self) -> &'static str {
         match self {
             DatabaseType::SQLite => "sqlite",
+            DatabaseType::Dm => "dm",
         }
     }
 }
@@ -292,9 +295,19 @@ pub struct DatabaseExporter {
     pub database_type: DatabaseType,
 
     // === 文件型数据库字段 (SQLite) ===
-    /// 数据库输出文件路径
+    /// 数据库输出文件路径（SQLite 使用）
     #[serde(alias = "path")]
-    pub file: String,
+    pub file: Option<String>,
+
+    // === 网络型数据库字段 (DM) ===
+    /// 数据库主机地址
+    pub host: Option<String>,
+    /// 数据库端口
+    pub port: Option<u16>,
+    /// 数据库用户名
+    pub username: Option<String>,
+    /// 数据库密码
+    pub password: Option<String>,
 
     // === 通用字段 ===
     /// 是否覆盖已存在的数据

@@ -12,3 +12,4 @@ coverage/
 *.ps1
 *.json
 *.jsonl
+dmRust/

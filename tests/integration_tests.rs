@@ -287,9 +287,10 @@ table_name = "sqllogs"
 
     assert!(status.success());
 
-    // 所有导出文件都应该被创建
-    assert!(out_csv.exists());
-    assert!(out_db.exists());
+    // 由于只支持单个导出器，应该按优先级使用 CSV（CSV > Database）
+    // 因此只有 CSV 文件应该被创建，DB 文件不应该存在
+    assert!(out_csv.exists(), "CSV 文件应该被创建");
+    assert!(!out_db.exists(), "DB 文件不应该被创建（优先级低于 CSV）");
 }
 
 #[cfg(not(feature = "sqlite"))]

@@ -57,6 +57,7 @@ tracing-subscriber = { version = "0.3.20" }
 
 # 可选数据库依赖，通过 feature 启用
 rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
+dameng = { path = "dmRust", optional = true }
 
 [dev-dependencies]
 tempfile = "3.23.0"
@@ -69,9 +70,7 @@ default = ["csv"]
 # 各导出器特性开关
 csv = []
 sqlite = ["dep:rusqlite"]
-
-# 预留的网络数据库导出器特性（当前未实现，编译几乎无体积）
-dm = []
+dm = ["dep:dameng"]
 
 [profile.release]
 # 极致减小体积（可能牺牲一些运行时性能与构建时间）

@@ -25,7 +25,7 @@ const DB_TABLE_COLUMNS: &str = "
 ";
 
 /// 生成 CREATE TABLE SQL 语句
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "dm"))]
 pub fn create_table_sql(table_name: &str) -> String {
     format!(
         "CREATE TABLE IF NOT EXISTS {} ({});",
@@ -34,13 +34,13 @@ pub fn create_table_sql(table_name: &str) -> String {
 }
 
 /// 生成 DROP TABLE SQL 语句
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "dm"))]
 pub fn drop_table_sql(table_name: &str) -> String {
     format!("DROP TABLE IF EXISTS {};", table_name)
 }
 
 /// 生成 INSERT SQL 语句
-#[cfg(feature = "sqlite")]
+#[cfg(any(feature = "sqlite", feature = "dm"))]
 pub fn insert_sql(table_name: &str) -> String {
     format!(
         "INSERT INTO {} (timestamp, ep, sess_id, thrd_id, username, trx_id, statement, \

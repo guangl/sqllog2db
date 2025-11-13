@@ -30,10 +30,15 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
 
     // 导出配置（只支持单个导出器）
     if let Some(db) = &cfg.exporter.database {
+        let location = match (&db.file, &db.host, db.port) {
+            (Some(file), _, _) => file.clone(),
+            (None, Some(host), Some(port)) => format!("{}:{}", host, port),
+            _ => "未配置".to_string(),
+        };
         info!(
             "数据库导出: {} ({} -> {} 覆盖: {})",
             db.database_type.as_str(),
-            db.file,
+            location,
             db.table_name,
             if db.overwrite { "是" } else { "否" }
         );

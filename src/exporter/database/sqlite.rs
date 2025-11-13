@@ -121,9 +121,9 @@ impl Exporter for SQLiteExporter {
         // 确保父目录存在
         if let Some(parent) = Path::new(&self.path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                Error::Export(ExportError::FileCreateFailed {
-                    path: parent.to_path_buf(),
-                    reason: e.to_string(),
+                Error::Database(DatabaseError::DatabaseExportFailed {
+                    table_name: self.table_name.clone(),
+                    reason: format!("创建目录失败: {}", e),
                 })
             })?;
         }
