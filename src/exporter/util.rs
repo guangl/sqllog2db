@@ -1,5 +1,5 @@
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::path::Path;
 
 /// 确保输出文件的父目录存在

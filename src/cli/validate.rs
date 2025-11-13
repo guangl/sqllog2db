@@ -31,10 +31,9 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     // 导出配置（只支持单个导出器）
     if let Some(db) = &cfg.exporter.database {
         info!(
-            "数据库导出: {} ({}:{} -> {} 覆盖: {})",
+            "数据库导出: {} ({} -> {} 覆盖: {})",
             db.database_type.as_str(),
-            if db.host.is_empty() { "N/A" } else { &db.host },
-            db.port,
+            db.path,
             db.table_name,
             if db.overwrite { "是" } else { "否" }
         );
@@ -147,11 +146,8 @@ replace_sql_parameters = false
 scatter = false
 
 [exporter.database]
-database_type = "dm"
-host = "localhost"
-port = 5236
-username = "admin"
-password = "password"
+database_type = "sqlite"
+path = "test.db"
 overwrite = true
 table_name = "test_table"
 
