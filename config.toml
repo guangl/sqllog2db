@@ -1,12 +1,15 @@
 [sqllog]
-path = "sqllogs"
+# SQL 日志输入目录（可包含多个日志文件）
+directory = "sqllogs"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+# 错误日志输出文件路径
+file = "errors.jsonl"
 
 [logging]
-path = "logs/sqllog2db.log"
+# 应用日志输出文件路径
+file = "logs/sqllog2db.log"
 level = "info"
 retention_days = 7
 
@@ -15,5 +18,6 @@ replace_sql_parameters = false
 scatter = false
 
 [exporter.csv]
-path = "export/sqllog2db.csv"
+# CSV 输出文件路径
+file = "export/sqllog2db.csv"
 overwrite = true

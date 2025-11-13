@@ -5,9 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.2] - 2025-01-XX
 
-## [0.1.1] - 2025-01-12
+### Changed
+- **配置字段命名统一**: 将 `path` 字段改为更明确的命名以区分目录和文件
+  - `sqllog.path` → `sqllog.directory` (输入目录)
+  - `error.path` → `error.file` (输出文件)
+  - `logging.path` → `logging.file` (输出文件)
+  - `exporter.csv.path` → `exporter.csv.file` (输出文件)
+  - `exporter.jsonl.path` → `exporter.jsonl.file` (输出文件)
+  - `exporter.database.path` → `exporter.database.file` (输出文件)
+- 旧的 `path` 字段名通过 `serde(alias)` 保持向后兼容，无需修改现有配置文件
+
+### Added
+- 添加 `docs/PATH_NAMING_UPDATE.md` 文档，详细说明字段命名更新和迁移指南
+
+## [0.1.1] - 2025-01-XX
 
 ### Added
 

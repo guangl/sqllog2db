@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 fn create_test_config(batch_size: usize, name: &str) -> PathBuf {
     let config_content = format!(
         r#"[sqllog]
-path = "sqllogs"
+directory = "sqllogs"
 batch_size = {}
 
 [error]
-path = "errors-bench.jsonl"
+file = "errors-bench.jsonl"
 
 [logging]
-path = "logs/bench.log"
+file = "logs/bench.log"
 level = "warn"
 retention_days = 1
 
@@ -21,7 +21,7 @@ replace_sql_parameters = false
 scatter = false
 
 [exporter.csv]
-path = "export/bench-{}.csv"
+file = "export/bench-{}.csv"
 overwrite = true
 "#,
         batch_size, name

@@ -102,7 +102,7 @@ impl ExporterManager {
         {
             if let Some(csv_config) = config.exporter.csv() {
                 let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
-                info!("使用 CSV 导出器: {}", csv_config.path);
+                info!("使用 CSV 导出器: {}", csv_config.file);
                 return Ok(Self {
                     exporter: Box::new(csv_exporter),
                     batch_size,
@@ -115,7 +115,7 @@ impl ExporterManager {
         {
             if let Some(jsonl_config) = config.exporter.jsonl() {
                 let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
-                info!("使用 JSONL 导出器: {}", jsonl_config.path);
+                info!("使用 JSONL 导出器: {}", jsonl_config.file);
                 return Ok(Self {
                     exporter: Box::new(jsonl_exporter),
                     batch_size,

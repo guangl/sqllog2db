@@ -7,12 +7,12 @@ use crate::error::Result;
 pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("配置验证已在 main 中完成");
 
-    info!("SQL日志路径: {}", cfg.sqllog.path());
+    info!("SQL日志输入目录: {}", cfg.sqllog.directory());
     info!("批量大小: {}", cfg.sqllog.batch_size());
     info!("日志级别: {}", cfg.logging.level());
-    info!("日志文件: {}", cfg.logging.path());
+    info!("日志文件: {}", cfg.logging.file());
     info!("日志保留: {} 天", cfg.logging.retention_days());
-    info!("错误日志: {}", cfg.error.path());
+    info!("错误日志: {}", cfg.error.file());
 
     info!(
         "功能特性 - 替换SQL参数: {}, 分散导出: {}",
@@ -33,20 +33,20 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
         info!(
             "数据库导出: {} ({} -> {} 覆盖: {})",
             db.database_type.as_str(),
-            db.path,
+            db.file,
             db.table_name,
             if db.overwrite { "是" } else { "否" }
         );
     } else if let Some(csv) = &cfg.exporter.csv {
         info!(
             "CSV导出: {} (覆盖: {})",
-            csv.path(),
+            csv.file,
             if csv.overwrite { "是" } else { "否" }
         );
     } else if let Some(jsonl) = &cfg.exporter.jsonl {
         info!(
             "JSONL导出: {} (覆盖: {})",
-            jsonl.path(),
+            jsonl.file,
             if jsonl.overwrite { "是" } else { "否" }
         );
     } else {
@@ -74,14 +74,14 @@ mod tests {
     fn test_validate_valid_config() {
         let toml_str = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.jsonl"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 
 [features]
@@ -89,7 +89,7 @@ replace_sql_parameters = false
 scatter = false
 
 [exporter.csv]
-path = "output.csv"
+file = "output.csv"
 overwrite = true
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
@@ -102,14 +102,14 @@ overwrite = true
     fn test_validate_auto_threading() {
         let toml_str = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.jsonl"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "debug"
 
 [features]
@@ -117,7 +117,7 @@ replace_sql_parameters = true
 scatter = true
 
 [exporter.jsonl]
-path = "output.jsonl"
+file = "output.jsonl"
 overwrite = true
 "#;
         let cfg: Config = toml::from_str(toml_str).unwrap();
@@ -131,14 +131,14 @@ overwrite = true
     fn test_validate_with_multiple_exporters() {
         let toml_str = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 0
 
 [error]
-path = "errors.jsonl"
+file = "errors.jsonl"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "warn"
 
 [features]
@@ -147,7 +147,7 @@ scatter = false
 
 [exporter.database]
 database_type = "sqlite"
-path = "test.db"
+file = "test.db"
 overwrite = true
 table_name = "test_table"
 

@@ -2,9 +2,9 @@
 use crate::error::{Error, ExportError, Result};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 /// 解析错误记录（JSONL 格式）
@@ -114,7 +114,7 @@ impl ErrorLogger {
 
         writeln!(self.writer, "{}", json).map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
-                path: self.path.clone(),
+                path: PathBuf::from(&self.path),
                 reason: e.to_string(),
             })
         })?;
@@ -151,7 +151,7 @@ impl ErrorLogger {
     pub fn flush(&mut self) -> Result<()> {
         self.writer.flush().map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
-                path: self.path.clone(),
+                path: PathBuf::from(&self.path),
                 reason: format!("刷新失败: {}", e),
             })
         })?;
@@ -170,9 +170,9 @@ impl ErrorLogger {
                 reason: e.to_string(),
             })
         })?;
-        std::fs::write(&self.summary_path, summary_json).map_err(|e| {
+        fs::write(&self.summary_path, summary_json).map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
-                path: self.summary_path.clone(),
+                path: PathBuf::from(&self.summary_path),
                 reason: e.to_string(),
             })
         })?;

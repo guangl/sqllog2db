@@ -51,7 +51,7 @@ impl DatabaseExporter {
             DatabaseType::SQLite => {
                 #[cfg(feature = "sqlite")]
                 {
-                    let path = config.path.as_deref().unwrap_or("sqllog.db");
+                    let path = config.file.as_deref().unwrap_or("sqllog.db");
                     DatabaseConnection::SQLite(sqlite::SQLiteExporter::with_batch_size(
                         path.to_string(),
                         table_name.clone(),
@@ -67,7 +67,7 @@ impl DatabaseExporter {
             DatabaseType::DuckDB => {
                 #[cfg(feature = "duckdb")]
                 {
-                    let path = config.path.as_deref().unwrap_or("sqllog.duckdb");
+                    let path = config.file.as_deref().unwrap_or("sqllog.duckdb");
                     DatabaseConnection::DuckDB(duckdb::DuckDBExporter::with_batch_size(
                         path.to_string(),
                         table_name.clone(),
@@ -80,7 +80,6 @@ impl DatabaseExporter {
                     DatabaseConnection::Unimplemented
                 }
             }
-            _ => DatabaseConnection::Unimplemented,
         };
 
         Self {
@@ -163,6 +162,4 @@ impl Exporter for DatabaseExporter {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-}
+mod tests {}

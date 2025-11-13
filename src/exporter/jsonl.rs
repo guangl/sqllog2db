@@ -80,9 +80,9 @@ impl JsonlExporter {
     /// 从配置创建 JSONL 导出器，支持自定义批量大小
     pub fn from_config(config: &crate::config::JsonlExporter, batch_size: usize) -> Self {
         if batch_size > 0 {
-            Self::with_batch_size(&config.path, config.overwrite, batch_size)
+            Self::with_batch_size(&config.file, config.overwrite, batch_size)
         } else {
-            Self::new(&config.path, config.overwrite)
+            Self::new(&config.file, config.overwrite)
         }
     }
 

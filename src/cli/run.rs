@@ -12,15 +12,15 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("开始运行 SQL 日志导出任务");
 
     // 第一步：创建 SQL 日志解析器
-    let parser = SqllogParser::new(cfg.sqllog.path());
-    info!("SQL 日志路径: {}", parser.path().display());
+    let parser = SqllogParser::new(cfg.sqllog.directory());
+    info!("SQL 日志输入目录: {}", parser.path().display());
 
     // 第二步：创建导出器管理器（单个导出器）
     let mut exporter_manager = ExporterManager::from_config(cfg)?;
     info!("使用导出器: {}", exporter_manager.name());
 
     // 第三步：创建错误日志记录器
-    let mut error_logger = ErrorLogger::new(cfg.error.path())?;
+    let mut error_logger = ErrorLogger::new(cfg.error.file())?;
 
     // 第四步：初始化导出器
     info!("初始化导出器...");
