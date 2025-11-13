@@ -75,14 +75,13 @@ fn test_validate_command_with_valid_config() {
 
     let cfg = r#"
 [sqllog]
-path = "sqllogs"
-thread_count = 0
+directory = "sqllogs"
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 retention_days = 7
 
@@ -120,14 +119,13 @@ fn test_csv_export_with_empty_logs() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -140,7 +138,7 @@ path = "{}"
 overwrite = true
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&work_dir.join("app.log")),
         toml_path(&out_csv)
     );
@@ -162,60 +160,6 @@ overwrite = true
     assert_eq!(content.lines().count(), 1);
 }
 
-#[cfg(feature = "jsonl")]
-#[test]
-fn test_jsonl_export_with_empty_logs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work_dir = tmp.path();
-
-    let logs_dir = work_dir.join("logs");
-    fs::create_dir_all(&logs_dir).unwrap();
-
-    let out_jsonl = work_dir.join("out.jsonl");
-    let config_path = work_dir.join("config.toml");
-
-    let cfg = format!(
-        r#"
-[sqllog]
-path = "{}"
-thread_count = 0
-
-[error]
-path = "{}"
-
-[logging]
-path = "{}"
-level = "info"
-retention_days = 7
-
-[features]
-replace_sql_parameters = false
-scatter = false
-
-[exporter.jsonl]
-path = "{}"
-overwrite = true
-"#,
-        toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
-        toml_path(&work_dir.join("app.log")),
-        toml_path(&out_jsonl)
-    );
-    fs::write(&config_path, cfg).unwrap();
-
-    let status = Command::new(binary_path())
-        .arg("run")
-        .arg("-c")
-        .arg(&config_path)
-        .status()
-        .expect("run failed");
-
-    assert!(status.success());
-
-    // JSONL 文件应该被创建（即使为空）
-    assert!(out_jsonl.exists());
-}
-
 #[cfg(feature = "sqlite")]
 #[test]
 fn test_sqlite_export_with_empty_logs() {
@@ -231,14 +175,13 @@ fn test_sqlite_export_with_empty_logs() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -253,7 +196,7 @@ overwrite = true
 table_name = "sqllogs"
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&work_dir.join("app.log")),
         toml_path(&out_db)
     );
@@ -287,77 +230,6 @@ fn test_sqlite_export_with_empty_logs() {
     eprintln!("skip sqlite test: 'sqlite' feature disabled");
 }
 
-#[cfg(feature = "duckdb")]
-#[test]
-fn test_duckdb_export_with_empty_logs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work_dir = tmp.path();
-
-    let logs_dir = work_dir.join("logs");
-    fs::create_dir_all(&logs_dir).unwrap();
-
-    let out_db = work_dir.join("out.duckdb");
-    let config_path = work_dir.join("config.toml");
-
-    let cfg = format!(
-        r#"
-[sqllog]
-path = "{}"
-thread_count = 0
-
-[error]
-path = "{}"
-
-[logging]
-path = "{}"
-level = "info"
-retention_days = 7
-
-[features]
-replace_sql_parameters = false
-scatter = false
-
-[exporter.database]
-database_type = "duckdb"
-path = "{}"
-overwrite = true
-table_name = "sqllogs"
-"#,
-        toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
-        toml_path(&work_dir.join("app.log")),
-        toml_path(&out_db)
-    );
-    fs::write(&config_path, cfg).unwrap();
-
-    let status = Command::new(binary_path())
-        .arg("run")
-        .arg("-c")
-        .arg(&config_path)
-        .status()
-        .expect("run failed");
-
-    assert!(status.success());
-    assert!(out_db.exists());
-
-    // 验证数据库表被创建
-    let conn = duckdb::Connection::open(&out_db).unwrap();
-    let table_exists: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'sqllogs'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(table_exists, 1);
-}
-
-#[cfg(not(feature = "duckdb"))]
-#[test]
-fn test_duckdb_export_with_empty_logs() {
-    eprintln!("skip duckdb test: 'duckdb' feature disabled");
-}
-
 #[cfg(feature = "sqlite")]
 #[test]
 fn test_multiple_exporters_simultaneously() {
@@ -368,21 +240,19 @@ fn test_multiple_exporters_simultaneously() {
     fs::create_dir_all(&logs_dir).unwrap();
 
     let out_csv = work_dir.join("out.csv");
-    let out_jsonl = work_dir.join("out.jsonl");
     let out_db = work_dir.join("out.db");
     let config_path = work_dir.join("config.toml");
 
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -394,10 +264,6 @@ scatter = false
 path = "{}"
 overwrite = true
 
-[exporter.jsonl]
-path = "{}"
-overwrite = true
-
 [exporter.database]
 database_type = "sqlite"
 path = "{}"
@@ -405,10 +271,9 @@ overwrite = true
 table_name = "sqllogs"
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&work_dir.join("app.log")),
         toml_path(&out_csv),
-        toml_path(&out_jsonl),
         toml_path(&out_db)
     );
     fs::write(&config_path, cfg).unwrap();
@@ -424,7 +289,6 @@ table_name = "sqllogs"
 
     // 所有导出文件都应该被创建
     assert!(out_csv.exists());
-    assert!(out_jsonl.exists());
     assert!(out_db.exists());
 }
 
@@ -450,14 +314,13 @@ fn test_database_batch_size_configuration() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -473,7 +336,7 @@ table_name = "sqllogs"
 batch_size = 500
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&work_dir.join("app.log")),
         toml_path(&out_db)
     );
@@ -511,20 +374,19 @@ fn test_error_log_creation_with_invalid_logs() {
     );
     create_mock_dm_log(&logs_dir.join("invalid2.log"), "Another invalid line\n");
 
-    let error_log = work_dir.join("errors.jsonl");
+    let error_log = work_dir.join("errors.json");
     let config_path = work_dir.join("config.toml");
 
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -556,7 +418,7 @@ overwrite = true
     // 注意：由于我们创建的是完全无效的文件，解析器可能会记录错误
     if error_log.exists() {
         let content = fs::read_to_string(&error_log).unwrap();
-        // 如果有错误，应该是JSONL格式
+        // 如果有错误，应该是JSON格式
         if !content.is_empty() {
             // 每行都应该是有效的JSON
             for line in content.lines() {
@@ -566,7 +428,7 @@ overwrite = true
         }
 
         // 校验 summary 指标文件
-        let summary = work_dir.join("errors.summary.json");
+        let summary = error_log.with_extension("json.summary.json");
         assert!(summary.exists(), "errors.summary.json should be generated");
         let summary_json: serde_json::Value =
             serde_json::from_reader(std::fs::File::open(&summary).unwrap()).unwrap();
@@ -591,14 +453,13 @@ fn test_logging_file_creation() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "debug"
 retention_days = 7
 
@@ -611,7 +472,7 @@ path = "{}"
 overwrite = true
 "#,
         toml_path(&sqllogs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&app_log),
         toml_path(&work_dir.join("out.csv"))
     );
@@ -651,56 +512,6 @@ overwrite = true
 }
 
 #[test]
-fn test_thread_count_configuration() {
-    let tmp = tempfile::tempdir().unwrap();
-    let work_dir = tmp.path();
-
-    let logs_dir = work_dir.join("logs");
-    fs::create_dir_all(&logs_dir).unwrap();
-
-    let config_path = work_dir.join("config.toml");
-
-    // 测试自定义线程数
-    let cfg = format!(
-        r#"
-[sqllog]
-path = "{}"
-thread_count = 2
-
-[error]
-path = "{}"
-
-[logging]
-path = "{}"
-level = "info"
-retention_days = 7
-
-[features]
-replace_sql_parameters = false
-scatter = false
-
-[exporter.csv]
-path = "{}"
-overwrite = true
-"#,
-        toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
-        toml_path(&work_dir.join("app.log")),
-        toml_path(&work_dir.join("out.csv"))
-    );
-    fs::write(&config_path, cfg).unwrap();
-
-    let status = Command::new(binary_path())
-        .arg("run")
-        .arg("-c")
-        .arg(&config_path)
-        .status()
-        .expect("run failed");
-
-    assert!(status.success());
-}
-
-#[test]
 fn test_overwrite_mode() {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path();
@@ -715,14 +526,13 @@ fn test_overwrite_mode() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -735,7 +545,7 @@ path = "{}"
 overwrite = true
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&work_dir.join("app.log")),
         toml_path(&out_csv)
     );

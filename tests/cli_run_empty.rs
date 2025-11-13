@@ -28,14 +28,13 @@ fn run_with_empty_logs_creates_csv_header_only() {
     let cfg = format!(
         r#"
 [sqllog]
-path = "{}"
-thread_count = 0
+directory = "{}"
 
 [error]
-path = "{}"
+file = "{}"
 
 [logging]
-path = "{}"
+file = "{}"
 level = "info"
 retention_days = 7
 
@@ -48,7 +47,7 @@ path = "{}"
 overwrite = true
 "#,
         toml_path(&logs_dir),
-        toml_path(&work_dir.join("errors.jsonl")),
+        toml_path(&work_dir.join("errors.json")),
         toml_path(&log_file),
         toml_path(&out_csv)
     );

@@ -56,7 +56,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
         info!("处理文件: {}", file_path_str);
 
         // 使用 dm-database-parser-sqllog 解析文件
-        match dm_database_parser_sqllog::iter_sqllogs_from_file(&file_path_str) {
+        match dm_database_parser_sqllog::iter_records_from_file(&file_path_str) {
             Ok(iter) => {
                 for result in iter {
                     match result {

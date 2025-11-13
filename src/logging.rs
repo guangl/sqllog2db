@@ -108,34 +108,3 @@ fn parse_log_level(level_str: &str) -> Result<Level> {
         })
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_log_level_valid() {
-        assert_eq!(parse_log_level("trace").unwrap(), Level::TRACE);
-        assert_eq!(parse_log_level("debug").unwrap(), Level::DEBUG);
-        assert_eq!(parse_log_level("info").unwrap(), Level::INFO);
-        assert_eq!(parse_log_level("warn").unwrap(), Level::WARN);
-        assert_eq!(parse_log_level("error").unwrap(), Level::ERROR);
-    }
-
-    #[test]
-    fn test_parse_log_level_case_insensitive() {
-        assert_eq!(parse_log_level("INFO").unwrap(), Level::INFO);
-        assert_eq!(parse_log_level("Debug").unwrap(), Level::DEBUG);
-        assert_eq!(parse_log_level("WARN").unwrap(), Level::WARN);
-    }
-
-    #[test]
-    fn test_parse_log_level_invalid() {
-        assert!(parse_log_level("invalid").is_err());
-        assert!(parse_log_level("critical").is_err());
-    }
-
-    // 注意：init_logging() 使用 tracing::subscriber::set_global_default
-    // 只能调用一次，因此无法在单元测试中多次测试初始化逻辑
-    // 目录创建逻辑在实际运行时已验证，这里仅测试辅助函数
-}

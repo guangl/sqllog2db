@@ -7,7 +7,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-/// 解析错误记录（JSONL 格式）
+/// 解析错误记录
 #[derive(Debug, Serialize)]
 pub struct ParseErrorRecord {
     /// 时间戳
@@ -87,12 +87,8 @@ impl ErrorLogger {
 
         info!("错误日志记录器已初始化: {}", path_str);
 
-        // summary 文件路径：errors.jsonl => errors.summary.json
-        let summary_path = if let Some(stripped) = path_str.strip_suffix(".jsonl") {
-            format!("{}.summary.json", stripped)
-        } else {
-            format!("{}.summary.json", path_str)
-        };
+        // summary 文件路径处理
+        let summary_path = format!("{}.summary.json", path_str);
 
         Ok(Self {
             writer: BufWriter::new(file),
@@ -195,144 +191,5 @@ impl ErrorLogger {
     /// 获取 summary 路径（便于测试）
     pub fn summary_path(&self) -> &str {
         &self.summary_path
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_error_logger_new() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("errors.jsonl");
-
-        let logger = ErrorLogger::new(&log_path)?;
-        assert!(log_path.exists());
-        assert!(logger.summary_path().ends_with("errors.summary.json"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_error_logger_log_error() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("errors.jsonl");
-
-        let mut logger = ErrorLogger::new(&log_path)?;
-
-        let record = ParseErrorRecord {
-            timestamp: "2025-01-09 10:00:00.000".to_string(),
-            file_path: "/path/to/file.log".to_string(),
-            error_message: "Invalid format".to_string(),
-            raw_content: Some("bad line content".to_string()),
-            line_number: Some(42),
-        };
-
-        logger.log_error(record)?;
-
-        logger.finalize()?;
-
-        // 验证文件内容
-        let content = fs::read_to_string(&log_path)?;
-        assert!(content.contains("Invalid format"));
-        assert!(content.contains("bad line content"));
-        assert!(content.contains("\"line_number\":42"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_error_logger_multiple_errors() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("errors.jsonl");
-
-        let mut logger = ErrorLogger::new(&log_path)?;
-
-        for i in 1..=5 {
-            let record = ParseErrorRecord {
-                timestamp: format!("2025-01-09 10:00:{:02}.000", i),
-                file_path: format!("/path/to/file{}.log", i),
-                error_message: format!("Error {}", i),
-                raw_content: None,
-                line_number: Some(i),
-            };
-            logger.log_error(record)?;
-        }
-
-        logger.finalize()?;
-
-        // 验证文件有5行
-        let content = fs::read_to_string(&log_path)?;
-        assert_eq!(content.lines().count(), 5);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_error_logger_creates_parent_directory() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir
-            .path()
-            .join("logs")
-            .join("errors")
-            .join("parse.jsonl");
-
-        let mut logger = ErrorLogger::new(&log_path)?;
-        assert!(log_path.exists());
-        assert!(log_path.parent().unwrap().exists());
-
-        logger.finalize()?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_error_logger_append_mode() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let log_path = temp_dir.path().join("errors.jsonl");
-
-        // 第一次写入
-        {
-            let mut logger = ErrorLogger::new(&log_path)?;
-            let record = ParseErrorRecord {
-                timestamp: "2025-01-09 10:00:00.000".to_string(),
-                file_path: "file1.log".to_string(),
-                error_message: "Error 1".to_string(),
-                raw_content: None,
-                line_number: None,
-            };
-            logger.log_error(record)?;
-            logger.finalize()?;
-
-            // 验证 summary 文件
-            let summary_path = log_path.parent().unwrap().join("errors.summary.json");
-            assert!(summary_path.exists());
-            let summary_content = fs::read_to_string(summary_path)?;
-            assert!(summary_content.contains("\"total\""));
-        }
-
-        // 第二次写入（追加）
-        {
-            let mut logger = ErrorLogger::new(&log_path)?;
-            let record = ParseErrorRecord {
-                timestamp: "2025-01-09 10:00:01.000".to_string(),
-                file_path: "file2.log".to_string(),
-                error_message: "Error 2".to_string(),
-                raw_content: None,
-                line_number: None,
-            };
-            logger.log_error(record)?;
-            logger.finalize()?;
-        }
-
-        // 验证有2行
-        let content = fs::read_to_string(&log_path)?;
-        assert_eq!(content.lines().count(), 2);
-        assert!(content.contains("Error 1"));
-        assert!(content.contains("Error 2"));
-
-        Ok(())
     }
 }

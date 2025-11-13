@@ -5,7 +5,7 @@ batch_size = 10000
 
 [error]
 # 错误日志输出文件路径
-file = "errors.jsonl"
+file = "errors.json"
 
 [logging]
 # 应用日志输出文件路径

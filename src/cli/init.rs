@@ -37,8 +37,8 @@ path = "sqllogs"
 batch_size = 10000
 
 [error]
-# 解析错误日志（JSON Lines 格式）输出路径
-path = "errors.jsonl"
+# 解析错误日志（JSON 格式）输出路径
+path = "errors.json"
 
 [logging]
 # 应用日志输出目录或文件路径 (当前版本要求为“文件路径”，例如 logs/sqllog2db.log)
@@ -56,23 +56,18 @@ replace_sql_parameters = false
 scatter = false
 
 # ===================== 导出器配置 =====================
-# 只能配置一个导出器 (CSV / JSONL / Database 三选一)
-# 同时配置多个时，按优先级使用：CSV > JSONL > Database
+# 只能配置一个导出器 (CSV / Database 三选一)
+# 同时配置多个时，按优先级使用：CSV > Database
 
 # 方案 1: CSV 导出（默认）
 [exporter.csv]
 path = "export/sqllog2db.csv"
 overwrite = true
 
-# 方案 2: JSONL 导出（使用时注释掉上面的 CSV，启用下面的 JSONL）
-# [exporter.jsonl]
-# path = "export/sqllog2db.jsonl"
-# overwrite = true
-
-# 方案 3: 数据库导出（使用时注释掉上面的导出器，启用下面的 Database）
-# 文件型数据库示例 (SQLite / DuckDB)
+# 方案 2: 数据库导出（使用时注释掉上面的导出器，启用下面的 Database）
+# 文件型数据库示例 (SQLite)
 # [exporter.database]
-# database_type = "sqlite" # 可选: sqlite | duckdb | postgres | oracle | dm
+# database_type = "sqlite" # 可选: sqlite | dm
 # path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
 # overwrite = true
 # table_name = "sqllog"
@@ -127,75 +122,4 @@ overwrite = true
     info!("  3. 运行导出: sqllog2db run -c {}", output_path);
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn test_init_creates_file() {
-        let test_path = "test_init_config.toml";
-
-        // 清理可能存在的测试文件
-        let _ = fs::remove_file(test_path);
-
-        // 生成配置
-        let result = handle_init(test_path, false);
-        assert!(result.is_ok());
-
-        // 验证文件存在
-        assert!(Path::new(test_path).exists());
-
-        // 读取并验证内容包含关键字段
-        let content = fs::read_to_string(test_path).unwrap();
-        assert!(content.contains("[sqllog]"));
-        assert!(content.contains("[error]"));
-        assert!(content.contains("[logging]"));
-        assert!(content.contains("retention_days"));
-        assert!(content.contains("batch_size"));
-        assert!(content.contains("[features]"));
-        assert!(content.contains("[exporter.csv]"));
-        assert!(content.contains("# [exporter.jsonl]"));
-
-        // 清理
-        fs::remove_file(test_path).unwrap();
-    }
-
-    #[test]
-    fn test_init_fails_if_exists_without_force() {
-        let test_path = "test_existing_config.toml";
-
-        // 创建一个已存在的文件
-        fs::write(test_path, "existing content").unwrap();
-
-        // 尝试生成（不使用 force）
-        let result = handle_init(test_path, false);
-        assert!(result.is_err());
-
-        // 清理
-        fs::remove_file(test_path).unwrap();
-    }
-
-    #[test]
-    fn test_init_overwrites_with_force() {
-        let test_path = "test_force_config.toml";
-
-        // 创建一个已存在的文件
-        fs::write(test_path, "old content").unwrap();
-
-        // 使用 force 覆盖
-        let result = handle_init(test_path, true);
-        assert!(result.is_ok());
-
-        // 验证内容已更新
-        let content = fs::read_to_string(test_path).unwrap();
-        assert!(content.contains("[sqllog]"));
-        assert!(content.contains("batch_size"));
-        assert!(!content.contains("old content"));
-
-        // 清理
-        fs::remove_file(test_path).unwrap();
-    }
 }

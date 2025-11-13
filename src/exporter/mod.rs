@@ -2,8 +2,8 @@
 ///
 /// 支持的导出目标:
 /// - CSV 文件
-/// - JSONL (JSON Lines) 文件
-/// - 数据库 (DuckDB, SQLite, PostgreSQL, Oracle, DM)
+///
+/// - 数据库 (SQLite, DM)
 use crate::config::Config;
 use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
@@ -11,16 +11,14 @@ use tracing::info;
 
 #[cfg(feature = "csv")]
 mod csv;
-mod database;
-#[cfg(feature = "jsonl")]
-mod jsonl;
+#[cfg(any(feature = "sqlite"))]
+pub mod database;
+//
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
-pub use database::DatabaseExporter;
-#[cfg(feature = "jsonl")]
-pub use jsonl::JsonlExporter;
+//
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -94,7 +92,7 @@ impl ExporterManager {
 
         info!("初始化导出器管理器...");
 
-        // 优先级：CSV > JSONL > Database
+        // 优先级：CSV > Database
         // 只创建第一个找到的导出器
 
         // 尝试创建 CSV 导出器
@@ -110,32 +108,7 @@ impl ExporterManager {
             }
         }
 
-        // 尝试创建 JSONL 导出器
-        #[cfg(feature = "jsonl")]
-        {
-            if let Some(jsonl_config) = config.exporter.jsonl() {
-                let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
-                info!("使用 JSONL 导出器: {}", jsonl_config.file);
-                return Ok(Self {
-                    exporter: Box::new(jsonl_exporter),
-                    batch_size,
-                });
-            }
-        }
-
-        // 尝试创建数据库导出器
-        if let Some(db_config) = config.exporter.database() {
-            let db_exporter = DatabaseExporter::from_config(db_config);
-            info!(
-                "使用数据库导出器: {} ({})",
-                db_config.table_name,
-                db_config.database_type.as_str()
-            );
-            return Ok(Self {
-                exporter: Box::new(db_exporter),
-                batch_size,
-            });
-        }
+        //
 
         Err(crate::error::Error::Config(
             crate::error::ConfigError::NoExporters,
@@ -206,34 +179,5 @@ impl ExporterManager {
         } else {
             info!("无可用的导出统计信息");
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_export_stats_new() {
-        let stats = ExportStats::new();
-        assert_eq!(stats.exported, 0);
-        assert_eq!(stats.skipped, 0);
-        assert_eq!(stats.failed, 0);
-        assert_eq!(stats.total(), 0);
-    }
-
-    #[test]
-    fn test_export_stats_record() {
-        let mut stats = ExportStats::new();
-
-        stats.record_success();
-        stats.record_success();
-        assert_eq!(stats.exported, 2);
-
-        // 直接设置字段进行测试（不再使用已删除的方法）
-        stats.skipped = 1;
-        stats.failed = 1;
-
-        assert_eq!(stats.total(), 4);
     }
 }

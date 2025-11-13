@@ -60,7 +60,7 @@ pub struct SqllogConfig {
     /// SQL 日志输入目录（可包含多个日志文件）
     pub directory: String,
     /// 批量提交大小，0 表示全部解析完之后一次性写入，>0 表示每 N 条记录批量提交一次
-    #[serde(default)]
+    #[serde(default = "default_batch_size")]
     pub batch_size: usize,
 }
 
@@ -113,7 +113,7 @@ impl ErrorConfig {
 impl Default for ErrorConfig {
     fn default() -> Self {
         Self {
-            file: "errors.jsonl".to_string(),
+            file: "errors.json".to_string(),
         }
     }
 }
@@ -213,15 +213,9 @@ impl Default for FeaturesConfig {
 pub struct ExporterConfig {
     pub database: Option<DatabaseExporter>,
     pub csv: Option<CsvExporter>,
-    pub jsonl: Option<JsonlExporter>,
 }
 
 impl ExporterConfig {
-    /// 获取数据库导出器
-    pub fn database(&self) -> Option<&DatabaseExporter> {
-        self.database.as_ref()
-    }
-
     /// 获取 CSV 导出器
     pub fn csv(&self) -> Option<&CsvExporter> {
         self.csv.as_ref()
@@ -229,7 +223,7 @@ impl ExporterConfig {
 
     /// 检查是否有任何导出器配置
     pub fn has_exporters(&self) -> bool {
-        self.database.is_some() || self.csv.is_some() || self.jsonl.is_some()
+        self.database.is_some() || self.csv.is_some()
     }
 
     /// 统计配置的导出器总数
@@ -239,9 +233,6 @@ impl ExporterConfig {
             count += 1;
         }
         if self.csv.is_some() {
-            count += 1;
-        }
-        if self.jsonl.is_some() {
             count += 1;
         }
         count
@@ -256,7 +247,7 @@ impl ExporterConfig {
         let total = self.total_exporters();
         if total > 1 {
             eprintln!("警告: 配置了 {} 个导出器，但只支持单个导出器。", total);
-            eprintln!("将按优先级使用第一个导出器：CSV > JSONL > Database");
+            eprintln!("将按优先级使用第一个导出器：CSV > Database");
         }
 
         Ok(())
@@ -268,7 +259,6 @@ impl Default for ExporterConfig {
         Self {
             database: None,
             csv: Some(CsvExporter::default()),
-            jsonl: None,
         }
     }
 }
@@ -277,8 +267,6 @@ impl Default for ExporterConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DatabaseType {
-    /// DuckDB 数据库
-    DuckDB,
     /// SQLite 数据库
     SQLite,
 }
@@ -287,7 +275,6 @@ impl DatabaseType {
     /// 获取数据库类型的字符串表示
     pub fn as_str(&self) -> &'static str {
         match self {
-            DatabaseType::DuckDB => "duckdb",
             DatabaseType::SQLite => "sqlite",
         }
     }
@@ -304,7 +291,7 @@ pub struct DatabaseExporter {
     /// 数据库类型
     pub database_type: DatabaseType,
 
-    // === 文件型数据库字段 (SQLite, DuckDB) ===
+    // === 文件型数据库字段 (SQLite) ===
     /// 数据库输出文件路径
     #[serde(alias = "path")]
     pub file: String,
@@ -314,6 +301,10 @@ pub struct DatabaseExporter {
     pub overwrite: bool,
     /// 目标表名
     pub table_name: String,
+}
+
+fn default_batch_size() -> usize {
+    10000
 }
 
 impl DatabaseExporter {}
@@ -332,25 +323,6 @@ impl Default for CsvExporter {
     fn default() -> Self {
         Self {
             file: "export/sqllog2db.csv".to_string(),
-            overwrite: true,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct JsonlExporter {
-    /// JSONL 输出文件路径
-    #[serde(alias = "path")]
-    pub file: String,
-    pub overwrite: bool,
-}
-
-impl JsonlExporter {}
-
-impl Default for JsonlExporter {
-    fn default() -> Self {
-        Self {
-            file: "export/sqllog2db.jsonl".to_string(),
             overwrite: true,
         }
     }
@@ -388,45 +360,6 @@ mod tests {
     }
 
     #[test]
-    fn test_config_from_valid_file() {
-        let content = r#"
-[sqllog]
-path = "sqllog"
-batch_size = 10000
-
-[error]
-path = "errors.jsonl"
-
-[logging]
-path = "logs/app.log"
-level = "info"
-
-[features]
-replace_sql_parameters = false
-scatter = false
-
-[exporter.database]
-database_type = "duckdb"
-path = "test.duckdb"
-overwrite = true
-table_name = "test_table"
-"#;
-        let path = create_temp_config(content, "test_config_valid.toml");
-
-        let result = Config::from_file(&path);
-        cleanup_temp_file(&path);
-
-        if let Err(ref e) = result {
-            eprintln!("Config parse error: {}", e);
-        }
-        assert!(result.is_ok());
-        let config = result.unwrap();
-        assert_eq!(config.error.file, "errors.jsonl");
-        assert_eq!(config.logging.file, "logs/app.log");
-        assert_eq!(config.logging.level, "info");
-    }
-
-    #[test]
     fn test_config_from_nonexistent_file() {
         let result = Config::from_file("nonexistent_config.toml");
         assert!(result.is_err());
@@ -451,14 +384,14 @@ table_name = "test_table"
     fn test_config_invalid_log_level() {
         let content = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "verbose"
 
 [features]
@@ -484,14 +417,14 @@ overwrite = true
     fn test_config_no_exporters() {
         let content = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 
 [features]
@@ -586,10 +519,10 @@ scatter = false
     #[test]
     fn test_error_config_path() {
         let error_config = ErrorConfig {
-            file: "errors/app.jsonl".to_string(),
+            file: "errors/app.json".to_string(),
         };
 
-        assert_eq!(error_config.file(), "errors/app.jsonl");
+        assert_eq!(error_config.file(), "errors/app.json");
     }
 
     #[test]
@@ -604,111 +537,17 @@ scatter = false
     }
 
     #[test]
-    fn test_exporter_config_database() {
-        let mut exporter = ExporterConfig {
-            database: Some(DatabaseExporter {
-                database_type: DatabaseType::SQLite,
-                file: "test.db".to_string(),
-                overwrite: true,
-                table_name: "sqllog".to_string(),
-            }),
-            csv: None,
-            jsonl: None,
-        };
-
-        assert!(exporter.database().is_some());
-        let db = exporter.database().unwrap();
-        assert_eq!(db.file, "test.db".to_string());
-        assert_eq!(db.database_type, DatabaseType::SQLite);
-
-        exporter.database = None;
-        assert!(exporter.database().is_none());
-    }
-
-    #[test]
-    fn test_exporter_config_csv() {
-        let mut exporter = ExporterConfig {
-            database: None,
-            csv: Some(CsvExporter {
-                file: "output.csv".to_string(),
-                overwrite: true,
-            }),
-            jsonl: None,
-        };
-
-        assert!(exporter.csv().is_some());
-        assert_eq!(exporter.csv().unwrap().file, "output.csv");
-
-        exporter.csv = None;
-        assert!(exporter.csv().is_none());
-    }
-
-    #[test]
-    fn test_exporter_config_has_exporters() {
-        let exporter_with_db = ExporterConfig {
-            database: Some(DatabaseExporter {
-                database_type: DatabaseType::DuckDB,
-                file: "test.duckdb".to_string(),
-                overwrite: true,
-                table_name: "table1".to_string(),
-            }),
-            csv: None,
-            jsonl: None,
-        };
-        assert!(exporter_with_db.has_exporters());
-
-        let exporter_with_csv = ExporterConfig {
-            database: None,
-            csv: Some(CsvExporter {
-                file: "output.csv".to_string(),
-                overwrite: true,
-            }),
-            jsonl: None,
-        };
-        assert!(exporter_with_csv.has_exporters());
-
-        let exporter_empty = ExporterConfig {
-            database: None,
-            csv: None,
-            jsonl: None,
-        };
-        assert!(!exporter_empty.has_exporters());
-    }
-
-    #[test]
-    fn test_exporter_config_validate() {
-        let valid_exporter = ExporterConfig {
-            database: Some(DatabaseExporter {
-                database_type: DatabaseType::SQLite,
-                file: "test2.db".to_string(),
-                overwrite: true,
-                table_name: "table1".to_string(),
-            }),
-            csv: None,
-            jsonl: None,
-        };
-        assert!(valid_exporter.validate().is_ok());
-
-        let invalid_exporter = ExporterConfig {
-            database: None,
-            csv: None,
-            jsonl: None,
-        };
-        assert!(invalid_exporter.validate().is_err());
-    }
-
-    #[test]
     fn test_config_from_str() {
         let content = r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 
 [features]
@@ -729,10 +568,10 @@ overwrite = true
         // 缺省 [sqllog] 时，启用默认值
         let content = r#"
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 
 [features]
@@ -753,14 +592,14 @@ overwrite = true
     fn test_sqllog_from_file_values() {
         let content = r#"
 [sqllog]
-path = "sqllog_dir"
+directory = "sqllog_dir"
 batch_size = 5000
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "info"
 
 [features]
@@ -785,14 +624,14 @@ overwrite = true
             let content = format!(
                 r#"
 [sqllog]
-path = "sqllog"
+directory = "sqllog"
 batch_size = 10000
 
 [error]
-path = "errors.jsonl"
+file = "errors.json"
 
 [logging]
-path = "logs/app.log"
+file = "logs/app.log"
 level = "{}"
 
 [features]
@@ -824,25 +663,9 @@ overwrite = true
     }
 
     #[test]
-    fn test_exporter_config_default_is_csv() {
-        let exporter = ExporterConfig::default();
-
-        // 默认应该只有 CSV 导出器
-        assert!(exporter.csv.is_some());
-        assert!(exporter.jsonl.is_none());
-        assert!(exporter.database.is_none());
-
-        // 应该有导出器
-        assert!(exporter.has_exporters());
-
-        // 应该能通过验证
-        assert!(exporter.validate().is_ok());
-    }
-
-    #[test]
     fn test_error_config_default() {
         let error = ErrorConfig::default();
-        assert_eq!(error.file(), "errors.jsonl");
+        assert_eq!(error.file(), "errors.json");
     }
 
     #[test]
@@ -900,21 +723,23 @@ overwrite = true
     fn test_sqllog_config_from_toml_with_batch_size() {
         let toml_str = r#"
             [sqllog]
-            path = "test_sqllog"
+            directory = "test_sqllog"
             batch_size = 500
 
             [error]
-            path = "errors.log"
+            file = "errors.log"
 
             [logging]
-            path = "logs/app.log"
+            file = "logs/app.log"
             level = "info"
 
             [features]
             replace_sql_parameters = false
             scatter = false
 
-            [exporter]
+            [exporter.csv]
+            path = "test.csv"
+            overwrite = true
         "#;
 
         let config: Config = toml::from_str(toml_str).unwrap();
@@ -927,25 +752,26 @@ overwrite = true
         // 测试当 TOML 中没有 batch_size 时，使用默认值
         let toml_str = r#"
             [sqllog]
-            path = "test_logs"
-            thread_count = 4
+            directory = "test_logs"
 
             [error]
-            path = "errors.log"
+            file = "errors.log"
 
             [logging]
-            path = "logs/app.log"
+            file = "logs/app.log"
             level = "info"
 
             [features]
             replace_sql_parameters = false
             scatter = false
 
-            [exporter]
+            [exporter.csv]
+            path = "test.csv"
+            overwrite = true
         "#;
 
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.sqllog.directory, "test_logs");
-        assert_eq!(config.sqllog.batch_size, 0); // 默认值
+        assert_eq!(config.sqllog.batch_size, 10000); // 默认值
     }
 }
