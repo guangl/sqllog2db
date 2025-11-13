@@ -576,3 +576,226 @@ overwrite = true
     // 由于都是空日志，内容应该相同（只有表头）
     assert_eq!(first_content, second_content);
 }
+
+/// 测试 DM 数据库导出器配置验证
+/// 注意：此测试不实际连接 DM 数据库，仅测试配置解析和验证
+#[cfg(feature = "dm")]
+#[test]
+fn test_dm_exporter_config_validation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+    let logs_dir = work_dir.join("logs");
+    fs::create_dir_all(&logs_dir).unwrap();
+
+    let config_path = work_dir.join("config.toml");
+
+    // 测试完整的 DM 配置
+    let cfg = format!(
+        r#"
+[sqllog]
+directory = "{}"
+
+[error]
+file = "{}"
+
+[logging]
+file = "{}"
+level = "info"
+retention_days = 7
+
+[features]
+replace_sql_parameters = false
+scatter = false
+
+[exporter.database]
+database_type = "dm"
+host = "localhost"
+port = 5236
+username = "SYSDBA"
+password = "SYSDBA"
+table_name = "sqllog"
+overwrite = true
+"#,
+        toml_path(&logs_dir),
+        toml_path(&work_dir.join("errors.json")),
+        toml_path(&work_dir.join("app.log"))
+    );
+    fs::write(&config_path, cfg).unwrap();
+
+    // 配置验证应该成功
+    let status = Command::new(binary_path())
+        .arg("validate")
+        .arg("-c")
+        .arg(&config_path)
+        .status()
+        .expect("validate failed");
+
+    assert!(status.success(), "DM 配置验证应该成功");
+}
+
+/// 测试 DM 数据库导出器配置缺少必需字段
+#[cfg(feature = "dm")]
+#[test]
+fn test_dm_exporter_missing_required_fields() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+    let logs_dir = work_dir.join("logs");
+    fs::create_dir_all(&logs_dir).unwrap();
+
+    let config_path = work_dir.join("config.toml");
+
+    // 测试缺少 host 字段的配置
+    let cfg = format!(
+        r#"
+[sqllog]
+directory = "{}"
+
+[error]
+file = "{}"
+
+[logging]
+file = "{}"
+level = "info"
+retention_days = 7
+
+[features]
+replace_sql_parameters = false
+scatter = false
+
+[exporter.database]
+database_type = "dm"
+port = 5236
+username = "SYSDBA"
+password = "SYSDBA"
+table_name = "sqllog"
+overwrite = true
+"#,
+        toml_path(&logs_dir),
+        toml_path(&work_dir.join("errors.json")),
+        toml_path(&work_dir.join("app.log"))
+    );
+    fs::write(&config_path, cfg).unwrap();
+
+    // 运行应该失败（缺少必需的 host 字段）
+    let status = Command::new(binary_path())
+        .arg("run")
+        .arg("-c")
+        .arg(&config_path)
+        .status()
+        .expect("command execution failed");
+
+    assert!(!status.success(), "缺少必需字段时应该失败");
+}
+
+/// 测试 DM 和 SQLite 配置的区分
+/// DM 需要 host/port/username/password，SQLite 需要 file
+#[cfg(all(feature = "dm", feature = "sqlite"))]
+#[test]
+fn test_dm_vs_sqlite_config_differences() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work_dir = tmp.path();
+    let logs_dir = work_dir.join("logs");
+    fs::create_dir_all(&logs_dir).unwrap();
+
+    // 测试 SQLite 配置（使用 file 字段）
+    let sqlite_config = work_dir.join("sqlite_config.toml");
+    let sqlite_cfg = format!(
+        r#"
+[sqllog]
+directory = "{}"
+
+[error]
+file = "{}"
+
+[logging]
+file = "{}"
+level = "info"
+retention_days = 7
+
+[features]
+replace_sql_parameters = false
+scatter = false
+
+[exporter.database]
+database_type = "sqlite"
+file = "{}"
+table_name = "sqllog"
+overwrite = true
+"#,
+        toml_path(&logs_dir),
+        toml_path(&work_dir.join("errors.json")),
+        toml_path(&work_dir.join("app.log")),
+        toml_path(&work_dir.join("test.db"))
+    );
+    fs::write(&sqlite_config, sqlite_cfg).unwrap();
+
+    let sqlite_status = Command::new(binary_path())
+        .arg("validate")
+        .arg("-c")
+        .arg(&sqlite_config)
+        .status()
+        .expect("sqlite validate failed");
+
+    assert!(sqlite_status.success(), "SQLite 配置应该有效");
+
+    // 测试 DM 配置（使用 host/port/username/password）
+    let dm_config = work_dir.join("dm_config.toml");
+    let dm_cfg = format!(
+        r#"
+[sqllog]
+directory = "{}"
+
+[error]
+file = "{}"
+
+[logging]
+file = "{}"
+level = "info"
+retention_days = 7
+
+[features]
+replace_sql_parameters = false
+scatter = false
+
+[exporter.database]
+database_type = "dm"
+host = "localhost"
+port = 5236
+username = "SYSDBA"
+password = "SYSDBA"
+table_name = "sqllog"
+overwrite = true
+"#,
+        toml_path(&logs_dir),
+        toml_path(&work_dir.join("errors.json")),
+        toml_path(&work_dir.join("app.log"))
+    );
+    fs::write(&dm_config, dm_cfg).unwrap();
+
+    let dm_status = Command::new(binary_path())
+        .arg("validate")
+        .arg("-c")
+        .arg(&dm_config)
+        .status()
+        .expect("dm validate failed");
+
+    assert!(dm_status.success(), "DM 配置应该有效");
+}
+
+#[cfg(not(feature = "dm"))]
+#[test]
+fn test_dm_exporter_config_validation() {
+    eprintln!("skip dm test: 'dm' feature disabled");
+}
+
+#[cfg(not(feature = "dm"))]
+#[test]
+fn test_dm_exporter_missing_required_fields() {
+    eprintln!("skip dm test: 'dm' feature disabled");
+}
+
+#[cfg(not(all(feature = "dm", feature = "sqlite")))]
+#[test]
+fn test_dm_vs_sqlite_config_differences() {
+    eprintln!("skip test: requires both 'dm' and 'sqlite' features");
+}
