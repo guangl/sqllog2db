@@ -36,6 +36,11 @@ name = "profile"
 path = "benches/profile.rs"
 harness = false
 
+[[bench]]
+name = "parser_stress_test"
+path = "benches/parser_stress_test.rs"
+harness = false
+
 [dependencies]
 anyhow = "1.0.100"
 chrono = "0.4"
