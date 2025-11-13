@@ -1,7 +1,7 @@
 use crate::error::Result;
 use std::fs;
 use std::path::Path;
-use tracing::{debug, error, info, warn};
+use log::{debug, error, info, warn};
 
 /// 生成默认配置文件
 pub fn handle_init(output_path: &str, force: bool) -> Result<()> {

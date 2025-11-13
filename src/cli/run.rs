@@ -4,7 +4,7 @@ use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::Sqllog;
-use tracing::{info, warn};
+use log::{info, warn};
 
 /// 批处理统计信息
 struct BatchStats {

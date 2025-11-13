@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **批量导出**：支持配置批量提交大小（`batch_size`），优化内存与吞吐
 - **错误聚合与分类**：
   - 解析失败逐条记录到 `errors.jsonl`（JSON Lines 格式）
-  - 自动生成 `errors.summary.json`，包含错误总数、分类统计、解析错误子类型分布
+  - 自动生成 `errors.summary.txt`，包含错误总数、分类统计、解析错误子类型分布
 - **日志系统**：
   - 每日滚动日志文件
   - 可配置日志级别（trace/debug/info/warn/error）

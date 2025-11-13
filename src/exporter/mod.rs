@@ -6,7 +6,7 @@
 use crate::config::Config;
 use crate::error::Result;
 use dm_database_parser_sqllog::Sqllog;
-use tracing::info;
+use log::info;
 
 #[cfg(feature = "csv")]
 mod csv;

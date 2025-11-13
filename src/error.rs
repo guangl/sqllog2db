@@ -117,11 +117,6 @@ pub enum ExportError {
     /// CSV 导出失败
     #[error("CSV导出失败 {path}: {reason}")]
     CsvExportFailed { path: PathBuf, reason: String },
-
-    /// 序列化失败
-    #[error("序列化失败 ({data_type}): {reason}")]
-    SerializationFailed { data_type: String, reason: String },
-
     /// 创建输出文件失败
     #[error("创建输出文件失败 {path}: {reason}")]
     FileCreateFailed { path: PathBuf, reason: String },

@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 // 使用 once_cell 缓存 CSV 头部，避免每次重新构建
 static CSV_HEADER: Lazy<&str> = Lazy::new(

@@ -1,21 +1,23 @@
 use crate::config::LoggingConfig;
 use crate::constants::LOG_LEVELS;
 use crate::error::{Error, FileError, Result};
+use log::SetLoggerError;
+use log::{Level, LevelFilter, Metadata, Record};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
-use tracing::Level;
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use std::sync::{Arc, Mutex};
 
 // 使用 once_cell 缓存日志级别映射表，避免每次查找时重新构建
-static LOG_LEVEL_MAP: Lazy<HashMap<&'static str, Level>> = Lazy::new(|| {
+static LOG_LEVEL_MAP: Lazy<HashMap<&'static str, LevelFilter>> = Lazy::new(|| {
     let mut map = HashMap::new();
-    map.insert("trace", Level::TRACE);
-    map.insert("debug", Level::DEBUG);
-    map.insert("info", Level::INFO);
-    map.insert("warn", Level::WARN);
-    map.insert("error", Level::ERROR);
+    map.insert("trace", LevelFilter::Trace);
+    map.insert("debug", LevelFilter::Debug);
+    map.insert("info", LevelFilter::Info);
+    map.insert("warn", LevelFilter::Warn);
+    map.insert("error", LevelFilter::Error);
     map
 });
 
@@ -59,38 +61,80 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         .and_then(|e| e.to_str())
         .unwrap_or("log");
 
-    // 创建文件 appender（每天滚动，自动管理保留天数）
-    let file_appender = RollingFileAppender::builder()
-        .rotation(Rotation::DAILY)
-        .filename_prefix(file_stem)
-        .filename_suffix(extension)
-        .max_log_files(config.retention_days())
-        .build(parent_dir)
+    // 创建简单的追加日志文件（不做滚动），更轻量：使用 Arc<Mutex<File>> 作为共享 writer
+    let log_file_path = parent_dir.join(format!("{}.{}", file_stem, extension));
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file_path)
         .map_err(|e| {
             Error::File(FileError::CreateDirectoryFailed {
-                path: parent_dir.to_path_buf(),
+                path: log_file_path.clone(),
                 reason: e.to_string(),
             })
         })?;
 
-    // 使用 LevelFilter 代替 EnvFilter（移除 env-filter 特性以减小体积）
-    let subscriber = tracing_subscriber::registry()
-        .with(LevelFilter::from_level(level))
-        .with(
-            fmt::layer()
-                .with_writer(file_appender)
-                .with_ansi(false)
-                .with_target(true)
-                .with_thread_ids(true)
-                .with_line_number(true),
-        )
-        .with(fmt::layer().with_writer(std::io::stdout).with_target(false));
+    let shared_file = Arc::new(Mutex::new(file));
 
-    subscriber.init();
+    // 自定义简单 Logger，写入文件与 stdout
+    struct SimpleLogger {
+        level: LevelFilter,
+        file: Arc<Mutex<std::fs::File>>,
+    }
 
-    tracing::info!(
-        "日志系统初始化完成 - 级别: {}, 文件: {}, 保留天数: {}",
-        level.as_str(),
+    impl log::Log for SimpleLogger {
+        fn enabled(&self, metadata: &Metadata) -> bool {
+            match self.level {
+                LevelFilter::Off => false,
+                LevelFilter::Error => metadata.level() == Level::Error,
+                LevelFilter::Warn => metadata.level() <= Level::Warn,
+                LevelFilter::Info => metadata.level() <= Level::Info,
+                LevelFilter::Debug => metadata.level() <= Level::Debug,
+                LevelFilter::Trace => true,
+            }
+        }
+
+        fn log(&self, record: &Record) {
+            if !self.enabled(record.metadata()) {
+                return;
+            }
+
+            let msg = format!(
+                "[{}] {} - {}\n",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+
+            // 写到 stdout
+            let _ = std::io::stdout().write_all(msg.as_bytes());
+
+            // 写到文件
+            if let Ok(mut f) = self.file.lock() {
+                let _ = f.write_all(msg.as_bytes());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    let logger = SimpleLogger {
+        level,
+        file: shared_file.clone(),
+    };
+
+    // 注册 logger
+    log::set_max_level(level);
+    log::set_boxed_logger(Box::new(logger)).map_err(|e: SetLoggerError| {
+        Error::File(FileError::CreateDirectoryFailed {
+            path: log_file_path.clone(),
+            reason: format!("设置日志器失败: {}", e),
+        })
+    })?;
+
+    log::info!(
+        "日志系统初始化完成 - 级别: {:?}, 文件: {}, 保留天数: {}",
+        level,
         config.file,
         config.retention_days()
     );
@@ -99,7 +143,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
 }
 
 /// 解析日志级别字符串
-fn parse_log_level(level_str: &str) -> Result<Level> {
+fn parse_log_level(level_str: &str) -> Result<LevelFilter> {
     let lower = level_str.to_lowercase();
     LOG_LEVEL_MAP.get(lower.as_str()).copied().ok_or_else(|| {
         Error::Config(crate::error::ConfigError::InvalidLogLevel {

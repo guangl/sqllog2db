@@ -8,7 +8,7 @@
 一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV 或数据库（SQLite），并提供完善的错误追踪与统计。
 
 - **高性能**：单线程流式处理，~397K 条/秒吞吐量（推荐配置）
-- **稳健可靠**：批量导出 + 错误聚合与摘要（errors.summary.json）
+- **稳健可靠**：批量导出 + 错误聚合与摘要（errors.summary.txt）
 - **易于使用**：清晰的 TOML 配置，三步完成导出任务
 - **体积优化**：默认仅 CSV 导出，可选启用数据库特性
 
@@ -36,7 +36,7 @@
   - `batch_size = 0`: 累积所有记录，最后一次性 flush
 - **完善的错误追踪**：
   - 解析失败逐条记录到 `errors.json`（JSON Lines 格式）
-  - 自动生成 `errors.summary.json`，包含总数、分类与子类型统计
+  - 自动生成 `errors.summary.txt`，包含总数、分类与子类型统计
 - **日志管理**：每日滚动、保留天数可配（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
 
@@ -165,12 +165,12 @@ overwrite = true
 - **导出统计**：导出器会输出成功/失败条数与批量 flush 次数
 - **错误日志**：
   - `errors.json` 用于记录逐条解析失败的详细信息（JSON Lines 格式）
-  - `errors.json.summary.json` 自动生成的摘要文件，包含：
+  - `errors.json.summary.txt` 自动生成的摘要文件，包含：
     - `total`: 错误总数
     - `by_category`: 各错误大类计数（Config/File/Database/Parse/Export）
     - `parse_variants`: 解析错误子类型分布
 
-> 如果没有错误发生，`errors.summary.json` 依然会生成（空计数），便于自动化汇总。
+> 如果没有错误发生，`errors.summary.txt` 依然会生成（空计数），便于自动化汇总。
 
 ---
 

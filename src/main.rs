@@ -9,8 +9,8 @@ mod parser;
 
 use config::Config;
 use error::Result;
+use log::info;
 use std::path::Path;
-use tracing::info;
 
 fn main() -> Result<()> {
     // 解析命令行参数
@@ -21,11 +21,7 @@ fn main() -> Result<()> {
     match &cli.command {
         Some(cli::opts::Commands::Init { output, force }) => {
             // init 命令不需要加载配置,使用简单的控制台日志
-            tracing_subscriber::fmt()
-                .with_target(false)
-                .with_thread_ids(false)
-                .with_line_number(false)
-                .init();
+            env_logger::init();
 
             cli::init::handle_init(output, *force)
         }

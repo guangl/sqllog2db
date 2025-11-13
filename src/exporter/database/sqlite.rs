@@ -5,7 +5,7 @@ use crate::exporter::{ExportStats, Exporter};
 use dm_database_parser_sqllog::Sqllog;
 use rusqlite::{Connection, params};
 use std::path::Path;
-use tracing::{debug, info};
+use log::{debug, info};
 
 /// SQLite 数据库导出器
 pub struct SQLiteExporter {

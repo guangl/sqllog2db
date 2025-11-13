@@ -2,7 +2,7 @@
 /// 使用 dm-database-parser-sqllog 库解析达梦数据库的 SQL 日志文件
 use crate::error::{Error, ParserError, Result};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 /// SQL 日志解析器
 pub struct SqllogParser {

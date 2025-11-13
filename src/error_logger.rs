@@ -1,38 +1,32 @@
 /// 错误日志记录器 - 将解析失败的原始数据记录到文件
 use crate::error::{Error, ExportError, Result};
-use serde::Serialize;
+use log::{debug, info};
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
 
 /// 解析错误记录
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct ParseErrorRecord {
-    /// 时间戳
-    pub timestamp: String,
     /// 错误发生的文件路径
     pub file_path: String,
     /// 错误原因/描述
     pub error_message: String,
     /// 原始数据内容（导致解析失败的行或片段）
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_content: Option<String>,
     /// 行号（如果适用）
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub line_number: Option<usize>,
 }
 
 /// 错误日志记录器
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default)]
 pub struct ErrorMetrics {
     /// 总错误数
     pub total: usize,
     /// 按分类统计
     pub by_category: HashMap<String, usize>,
     /// 解析错误的细分（变体）统计
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub parse_variants: HashMap<String, usize>,
 }
 
@@ -87,8 +81,8 @@ impl ErrorLogger {
 
         info!("错误日志记录器已初始化: {}", path_str);
 
-        // summary 文件路径处理
-        let summary_path = format!("{}.summary.json", path_str);
+        // summary 文件路径处理（使用文本后缀）
+        let summary_path = format!("{}.summary.txt", path_str);
 
         Ok(Self {
             writer: BufWriter::new(file),
@@ -101,14 +95,21 @@ impl ErrorLogger {
 
     /// 记录一个解析错误
     pub fn log_error(&mut self, record: ParseErrorRecord) -> Result<()> {
-        let json = serde_json::to_string(&record).map_err(|e| {
-            Error::Export(ExportError::SerializationFailed {
-                data_type: "ParseErrorRecord".to_string(),
-                reason: e.to_string(),
-            })
-        })?;
+        // 将记录以可读文本行写入（file | error | raw | line）
+        let raw = record.raw_content.clone().unwrap_or_default();
+        let line_no = record
+            .line_number
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+        let line = format!(
+            "{} | {} | {} | {}",
+            record.file_path,
+            record.error_message,
+            raw.replace('\n', "\\n"),
+            line_no
+        );
 
-        writeln!(self.writer, "{}", json).map_err(|e| {
+        writeln!(self.writer, "{}", line).map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
                 path: PathBuf::from(&self.path),
                 reason: e.to_string(),
@@ -128,9 +129,6 @@ impl ErrorLogger {
         error: &dm_database_parser_sqllog::ParseError,
     ) -> Result<()> {
         let record = ParseErrorRecord {
-            timestamp: chrono::Local::now()
-                .format("%Y-%m-%d %H:%M:%S%.3f")
-                .to_string(),
             file_path: file_path.to_string(),
             error_message: format!("{:?}", error),
             raw_content: None, // dm-database-parser-sqllog 的 ParseError 不包含原始内容
@@ -159,14 +157,20 @@ impl ErrorLogger {
     /// 完成记录并显示统计信息
     pub fn finalize(&mut self) -> Result<()> {
         self.flush()?;
-        // 写入 summary JSON
-        let summary_json = serde_json::to_string_pretty(&self.metrics).map_err(|e| {
-            Error::Export(ExportError::SerializationFailed {
-                data_type: "ErrorMetrics".to_string(),
-                reason: e.to_string(),
-            })
-        })?;
-        fs::write(&self.summary_path, summary_json).map_err(|e| {
+        // 写入 summary 文本（可读格式）
+        let mut summary = String::new();
+        summary.push_str(&format!("total: {}\n", self.metrics.total));
+        for (k, v) in &self.metrics.by_category {
+            summary.push_str(&format!("category {}: {}\n", k, v));
+        }
+        if !self.metrics.parse_variants.is_empty() {
+            summary.push_str("parse_variants:\n");
+            for (k, v) in &self.metrics.parse_variants {
+                summary.push_str(&format!("  {}: {}\n", k, v));
+            }
+        }
+
+        fs::write(&self.summary_path, summary).map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
                 path: PathBuf::from(&self.summary_path),
                 reason: e.to_string(),
