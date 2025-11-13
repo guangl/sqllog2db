@@ -1,10 +1,23 @@
 use crate::config::LoggingConfig;
 use crate::constants::LOG_LEVELS;
 use crate::error::{Error, FileError, Result};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::path::Path;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+// 使用 once_cell 缓存日志级别映射表，避免每次查找时重新构建
+static LOG_LEVEL_MAP: Lazy<HashMap<&'static str, Level>> = Lazy::new(|| {
+    let mut map = HashMap::new();
+    map.insert("trace", Level::TRACE);
+    map.insert("debug", Level::DEBUG);
+    map.insert("info", Level::INFO);
+    map.insert("warn", Level::WARN);
+    map.insert("error", Level::ERROR);
+    map
+});
 
 /// 初始化日志系统
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
@@ -12,7 +25,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     let level = parse_log_level(&config.level)?;
 
     // 获取日志文件路径和目录
-    let log_path = Path::new(&config.path);
+    let log_path = Path::new(&config.file);
     let parent_dir = log_path.parent().ok_or_else(|| {
         Error::File(FileError::CreateDirectoryFailed {
             path: log_path.to_path_buf(),
@@ -78,7 +91,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     tracing::info!(
         "日志系统初始化完成 - 级别: {}, 文件: {}, 保留天数: {}",
         level.as_str(),
-        config.path,
+        config.file,
         config.retention_days()
     );
 
@@ -88,15 +101,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
 /// 解析日志级别字符串
 fn parse_log_level(level_str: &str) -> Result<Level> {
     let lower = level_str.to_lowercase();
-    let mapped = match lower.as_str() {
-        "trace" => Some(Level::TRACE),
-        "debug" => Some(Level::DEBUG),
-        "info" => Some(Level::INFO),
-        "warn" => Some(Level::WARN),
-        "error" => Some(Level::ERROR),
-        _ => None,
-    };
-    mapped.ok_or_else(|| {
+    LOG_LEVEL_MAP.get(lower.as_str()).copied().ok_or_else(|| {
         Error::Config(crate::error::ConfigError::InvalidLogLevel {
             level: level_str.to_string(),
             valid_levels: LOG_LEVELS.iter().map(|s| s.to_string()).collect(),

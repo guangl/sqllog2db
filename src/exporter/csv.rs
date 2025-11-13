@@ -2,10 +2,16 @@ use super::util::{ensure_parent_dir, open_output_file};
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
+use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
+
+// 使用 once_cell 缓存 CSV 头部，避免每次重新构建
+static CSV_HEADER: Lazy<&str> = Lazy::new(
+    || "timestamp,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n",
+);
 
 /// CSV 导出器 - 将 SQL 日志导出为 CSV 格式
 pub struct CsvExporter {
@@ -38,9 +44,9 @@ impl CsvExporter {
     /// 从配置创建 CSV 导出器，支持自定义批量大小
     pub fn from_config(config: &crate::config::CsvExporter, batch_size: usize) -> Self {
         if batch_size > 0 {
-            Self::with_batch_size(&config.path, config.overwrite, batch_size)
+            Self::with_batch_size(&config.file, config.overwrite, batch_size)
         } else {
-            Self::new(&config.path, config.overwrite)
+            Self::new(&config.file, config.overwrite)
         }
     }
 
@@ -57,10 +63,8 @@ impl CsvExporter {
             })
         })?;
 
-        // CSV 头部字段
-        let header = "timestamp,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n";
-
-        writer.write_all(header.as_bytes()).map_err(|e| {
+        // 使用预编译的 CSV 头部
+        writer.write_all(CSV_HEADER.as_bytes()).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
                 reason: format!("写入 CSV 头部失败: {}", e),
@@ -297,7 +301,7 @@ mod tests {
     #[test]
     fn test_csv_exporter_from_config() {
         let config = crate::config::CsvExporter {
-            path: "output.csv".to_string(),
+            file: "output.csv".to_string(),
             overwrite: false,
         };
 
@@ -309,7 +313,7 @@ mod tests {
     #[test]
     fn test_csv_exporter_from_config_with_batch() {
         let config = crate::config::CsvExporter {
-            path: "output.csv".to_string(),
+            file: "output.csv".to_string(),
             overwrite: true,
         };
 
