@@ -1,3 +1,4 @@
+pub mod features;
 // Library entry point
 pub mod config;
 pub mod constants;

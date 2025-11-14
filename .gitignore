@@ -11,5 +11,6 @@ coverage/
 *.profraw
 *.ps1
 *.json
-*.jsonl
+*.txt
 dmRust/
+outputs/

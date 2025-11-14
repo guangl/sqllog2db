@@ -2,15 +2,15 @@ use super::util::ensure_parent_dir;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
+use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use log::{debug, info, warn};
 
 // 使用 once_cell 缓存 CSV 头部，避免每次重新构建
 static CSV_HEADER: Lazy<&str> = Lazy::new(
-    || "timestamp,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n",
+    || "ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n",
 );
 
 /// 检查字段是否需要引号包围
@@ -158,7 +158,7 @@ impl Exporter for CsvExporter {
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                    reason: format!("Failed to create directory: {}", e),
+                reason: format!("Failed to create directory: {}", e),
             })
         })?;
 
@@ -181,7 +181,7 @@ impl Exporter for CsvExporter {
         let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                    reason: format!("Failed to open file: {}", e),
+                reason: format!("Failed to open file: {}", e),
             })
         })?;
         self.writer = Some(BufWriter::new(file));

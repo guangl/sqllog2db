@@ -13,20 +13,16 @@ file = "logs/sqllog2db.log"
 level = "info"
 retention_days = 7
 
-[features]
-replace_sql_parameters = false
-scatter = false
-
-[exporter.csv]
-overwrite = true
-append = false
-file = "outputs/sqllog_dm.csv"
-
-# [exporter.sqlite]
-# table_name = "sqllog"
+# [exporter.csv]
 # overwrite = true
 # append = false
-# file = "outputs/sqllog_dm.db"
+# file = "outputs/sqllog_dm.csv"
+
+[exporter.sqlite]
+table_name = "sqllog"
+overwrite = true
+append = false
+file = "outputs/sqllog_dm.db"
 
 # [exporter.dm]
 # table_name = "sqllog"
@@ -38,3 +34,10 @@ file = "outputs/sqllog_dm.csv"
 # port = 5236
 # username = "SYSDBA"
 # password = "DMDBA_hust4400"
+
+[features.replace_parameters]
+enable = true
+
+[features.scatter]
+enable = true
+file = "outputs/scatter_plot.png"

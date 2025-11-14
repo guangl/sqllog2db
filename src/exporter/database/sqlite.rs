@@ -3,9 +3,9 @@ use crate::constants::{create_table_sql, drop_table_sql, insert_sql};
 use crate::error::{DatabaseError, Error, Result};
 use crate::exporter::{ExportStats, Exporter};
 use dm_database_parser_sqllog::Sqllog;
+use log::{debug, info};
 use rusqlite::{Connection, params};
 use std::path::Path;
-use log::{debug, info};
 
 /// SQLite 数据库导出器
 pub struct SQLiteExporter {
@@ -82,6 +82,7 @@ impl SQLiteExporter {
                     record.meta.trxid,
                     record.meta.statement,
                     record.meta.appname,
+                    record.meta.client_ip,
                     record.body,
                     None::<String>, // parameters placeholder
                     record.indicators.as_ref().map(|i| i.execute_time),

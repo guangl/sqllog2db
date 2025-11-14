@@ -9,7 +9,7 @@ pub const LOG_LEVELS: &[&str] = &["trace", "debug", "info", "warn", "error"];
 /// 数据库表列定义（所有数据库导出器共用）
 #[allow(dead_code)]
 const DB_TABLE_COLUMNS: &str = "
-    timestamp VARCHAR(64) NOT NULL,
+    ts VARCHAR(64) NOT NULL,
     ep INTEGER NOT NULL,
     sess_id VARCHAR(64) NOT NULL,
     thrd_id VARCHAR(64) NOT NULL,
@@ -44,7 +44,7 @@ pub fn drop_table_sql(table_name: &str) -> String {
 #[cfg(feature = "sqlite")]
 pub fn insert_sql(table_name: &str) -> String {
     format!(
-        "INSERT INTO {} (timestamp, ep, sess_id, thrd_id, username, trx_id, statement, \
+        "INSERT INTO {} (ts, ep, sess_id, thrd_id, username, trx_id, statement, \
          appname, client_ip, body, replace_sql_parameters, exec_time_ms, row_count, exec_id) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         table_name
