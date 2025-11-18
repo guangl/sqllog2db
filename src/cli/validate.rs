@@ -15,35 +15,30 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("错误日志: {}", cfg.error.file());
 
     info!(
-           "Feature flags - replace SQL params: {}, generate hash: {}",
+        "Feature flags - replace SQL params: {}",
         if cfg.features.should_replace_sql_parameters() {
             "启用"
         } else {
             "禁用"
         },
-        if cfg.features.should_scatter() {
-            "启用"
-        } else {
-            "禁用"
-        }
     );
 
     // 导出配置（只支持单个导出器）
     if let Some(csv) = &cfg.exporter.csv {
         info!(
-                "CSV export: {} (overwrite: {})",
-                csv.file,
-                if csv.overwrite { "yes" } else { "no" }
+            "CSV export: {} (overwrite: {})",
+            csv.file,
+            if csv.overwrite { "yes" } else { "no" }
         );
     }
     #[cfg(feature = "sqlite")]
     if cfg.exporter.csv.is_none() {
         if let Some(sqlite) = &cfg.exporter.sqlite {
             info!(
-                    "SQLite export: {} -> {} (overwrite: {})",
-                    sqlite.file,
-                    sqlite.table_name,
-                    if sqlite.overwrite { "yes" } else { "no" }
+                "SQLite export: {} -> {} (overwrite: {})",
+                sqlite.file,
+                sqlite.table_name,
+                if sqlite.overwrite { "yes" } else { "no" }
             );
         } else {
             info!("导出器: 未配置");

@@ -55,19 +55,16 @@ impl Config {
         // 验证 sqllog 配置
         self.sqllog.validate()?;
 
-        // 如果启用了任何 feature（如 replace_sql_parameters 或 scatter），强制要求配置数据库型导出器（dm 或 sqlite）
-        if self.features.should_replace_sql_parameters() || self.features.should_scatter() {
+        // 如果启用了任何 feature（如 replace_sql_parameters），强制要求配置数据库型导出器（sqlite）
+        if self.features.should_replace_sql_parameters() {
             if !self.exporter.has_db_exporter() {
                 return Err(Error::Config(ConfigError::InvalidValue {
                     field: "exporter".to_string(),
                     value: format!(
-                        "replace_sql_parameters={}, scatter={}",
+                        "replace_sql_parameters={}",
                         self.features.replace_parameters.is_some(),
-                        self.features.scatter.is_some()
                     ),
-                    reason:
-                        "When features are enabled, configure `exporter.sqlite` or `exporter.dm`"
-                            .to_string(),
+                    reason: "When features are enabled, configure `exporter.sqlite`".to_string(),
                 }));
             }
         }
@@ -210,23 +207,11 @@ pub struct ReplaceParametersFeature {
     pub enable: bool,
 }
 
-/// scatter 特性配置（允许额外的 file 字段）
-#[derive(Debug, Deserialize, Clone)]
-pub struct ScatterFeature {
-    pub enable: bool,
-    #[serde(default)]
-    pub file: Option<String>,
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct FeaturesConfig {
     /// 对应配置文件中的 `[features.replace_parameters]`
     #[serde(default)]
     pub replace_parameters: Option<ReplaceParametersFeature>,
-
-    /// 对应配置文件中的 `[features.scatter]`
-    #[serde(default)]
-    pub scatter: Option<ScatterFeature>,
 }
 
 impl FeaturesConfig {
@@ -237,23 +222,12 @@ impl FeaturesConfig {
             .map(|f| f.enable)
             .unwrap_or(false)
     }
-
-    /// 是否启用散列功能
-    pub fn should_scatter(&self) -> bool {
-        self.scatter.as_ref().map(|s| s.enable).unwrap_or(false)
-    }
-
-    /// 如果需要，返回 scatter 输出文件路径
-    pub fn scatter_file(&self) -> Option<&str> {
-        self.scatter.as_ref().and_then(|s| s.file.as_deref())
-    }
 }
 
 impl Default for FeaturesConfig {
     fn default() -> Self {
         Self {
             replace_parameters: None,
-            scatter: None,
         }
     }
 }
@@ -262,8 +236,6 @@ impl Default for FeaturesConfig {
 pub struct ExporterConfig {
     #[cfg(feature = "csv")]
     pub csv: Option<CsvExporter>,
-    #[cfg(feature = "dm")]
-    pub dm: Option<DmExporter>,
     #[cfg(feature = "sqlite")]
     pub sqlite: Option<SqliteExporter>,
 }
@@ -294,10 +266,6 @@ impl ExporterConfig {
         {
             found = found || self.csv.is_some();
         }
-        #[cfg(feature = "dm")]
-        {
-            found = found || self.dm.is_some();
-        }
         #[cfg(feature = "sqlite")]
         {
             found = found || self.sqlite.is_some();
@@ -314,12 +282,6 @@ impl ExporterConfig {
                 count += 1;
             }
         }
-        #[cfg(feature = "dm")]
-        {
-            if self.dm.is_some() {
-                count += 1;
-            }
-        }
         #[cfg(feature = "sqlite")]
         {
             if self.sqlite.is_some() {
@@ -331,12 +293,6 @@ impl ExporterConfig {
 
     /// 检查是否存在数据库型导出器配置 (dm or sqlite)
     pub fn has_db_exporter(&self) -> bool {
-        #[cfg(feature = "dm")]
-        {
-            if self.dm.is_some() {
-                return true;
-            }
-        }
         #[cfg(feature = "sqlite")]
         {
             if self.sqlite.is_some() {
@@ -370,44 +326,8 @@ impl Default for ExporterConfig {
         Self {
             #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
-            #[cfg(feature = "dm")]
-            dm: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-        }
-    }
-}
-
-/// DM (network) exporter configuration placeholder
-#[allow(dead_code)]
-#[cfg(feature = "dm")]
-#[derive(Debug, Deserialize)]
-pub struct DmExporter {
-    /// 目标表名
-    pub table_name: String,
-    /// 是否覆盖已存在的数据
-    pub overwrite: bool,
-    /// 是否追加模式
-    pub append: bool,
-    /// 可选的连接信息（仅在示例 config 中）
-    pub host: Option<String>,
-    pub port: Option<u16>,
-    pub username: Option<String>,
-    /// 可选的密码字段
-    pub password: Option<String>,
-}
-
-#[cfg(feature = "dm")]
-impl Default for DmExporter {
-    fn default() -> Self {
-        Self {
-            table_name: "sqllog".to_string(),
-            overwrite: true,
-            append: false,
-            host: None,
-            port: None,
-            username: None,
-            password: None,
         }
     }
 }

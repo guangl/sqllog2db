@@ -14,8 +14,6 @@ mod csv;
 pub mod database;
 mod util;
 
-#[cfg(feature = "dm")]
-use crate::config::DmExporter;
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
 #[cfg(feature = "sqlite")]
@@ -121,26 +119,6 @@ impl ExporterManager {
                 exporter: Box::new(exporter),
                 batch_size,
             });
-        }
-
-        // 3. 尝试创建 DM 导出器（仅占位，实际未实现导出逻辑）
-        #[cfg(feature = "dm")]
-        if let Some(dm_config) = config.exporter.dm.as_ref() {
-            info!(
-                "Using DM exporter (placeholder): table={}, host={:?}, user={:?}",
-                dm_config.table_name, dm_config.host, dm_config.username
-            );
-            // 这里只是占位，实际应实现 DmExporter 并实现 Exporter trait
-            return Err(crate::error::Error::Config(
-                crate::error::ConfigError::InvalidValue {
-                    field: "exporter.dm".to_string(),
-                    value: format!(
-                        "table={}, host={:?}, user={:?}",
-                        dm_config.table_name, dm_config.host, dm_config.username
-                    ),
-                    reason: "DM exporter is not implemented yet".to_string(),
-                },
-            ));
         }
 
         Err(crate::error::Error::Config(

@@ -24,20 +24,5 @@ overwrite = true
 append = false
 file = "outputs/sqllog_dm.db"
 
-# [exporter.dm]
-# table_name = "sqllog"
-# overwrite = true
-# append = false
-
-# # DM 数据库连接配置
-# host = "localhost"
-# port = 5236
-# username = "SYSDBA"
-# password = "DMDBA_hust4400"
-
 [features.replace_parameters]
 enable = true
-
-[features.scatter]
-enable = true
-file = "outputs/scatter_plot.png"

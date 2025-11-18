@@ -1,7 +1,7 @@
 use crate::error::Result;
+use log::{debug, error, info, warn};
 use std::fs;
 use std::path::Path;
-use log::{debug, error, info, warn};
 
 /// 生成默认配置文件
 pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
@@ -66,22 +66,12 @@ overwrite = true
 # 方案 2: 数据库导出（使用时注释掉上面的导出器，启用下面的 Database）
 # 文件型数据库示例 (SQLite)
 # [exporter.database]
-# database_type = "sqlite" # 可选: sqlite | dm
+# database_type = "sqlite" # 可选: sqlite
 # path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
 # overwrite = true
 # table_name = "sqllog"
 # batch_size = 1000
 
-# 网络型数据库示例 (DM/PostgreSQL/Oracle)
-# [exporter.database]
-# database_type = "dm"
-# host = "localhost"
-# port = 5236
-# username = "SYSDBA"
-# password = "SYSDBA"
-# overwrite = true
-# table_name = "sqllog"
-# batch_size = 1000
 "#;
 
     // 创建目录（如果需要）
@@ -114,7 +104,10 @@ overwrite = true
 
     info!("Next steps:");
     info!("  1. Edit configuration file: {}", output_path);
-    info!("  2. Validate configuration: sqllog2db validate -c {}", output_path);
+    info!(
+        "  2. Validate configuration: sqllog2db validate -c {}",
+        output_path
+    );
     info!("  3. Run export: sqllog2db run -c {}", output_path);
 
     Ok(())

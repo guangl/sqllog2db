@@ -47,7 +47,6 @@ anyhow = { version = "1.0.100", optional = true }
 chrono = { version = "0.4.42", default-features = false, features = [
     "alloc",
 ], optional = true }
-plotly = { version = "0.13.5", optional = true }
 
 [dev-dependencies]
 tempfile = "3.23.0"
@@ -60,11 +59,9 @@ default = ["csv"]
 # 各导出器特性开关
 csv = []
 sqlite = ["dep:rusqlite"]
-dm = []
 
 # 其他功能特性开关
-replace_parameters = ["dep:rusqlite"]
-scatter = ["dep:chrono", "dep:plotly", "dep:anyhow"]
+replace_parameters = ["dep:rusqlite", "dep:anyhow"]
 
 [profile.release]
 # 极致减小体积（可能牺牲一些运行时性能与构建时间）
