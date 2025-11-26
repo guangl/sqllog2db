@@ -30,47 +30,39 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 
 [sqllog]
 # SQL 日志目录或文件路径
-path = "sqllogs"
+directory = "sqllogs"
 # 批量提交大小 (推荐 10000 以获得最佳性能)
 # 0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入
 batch_size = 10000
 
 [error]
-# 解析错误日志（JSON 格式）输出路径
-path = "errors.json"
+# 解析错误日志(JSON Lines 格式)输出路径
+file = "errors.jsonl"
 
 [logging]
-# 应用日志输出目录或文件路径 (当前版本要求为“文件路径”，例如 logs/sqllog2db.log)
-# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
-path = "logs/sqllog2db.log"
+# 应用日志输出文件路径 (如 logs/sqllog2db.log)
+file = "logs/sqllog2db.log"
 # 日志级别: trace | debug | info | warn | error
 level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
-[features]
-# 是否替换 SQL 中的参数占位符（如 ? -> 实际值）
-replace_sql_parameters = false
-# 是否启用分散导出（按日期或其他维度拆分输出文件）
-scatter = false
-
 # ===================== 导出器配置 =====================
-# 只能配置一个导出器 (CSV / Database 三选一)
-# 同时配置多个时，按优先级使用：CSV > Database
+# 只能配置一个导出器 (CSV / Parquet 二选一)
+# 同时配置多个时, 按优先级使用: CSV > Parquet
 
-# 方案 1: CSV 导出（默认）
+# 方案 1: CSV 导出(默认)
 [exporter.csv]
-path = "export/sqllog2db.csv"
+file = "export/sqllog2db.csv"
 overwrite = true
+append = false
 
-# 方案 2: 数据库导出（使用时注释掉上面的导出器，启用下面的 Database）
-# 文件型数据库示例 (SQLite)
-# [exporter.database]
-# database_type = "sqlite" # 可选: sqlite
-# path = "export/sqllog2db.sqlite" # 文件型数据库使用 path
-# overwrite = true
-# table_name = "sqllog"
-# batch_size = 1000
+# 方案 2: Parquet 导出(使用时注释掉上面的导出器, 启用下面的 Parquet)
+[exporter.parquet]
+file = "export/sqllog2db.parquet"
+overwrite = true
+row_group_size = 100000 # rows per row group
+use_dictionary = true   # enable dictionary encoding
 
 "#;
 

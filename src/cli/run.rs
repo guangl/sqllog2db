@@ -120,7 +120,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     let log_every = if batch_size > 0 {
         batch_size.max(1000)
     } else {
-        1000
+        100000
     };
 
     // 获取所有日志文件

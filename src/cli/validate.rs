@@ -23,6 +23,12 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
         },
     );
 
+    if let Some(rp) = &cfg.features.replace_parameters {
+        if let Some(symbols) = &rp.symbols {
+            info!("SQL参数占位符样式: {:?}", symbols);
+        }
+    }
+
     // 导出配置（只支持单个导出器）
     if let Some(csv) = &cfg.exporter.csv {
         info!(
@@ -30,23 +36,6 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
             csv.file,
             if csv.overwrite { "yes" } else { "no" }
         );
-    }
-    #[cfg(feature = "sqlite")]
-    if cfg.exporter.csv.is_none() {
-        if let Some(sqlite) = &cfg.exporter.sqlite {
-            info!(
-                "SQLite export: {} -> {} (overwrite: {})",
-                sqlite.file,
-                sqlite.table_name,
-                if sqlite.overwrite { "yes" } else { "no" }
-            );
-        } else {
-            info!("导出器: 未配置");
-        }
-    }
-    #[cfg(not(feature = "sqlite"))]
-    if cfg.exporter.csv.is_none() {
-        info!("导出器: 未配置");
     }
 
     Ok(())

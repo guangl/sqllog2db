@@ -152,8 +152,6 @@ impl ErrorLogger {
         Ok(())
     }
 
-    /// 获取已记录的错误数量
-
     /// 完成记录并显示统计信息
     pub fn finalize(&mut self) -> Result<()> {
         self.flush()?;

@@ -10,14 +10,10 @@ use log::info;
 
 #[cfg(feature = "csv")]
 mod csv;
-#[cfg(feature = "sqlite")]
-pub mod database;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
-#[cfg(feature = "sqlite")]
-pub use database::SQLiteExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -100,23 +96,6 @@ impl ExporterManager {
             info!("Using CSV exporter: {}", csv_config.file);
             return Ok(Self {
                 exporter: Box::new(csv_exporter),
-                batch_size,
-            });
-        }
-
-        // 2. 尝试创建 SQLite 导出器
-        #[cfg(feature = "sqlite")]
-        if let Some(sqlite_config) = config.exporter.sqlite() {
-            let exporter = SQLiteExporter::with_batch_size(
-                sqlite_config.file.clone(),
-                sqlite_config.table_name.clone(),
-                sqlite_config.overwrite,
-                sqlite_config.append,
-                batch_size,
-            );
-            info!("Using SQLite exporter: {}", sqlite_config.file);
-            return Ok(Self {
-                exporter: Box::new(exporter),
                 batch_size,
             });
         }
