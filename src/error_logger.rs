@@ -1,8 +1,8 @@
 /// 错误日志记录器 - 将解析失败的原始数据记录到文件
 use crate::error::{Error, ExportError, Result};
-use log::{debug, info};
+use log::info;
 use std::collections::HashMap;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -46,7 +46,6 @@ pub struct ErrorLogger {
     path: String,
     count: usize,
     metrics: ErrorMetrics,
-    summary_path: String,
 }
 
 impl ErrorLogger {
@@ -81,15 +80,11 @@ impl ErrorLogger {
 
         info!("Error logger initialized: {}", path_str);
 
-        // summary 文件路径处理（使用文本后缀）
-        let summary_path = format!("{}.summary.txt", path_str);
-
         Ok(Self {
             writer: BufWriter::new(file),
             path: path_str,
             count: 0,
             metrics: ErrorMetrics::default(),
-            summary_path,
         })
     }
 
@@ -138,60 +133,5 @@ impl ErrorLogger {
         let variant = format!("{:?}", error);
         self.metrics.incr_parse_variant(&variant);
         self.log_error(record)
-    }
-
-    /// 完成错误记录并生成 summary.json
-    /// 刷新缓冲区
-    pub fn flush(&mut self) -> Result<()> {
-        self.writer.flush().map_err(|e| {
-            Error::Export(ExportError::FileWriteFailed {
-                path: PathBuf::from(&self.path),
-                reason: format!("Flush failed: {}", e),
-            })
-        })?;
-        Ok(())
-    }
-
-    /// 完成记录并显示统计信息
-    pub fn finalize(&mut self) -> Result<()> {
-        self.flush()?;
-        // 写入 summary 文本（可读格式）
-        let mut summary = String::new();
-        summary.push_str(&format!("total: {}\n", self.metrics.total));
-        for (k, v) in &self.metrics.by_category {
-            summary.push_str(&format!("category {}: {}\n", k, v));
-        }
-        if !self.metrics.parse_variants.is_empty() {
-            summary.push_str("parse_variants:\n");
-            for (k, v) in &self.metrics.parse_variants {
-                summary.push_str(&format!("  {}: {}\n", k, v));
-            }
-        }
-
-        fs::write(&self.summary_path, summary).map_err(|e| {
-            Error::Export(ExportError::FileWriteFailed {
-                path: PathBuf::from(&self.summary_path),
-                reason: e.to_string(),
-            })
-        })?;
-
-        if self.count > 0 {
-            info!(
-                "Error log written: {} ({} records, categories: {:?})",
-                self.path, self.count, self.metrics.by_category
-            );
-            info!("Error summary: {}", self.summary_path);
-        } else {
-            debug!(
-                "No error records to write (summary still generated) {}",
-                self.summary_path
-            );
-        }
-        Ok(())
-    }
-
-    /// 获取 summary 路径（便于测试）
-    pub fn summary_path(&self) -> &str {
-        &self.summary_path
     }
 }

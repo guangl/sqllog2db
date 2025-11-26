@@ -3,7 +3,6 @@ use crate::error::Result;
 use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
 use crate::parser::SqllogParser;
-use dm_database_parser_sqllog::Sqllog;
 use log::{info, warn};
 use std::time::Instant;
 
@@ -11,8 +10,6 @@ use std::time::Instant;
 struct BatchStats {
     total: usize,
     error_count: usize,
-    // 新增插入耗时统计
-    insert_duration: f64,
 }
 
 impl BatchStats {
@@ -20,12 +17,19 @@ impl BatchStats {
         Self {
             total: 0,
             error_count: 0,
-            insert_duration: 0.0,
         }
+    }
+
+    fn record_success_with_count(&mut self, count: usize) {
+        self.total += count;
     }
 
     fn record_success(&mut self) {
         self.total += 1;
+    }
+
+    fn record_error_with_count(&mut self, count: usize) {
+        self.error_count += count;
     }
 
     fn record_error(&mut self) {
@@ -36,50 +40,22 @@ impl BatchStats {
 /// 处理单个日志文件
 fn process_log_file(
     file_path: &str,
-    batch_size: usize,
-    log_every: usize,
-    local_buf: &mut Vec<Sqllog>,
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
     stats: &mut BatchStats,
 ) -> Result<()> {
     info!("Processing file: {}", file_path);
 
-    match dm_database_parser_sqllog::iter_records_from_file(file_path) {
-        Ok(iter) => {
-            for result in iter {
-                match result {
-                    Ok(record) => {
-                        stats.record_success();
+    match dm_database_parser_sqllog::parse_records_from_file(file_path) {
+        Ok((records, parse_errors)) => {
+            // 统计解析时间
+            let insert_start = Instant::now();
+            exporter_manager.export_batch(&records)?;
+            let insert_elapsed = insert_start.elapsed().as_secs_f64();
+            info!("插入耗时: {:.3} 秒", insert_elapsed);
 
-                        if batch_size > 0 {
-                            // 批量模式：累积到本地缓冲
-                            local_buf.push(record);
-                            if local_buf.len() >= batch_size {
-                                let insert_start = Instant::now();
-                                exporter_manager.export_batch(local_buf)?;
-                                let insert_elapsed = insert_start.elapsed().as_secs_f64();
-                                stats.insert_duration += insert_elapsed;
-                                local_buf.clear();
-                            }
-                        } else {
-                            // 单条模式（batch_size=0）：累积所有记录，最后一次性导出
-                            local_buf.push(record);
-                        }
-
-                        if stats.total % log_every == 0 {
-                            info!("Parsed {} records...", stats.total);
-                        }
-                    }
-                    Err(e) => {
-                        stats.record_error();
-                        // 记录解析错误
-                        if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                            warn!("Failed to record parse error: {}", log_err);
-                        }
-                    }
-                }
-            }
+            stats.record_success_with_count(records.len());
+            stats.record_error_with_count(parse_errors.len());
         }
         Err(e) => {
             stats.record_error();
@@ -114,14 +90,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
 
     // 第五步：解析 SQL 日志（流式）并导出
     info!("Parsing and exporting SQL logs (streaming)...");
-    let batch_size = exporter_manager.batch_size();
     let mut stats = BatchStats::new();
-    let mut local_buf: Vec<Sqllog> = Vec::new();
-    let log_every = if batch_size > 0 {
-        batch_size.max(1000)
-    } else {
-        100000
-    };
 
     // 获取所有日志文件
     let log_files = parser.log_files()?;
@@ -129,42 +98,27 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     if log_files.is_empty() {
         warn!("No log files found");
         exporter_manager.finalize()?;
-        error_logger.finalize()?;
         return Ok(());
     }
 
     info!("Found {} log files", log_files.len());
 
     // 统计解析时间
-    let parse_start = Instant::now();
+    let total_start = Instant::now();
     for log_file in log_files {
         let file_path_str = log_file.to_string_lossy().to_string();
         process_log_file(
             &file_path_str,
-            batch_size,
-            log_every,
-            &mut local_buf,
             &mut exporter_manager,
             &mut error_logger,
             &mut stats,
         )?;
     }
-    let parse_elapsed = parse_start.elapsed().as_secs_f64();
-
-    // 刷新剩余批次
-    if !local_buf.is_empty() {
-        info!("Exporting last batch: {} records", local_buf.len());
-        let insert_start = Instant::now();
-        exporter_manager.export_batch(&local_buf)?;
-        let insert_elapsed = insert_start.elapsed().as_secs_f64();
-        stats.insert_duration += insert_elapsed;
-        local_buf.clear();
-    }
+    let total_elapsed = total_start.elapsed().as_secs_f64();
 
     if stats.total == 0 {
         warn!("No SQL log records parsed");
         exporter_manager.finalize()?;
-        error_logger.finalize()?;
         return Ok(());
     }
 
@@ -177,10 +131,6 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("Export finished...");
     exporter_manager.finalize()?;
 
-    // 第七步：完成错误日志记录（生成 summary 指标文件）
-    error_logger.finalize()?;
-    info!("Error summary file: {}", error_logger.summary_path());
-
     // 展示统计信息
     exporter_manager.log_stats();
 
@@ -188,8 +138,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("  - 解析记录数: {}", stats.total);
     info!("  - 解析错误数: {}", stats.error_count);
     info!("  - 导出器: {}", exporter_manager.name());
-    info!("  - 解析耗时: {:.3} 秒", parse_elapsed);
-    info!("  - 插入耗时: {:.3} 秒", stats.insert_duration);
+    info!("  - 解析耗时: {:.3} 秒", total_elapsed);
 
     Ok(())
 }

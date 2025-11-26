@@ -433,12 +433,11 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "dm-database-parser-sqllog"
-version = "0.4.0"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b93bdacb038ddb8b64c1be67236c9a31203ec7cba2020e3183b630b188f44608"
+checksum = "d819d8702823d1e24d0c8ee7871bc3b4da0b9150ccea1d41532764e548e7395c"
 dependencies = [
  "memchr",
- "once_cell",
  "rayon",
  "thiserror",
 ]

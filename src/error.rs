@@ -13,10 +13,6 @@ pub enum Error {
     #[error("File error: {0}")]
     File(#[from] FileError),
 
-    /// Database operation error
-    #[error("Database error: {0}")]
-    Database(#[from] DatabaseError),
-
     /// Parse error
     #[error("Parse error: {0}")]
     Parse(#[from] ParseError),
@@ -61,7 +57,7 @@ pub enum ConfigError {
     },
 
     /// Missing required configuration: no exporters configured
-    #[error("At least one exporter must be configured (database/csv)")]
+    #[error("At least one exporter must be configured (csv/parquet)")]
     NoExporters,
 }
 
@@ -79,15 +75,6 @@ pub enum FileError {
     /// Create directory failed
     #[error("Failed to create directory {path}: {reason}")]
     CreateDirectoryFailed { path: PathBuf, reason: String },
-}
-
-/// 数据库错误
-#[derive(Debug, Error)]
-pub enum DatabaseError {
-    /// Database export failed
-    #[error("Database export failed ({table_name}): {reason}")]
-    #[allow(dead_code)]
-    DatabaseExportFailed { table_name: String, reason: String },
 }
 
 /// 解析错误
@@ -116,6 +103,11 @@ pub enum ExportError {
     /// CSV export failed
     #[error("CSV export failed {path}: {reason}")]
     CsvExportFailed { path: PathBuf, reason: String },
+
+    /// Parquet export failed
+    #[error("Parquet export failed {path}: {reason}")]
+    ParquetExportFailed { path: PathBuf, reason: String },
+
     /// Failed to create output file
     #[error("Failed to create output file {path}: {reason}")]
     FileCreateFailed { path: PathBuf, reason: String },

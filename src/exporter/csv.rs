@@ -6,7 +6,7 @@ use log::{debug, info, warn};
 use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // 使用 once_cell 缓存 CSV 头部，避免每次重新构建
 static CSV_HEADER: Lazy<&str> = Lazy::new(
@@ -31,37 +31,17 @@ pub struct CsvExporter {
 }
 
 impl CsvExporter {
-    /// 创建新的 CSV 导出器
-    pub fn new(path: impl AsRef<Path>, overwrite: bool) -> Self {
-        Self::with_batch_size(path, overwrite, 0)
-    }
-
-    /// 创建新的 CSV 导出器（指定批量大小）
-    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, batch_size: usize) -> Self {
+    /// 从配置创建 CSV 导出器，支持自定义批量大小
+    pub fn from_config(config: &crate::config::CsvExporter) -> Self {
         Self {
-            path: path.as_ref().to_path_buf(),
-            overwrite,
-            append: false,
+            path: config.file.clone().into(),
+            overwrite: config.overwrite,
+            append: config.append,
             writer: None,
             stats: ExportStats::new(),
             header_written: false,
-            line_buf: String::with_capacity(batch_size),
+            line_buf: String::new(),
         }
-    }
-
-    /// 从配置创建 CSV 导出器，支持自定义批量大小
-    pub fn from_config(config: &crate::config::CsvExporter, batch_size: usize) -> Self {
-        let mut exporter = if batch_size > 0 {
-            Self::with_batch_size(&config.file, config.overwrite, batch_size)
-        } else {
-            Self::new(&config.file, config.overwrite)
-        };
-        // 追加模式优先级高于 overwrite
-        if config.append {
-            exporter.overwrite = false;
-            exporter.append = true;
-        }
-        exporter
     }
 
     /// 写入 CSV 头部
@@ -233,9 +213,36 @@ impl Exporter for CsvExporter {
     fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
         debug!("Exported {} records to CSV in batch", sqllogs.len());
 
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
+        if sqllogs.is_empty() {
+            return Ok(());
         }
+
+        // 使用一个本地缓冲区合并所有 csv 行，随后一次性写入，减少 write 调用次数
+        let mut batch_buf = String::new();
+        // 预先预留足够空间，假定每行约 256 字节
+        batch_buf.reserve(sqllogs.len() * 256);
+
+        for sqllog in sqllogs {
+            // 将每一行写入到可重用的 line_buf 中，然后追加到 batch_buf
+            Self::sqllog_to_csv_line_into(sqllog, &mut self.line_buf);
+            batch_buf.push_str(&self.line_buf);
+            // 统计成功条目
+            self.stats.record_success();
+        }
+
+        // 写入合并后的批次
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: "CSV exporter not initialized".to_string(),
+            })
+        })?;
+        writer.write_all(batch_buf.as_bytes()).map_err(|e| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: format!("Failed to write CSV batch: {}", e),
+            })
+        })?;
 
         Ok(())
     }

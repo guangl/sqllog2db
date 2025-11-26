@@ -1,84 +1,93 @@
-use crate::error::Result;
-use crate::exporter::ExportStats;
+use super::util::ensure_parent_dir;
+use super::{ExportStats, Exporter};
+use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use log::{debug, info};
-use std::path::Path;
+use log::{debug, info, warn};
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::PathBuf;
 
-/// Parquet 导出器（无压缩功能）
+/// Parquet 导出器 - 将 SQL 日志导出为 Parquet 格式
 pub struct ParquetExporter {
-    pub file: String,
-    pub overwrite: bool,
-    pub row_group_size: usize,
-    pub use_dictionary: bool,
-    pub stats: ExportStats,
-    pub pending_records: Vec<Sqllog>,
+    path: PathBuf,
+    overwrite: bool,
+    append: bool,
+    writer: Option<BufWriter<File>>,
+    stats: ExportStats,
+    header_written: bool,
+    line_buf: String, // 重用的行缓冲区
 }
 
 impl ParquetExporter {
-    pub fn new(file: String, overwrite: bool, row_group_size: usize, use_dictionary: bool) -> Self {
+    /// 从配置创建 Parquet 导出器
+    pub fn from_config(config: &crate::config::ParquetExporter) -> Self {
         Self {
-            file,
-            overwrite,
-            row_group_size,
-            use_dictionary,
+            path: config.file.clone().into(),
+            overwrite: config.overwrite,
+            append: config.append,
+            writer: None,
             stats: ExportStats::new(),
-            pending_records: Vec::with_capacity(row_group_size),
+            header_written: false,
+            line_buf: String::with_capacity(0),
         }
     }
+}
 
-    /// 初始化 Parquet 文件（如有需要可创建目录/文件）
-    pub fn initialize(&mut self) -> Result<()> {
-        let path = Path::new(&self.file);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        if self.overwrite && path.exists() {
-            std::fs::remove_file(path)?;
-        }
-        info!("ParquetExporter initialized: {}", self.file);
+impl Exporter for ParquetExporter {
+    fn initialize(&mut self) -> Result<()> {
+        info!("Initializing Parquet exporter: {}", self.path.display());
+
+        ensure_parent_dir(&self.path).map_err(|e| {
+            Error::Export(ExportError::ParquetExportFailed {
+                path: self.path.clone(),
+                reason: format!("Failed to create directory: {}", e),
+            })
+        })?;
+
         Ok(())
     }
 
-    /// 导出单条记录
-    pub fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
-        self.pending_records.push(sqllog.clone());
-        if self.pending_records.len() >= self.row_group_size {
-            self.flush()?;
+    fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
+        // 检查是否已初始化
+        if self.writer.is_none() {
+            return Err(Error::Export(ExportError::ParquetExportFailed {
+                path: self.path.clone(),
+                reason: "Parquet exporter not initialized".to_string(),
+            }));
         }
+
         Ok(())
     }
 
-    /// 批量导出
-    pub fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
+        debug!("Exported {} records to Parquet in batch", sqllogs.len());
+
         for sqllog in sqllogs {
-            self.pending_records.push((*sqllog).clone());
-            if self.pending_records.len() >= self.row_group_size {
-                self.flush()?;
-            }
+            self.export(sqllog)?;
         }
+
         Ok(())
     }
 
-    /// 刷新写入 Parquet 文件（实际写入逻辑需集成 parquet crate）
-    pub fn flush(&mut self) -> Result<()> {
-        // TODO: 使用 parquet crate 写入 self.pending_records 到 self.file
-        debug!("Flush {} records to Parquet", self.pending_records.len());
-        self.pending_records.clear();
+    fn finalize(&mut self) -> Result<()> {
         Ok(())
     }
 
-    /// 完成导出，写入剩余数据
-    pub fn finalize(&mut self) -> Result<()> {
-        self.flush()?;
-        info!("Parquet export finished: {} records", self.stats.exported);
-        Ok(())
-    }
-
-    pub fn name(&self) -> &str {
+    fn name(&self) -> &str {
         "Parquet"
     }
 
-    pub fn stats_snapshot(&self) -> Option<ExportStats> {
+    fn stats_snapshot(&self) -> Option<ExportStats> {
         Some(self.stats.clone())
+    }
+}
+
+impl Drop for ParquetExporter {
+    fn drop(&mut self) {
+        if self.writer.is_some() {
+            if let Err(e) = self.finalize() {
+                warn!("Parquet exporter finalization on Drop failed: {}", e);
+            }
+        }
     }
 }

@@ -352,7 +352,7 @@ impl Default for ExporterConfig {
             #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
             #[cfg(feature = "parquet")]
-            parquet: None,
+            parquet: Some(ParquetExporter::default()),
         }
     }
 }

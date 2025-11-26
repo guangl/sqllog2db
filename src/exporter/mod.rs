@@ -10,10 +10,14 @@ use log::info;
 
 #[cfg(feature = "csv")]
 mod csv;
+#[cfg(feature = "parquet")]
+mod parquet;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
+#[cfg(feature = "parquet")]
+pub use parquet::ParquetExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -54,10 +58,6 @@ pub struct ExportStats {
     pub skipped: usize,
     /// 失败的记录数
     pub failed: usize,
-    /// 刷新/批量写入操作次数（数据库类导出器）
-    pub flush_operations: usize,
-    /// 最近一次刷新写入的记录数
-    pub last_flush_size: usize,
 }
 
 impl ExportStats {
@@ -77,28 +77,36 @@ impl ExportStats {
 /// 导出器管理器 - 管理单个导出器
 pub struct ExporterManager {
     exporter: Box<dyn Exporter>,
-    batch_size: usize,
 }
 
 impl ExporterManager {
     /// 从配置创建导出器管理器
     pub fn from_config(config: &Config) -> Result<Self> {
-        let batch_size = config.sqllog.batch_size();
-
         info!("Initializing exporter manager...");
 
-        // 优先级：CSV > SQLite > DM
+        // 优先级：CSV > Parquet > SQLite
 
         // 1. 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
         if let Some(csv_config) = config.exporter.csv() {
-            let csv_exporter = CsvExporter::from_config(csv_config, batch_size);
+            let csv_exporter = CsvExporter::from_config(csv_config);
             info!("Using CSV exporter: {}", csv_config.file);
             return Ok(Self {
                 exporter: Box::new(csv_exporter),
-                batch_size,
             });
         }
+
+        // 2. 尝试创建 Parquet 导出器
+        #[cfg(feature = "parquet")]
+        if let Some(parquet_config) = config.exporter.parquet() {
+            let parquet_exporter = ParquetExporter::from_config(parquet_config);
+            info!("Using Parquet exporter: {}", parquet_config.file);
+            return Ok(Self {
+                exporter: Box::new(parquet_exporter),
+            });
+        }
+
+        // 3. 其它导出器（如 SQLite）可继续补充
 
         Err(crate::error::Error::Config(
             crate::error::ConfigError::NoExporters,
@@ -131,11 +139,6 @@ impl ExporterManager {
         Ok(())
     }
 
-    /// 获取批量大小配置
-    pub fn batch_size(&self) -> usize {
-        self.batch_size
-    }
-
     /// 获取导出器名称
     pub fn name(&self) -> &str {
         self.exporter.name()
@@ -150,20 +153,12 @@ impl ExporterManager {
     pub fn log_stats(&self) {
         if let Some(s) = self.stats() {
             info!(
-                "Export stats: {} => success: {}, failed: {}, skipped: {} (total: {}){}",
+                "Export stats: {} => success: {}, failed: {}, skipped: {} (total: {})",
                 self.name(),
                 s.exported,
                 s.failed,
                 s.skipped,
                 s.total(),
-                if s.flush_operations > 0 {
-                    format!(
-                        " | flushed:{} times (recent {} entries)",
-                        s.flush_operations, s.last_flush_size
-                    )
-                } else {
-                    String::new()
-                }
             );
         } else {
             info!("No export statistics available");
