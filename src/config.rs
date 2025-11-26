@@ -1,3 +1,27 @@
+#[cfg(feature = "parquet")]
+#[derive(Debug, Deserialize)]
+pub struct ParquetExporter {
+    /// Parquet 输出文件路径
+    pub file: String,
+    /// 是否覆盖已存在的文件
+    pub overwrite: bool,
+    /// 每个 row group 的行数
+    pub row_group_size: Option<usize>,
+    /// 是否启用字典编码
+    pub use_dictionary: Option<bool>,
+}
+
+#[cfg(feature = "parquet")]
+impl Default for ParquetExporter {
+    fn default() -> Self {
+        Self {
+            file: "export/sqllog2db.parquet".to_string(),
+            overwrite: true,
+            row_group_size: Some(100000),
+            use_dictionary: Some(true),
+        }
+    }
+}
 use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
 use serde::Deserialize;
@@ -54,20 +78,6 @@ impl Config {
 
         // 验证 sqllog 配置
         self.sqllog.validate()?;
-
-        // 如果启用了任何 feature（如 replace_sql_parameters），强制要求配置数据库型导出器（sqlite）
-        if self.features.should_replace_sql_parameters() {
-            if !self.exporter.has_db_exporter() {
-                return Err(Error::Config(ConfigError::InvalidValue {
-                    field: "exporter".to_string(),
-                    value: format!(
-                        "replace_sql_parameters={}",
-                        self.features.replace_parameters.is_some(),
-                    ),
-                    reason: "When features are enabled, configure `exporter.sqlite`".to_string(),
-                }));
-            }
-        }
 
         Ok(())
     }
@@ -205,6 +215,7 @@ impl Default for LoggingConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ReplaceParametersFeature {
     pub enable: bool,
+    pub symbols: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -236,8 +247,33 @@ impl Default for FeaturesConfig {
 pub struct ExporterConfig {
     #[cfg(feature = "csv")]
     pub csv: Option<CsvExporter>,
-    #[cfg(feature = "sqlite")]
-    pub sqlite: Option<SqliteExporter>,
+    #[cfg(feature = "parquet")]
+    pub parquet: Option<ParquetExporter>,
+}
+
+#[cfg(feature = "parquet")]
+#[derive(Debug, Deserialize)]
+pub struct ParquetExporter {
+    /// Parquet 输出文件路径
+    pub file: String,
+    /// 是否覆盖已存在的文件
+    pub overwrite: bool,
+    /// 每个 row group 的行数
+    pub row_group_size: Option<usize>,
+    /// 是否启用字典编码
+    pub use_dictionary: Option<bool>,
+}
+
+#[cfg(feature = "parquet")]
+impl Default for ParquetExporter {
+    fn default() -> Self {
+        Self {
+            file: "export/sqllog2db.parquet".to_string(),
+            overwrite: true,
+            row_group_size: Some(100000),
+            use_dictionary: Some(true),
+        }
+    }
 }
 
 impl ExporterConfig {
@@ -253,10 +289,10 @@ impl ExporterConfig {
         }
     }
 
-    /// 获取 SQLite 导出器配置
-    #[cfg(feature = "sqlite")]
-    pub fn sqlite(&self) -> Option<&SqliteExporter> {
-        self.sqlite.as_ref()
+    #[cfg(feature = "parquet")]
+    /// 获取 Parquet 导出器配置
+    pub fn parquet(&self) -> Option<&ParquetExporter> {
+        return self.parquet.as_ref();
     }
 
     /// 检查是否有任何导出器配置
@@ -266,9 +302,9 @@ impl ExporterConfig {
         {
             found = found || self.csv.is_some();
         }
-        #[cfg(feature = "sqlite")]
+        #[cfg(feature = "parquet")]
         {
-            found = found || self.sqlite.is_some();
+            found = found || self.parquet.is_some();
         }
         found
     }
@@ -282,24 +318,13 @@ impl ExporterConfig {
                 count += 1;
             }
         }
-        #[cfg(feature = "sqlite")]
+        #[cfg(feature = "parquet")]
         {
-            if self.sqlite.is_some() {
+            if self.parquet.is_some() {
                 count += 1;
             }
         }
         count
-    }
-
-    /// 检查是否存在数据库型导出器配置 (dm or sqlite)
-    pub fn has_db_exporter(&self) -> bool {
-        #[cfg(feature = "sqlite")]
-        {
-            if self.sqlite.is_some() {
-                return true;
-            }
-        }
-        false
     }
 
     /// 验证导出器配置（只支持单个导出器）
@@ -314,7 +339,7 @@ impl ExporterConfig {
                 "Warning: {} exporters configured, but only one is supported.",
                 total
             );
-            eprintln!("Will use the first exporter by priority: CSV > SQLite");
+            eprintln!("Will use the first exporter by priority: CSV > Parquet > SQLite");
         }
 
         Ok(())
@@ -326,33 +351,33 @@ impl Default for ExporterConfig {
         Self {
             #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
-            #[cfg(feature = "sqlite")]
-            sqlite: None,
+            #[cfg(feature = "parquet")]
+            parquet: None,
         }
     }
 }
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "parquet")]
 #[derive(Debug, Deserialize)]
-pub struct SqliteExporter {
-    /// 数据库文件路径
+pub struct ParquetExporter {
+    /// Parquet 输出文件路径
     pub file: String,
-    /// 目标表名
-    pub table_name: String,
-    /// 是否覆盖已存在的数据
+    /// 是否覆盖已存在的文件
     pub overwrite: bool,
-    /// 是否追加模式（暂未实现）
-    pub append: bool,
+    /// 每个 row group 的行数
+    pub row_group_size: Option<usize>,
+    /// 是否启用字典编码
+    pub use_dictionary: Option<bool>,
 }
 
-#[cfg(feature = "sqlite")]
-impl Default for SqliteExporter {
+#[cfg(feature = "parquet")]
+impl Default for ParquetExporter {
     fn default() -> Self {
         Self {
-            file: "outputs/sqllog.db".to_string(),
-            table_name: "sqllog".to_string(),
+            file: "export/sqllog2db.parquet".to_string(),
             overwrite: true,
-            append: false,
+            row_group_size: Some(100000),
+            use_dictionary: Some(true),
         }
     }
 }

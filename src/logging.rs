@@ -1,6 +1,7 @@
 use crate::config::LoggingConfig;
 use crate::constants::LOG_LEVELS;
 use crate::error::{Error, FileError, Result};
+use chrono::Local;
 use log::SetLoggerError;
 use log::{Level, LevelFilter, Metadata, Record};
 use once_cell::sync::Lazy;
@@ -98,17 +99,16 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
             if !self.enabled(record.metadata()) {
                 return;
             }
-
+            let now = Local::now().format("%Y-%m-%d %H:%M:%S");
             let msg = format!(
-                "[{}] {} - {}\n",
+                "[{}][{}] {} - {}\n",
+                now,
                 record.level(),
                 record.target(),
                 record.args()
             );
-
             // 写到 stdout
             let _ = std::io::stdout().write_all(msg.as_bytes());
-
             // 写到文件
             if let Ok(mut f) = self.file.lock() {
                 let _ = f.write_all(msg.as_bytes());
