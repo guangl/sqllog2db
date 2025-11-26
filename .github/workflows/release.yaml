@@ -25,6 +25,9 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: sqllog2db-x86_64-windows.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: sqllog2db-aarch64-macos
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,13 +46,21 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cross (for macos arm)
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: cargo install cross
+
       - name: Build (default features)
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            cargo build --release --target ${{ matrix.target }}
+          elif [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
           fi
-          cargo build --release --target ${{ matrix.target }}
         shell: bash
 
       - name: Prepare artifact

@@ -1,6 +1,6 @@
 [package]
 name = "dm-database-sqllog2db"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "命令行工具：将达梦 SQL 日志解析并导出为 CSV 或嵌入式数据库 (SQLite)。"
 homepage = "https://github.com/guangl/sqllog2db"
@@ -54,7 +54,7 @@ rusqlite = { version = "0.32.1", features = ["bundled"] }
 
 [features]
 # 默认保持当前行为：启用 CSV 已实现的文件型数据库导出器
-default = ["csv"]
+default = ["csv", "sqlite"]
 
 # 各导出器特性开关
 csv = []
