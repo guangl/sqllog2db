@@ -149,7 +149,7 @@ impl Exporter for SQLiteExporter {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
-             PRAGMA cache_size = -64000;
+             PRAGMA locking_mode = EXCLUSIVE;
              PRAGMA temp_store = MEMORY;",
         )
         .map_err(|e| {

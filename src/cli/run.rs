@@ -5,11 +5,14 @@ use crate::exporter::ExporterManager;
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::Sqllog;
 use log::{info, warn};
+use std::time::Instant;
 
 /// 批处理统计信息
 struct BatchStats {
     total: usize,
     error_count: usize,
+    // 新增插入耗时统计
+    insert_duration: f64,
 }
 
 impl BatchStats {
@@ -17,6 +20,7 @@ impl BatchStats {
         Self {
             total: 0,
             error_count: 0,
+            insert_duration: 0.0,
         }
     }
 
@@ -52,7 +56,10 @@ fn process_log_file(
                             // 批量模式：累积到本地缓冲
                             local_buf.push(record);
                             if local_buf.len() >= batch_size {
+                                let insert_start = Instant::now();
                                 exporter_manager.export_batch(local_buf)?;
+                                let insert_elapsed = insert_start.elapsed().as_secs_f64();
+                                stats.insert_duration += insert_elapsed;
                                 local_buf.clear();
                             }
                         } else {
@@ -128,7 +135,8 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
 
     info!("Found {} log files", log_files.len());
 
-    // 遍历每个日志文件
+    // 统计解析时间
+    let parse_start = Instant::now();
     for log_file in log_files {
         let file_path_str = log_file.to_string_lossy().to_string();
         process_log_file(
@@ -141,11 +149,15 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
             &mut stats,
         )?;
     }
+    let parse_elapsed = parse_start.elapsed().as_secs_f64();
 
     // 刷新剩余批次
     if !local_buf.is_empty() {
         info!("Exporting last batch: {} records", local_buf.len());
+        let insert_start = Instant::now();
         exporter_manager.export_batch(&local_buf)?;
+        let insert_elapsed = insert_start.elapsed().as_secs_f64();
+        stats.insert_duration += insert_elapsed;
         local_buf.clear();
     }
 
@@ -176,6 +188,8 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("  - 解析记录数: {}", stats.total);
     info!("  - 解析错误数: {}", stats.error_count);
     info!("  - 导出器: {}", exporter_manager.name());
+    info!("  - 解析耗时: {:.3} 秒", parse_elapsed);
+    info!("  - 插入耗时: {:.3} 秒", stats.insert_duration);
 
     Ok(())
 }
