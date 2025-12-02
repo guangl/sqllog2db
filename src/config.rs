@@ -1,27 +1,3 @@
-#[cfg(feature = "parquet")]
-#[derive(Debug, Deserialize)]
-pub struct ParquetExporter {
-    /// Parquet 输出文件路径
-    pub file: String,
-    /// 是否覆盖已存在的文件
-    pub overwrite: bool,
-    /// 每个 row group 的行数
-    pub row_group_size: Option<usize>,
-    /// 是否启用字典编码
-    pub use_dictionary: Option<bool>,
-}
-
-#[cfg(feature = "parquet")]
-impl Default for ParquetExporter {
-    fn default() -> Self {
-        Self {
-            file: "export/sqllog2db.parquet".to_string(),
-            overwrite: true,
-            row_group_size: Some(100000),
-            use_dictionary: Some(true),
-        }
-    }
-}
 use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
 use serde::Deserialize;
@@ -251,42 +227,11 @@ pub struct ExporterConfig {
     pub parquet: Option<ParquetExporter>,
 }
 
-#[cfg(feature = "parquet")]
-#[derive(Debug, Deserialize)]
-pub struct ParquetExporter {
-    /// Parquet 输出文件路径
-    pub file: String,
-    /// 是否覆盖已存在的文件
-    pub overwrite: bool,
-    /// 每个 row group 的行数
-    pub row_group_size: Option<usize>,
-    /// 是否启用字典编码
-    pub use_dictionary: Option<bool>,
-}
-
-#[cfg(feature = "parquet")]
-impl Default for ParquetExporter {
-    fn default() -> Self {
-        Self {
-            file: "export/sqllog2db.parquet".to_string(),
-            overwrite: true,
-            row_group_size: Some(100000),
-            use_dictionary: Some(true),
-        }
-    }
-}
-
 impl ExporterConfig {
     /// 获取 CSV 导出器配置
+    #[cfg(feature = "csv")]
     pub fn csv(&self) -> Option<&CsvExporter> {
-        #[cfg(feature = "csv")]
-        {
-            return self.csv.as_ref();
-        }
-        #[cfg(not(feature = "csv"))]
-        {
-            return None;
-        }
+        return self.csv.as_ref();
     }
 
     #[cfg(feature = "parquet")]
@@ -352,7 +297,7 @@ impl Default for ExporterConfig {
             #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
             #[cfg(feature = "parquet")]
-            parquet: None,
+            parquet: Some(ParquetExporter::default()),
         }
     }
 }

@@ -25,14 +25,14 @@ enable = false
 symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
-# 只能配置一个导出器 (CSV / Database 二选一)
-# 同时配置多个时，按优先级使用：CSV > Database
+# 只能配置一个导出器 (csv / parquet 二选一)
+# 同时配置多个时，按优先级使用：csv > parquet
 
-# 方案 1: CSV 导出（默认）
-[exporter.csv]
-file = "export/sqllog2db.csv"
-overwrite = true
-append = false
+# 方案 1: csv 导出（默认）
+# [exporter.csv]
+# file = "export/sqllog2db.csv"
+# overwrite = true
+# append = false
 
 # 方案 2: Parquet 导出（使用时注释掉上面的导出器，启用下面的 Parquet）
 [exporter.parquet]

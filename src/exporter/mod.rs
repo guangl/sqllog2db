@@ -9,11 +9,15 @@ use dm_database_parser_sqllog::Sqllog;
 use log::info;
 
 #[cfg(feature = "csv")]
-mod csv;
+pub mod csv;
+#[cfg(feature = "parquet")]
+pub mod parquet;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
+#[cfg(feature = "parquet")]
+pub use parquet::ParquetExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -22,10 +26,10 @@ pub trait Exporter {
     fn initialize(&mut self) -> Result<()>;
 
     /// 导出单条 SQL 日志记录
-    fn export(&mut self, sqllog: &Sqllog) -> Result<()>;
+    fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()>;
 
     /// 批量导出多条日志记录 (默认实现:逐条调用 export)
-    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
         for sqllog in sqllogs {
             self.export(sqllog)?;
         }
@@ -87,7 +91,7 @@ impl ExporterManager {
 
         info!("Initializing exporter manager...");
 
-        // 优先级：CSV > SQLite > DM
+        // 优先级：CSV > Parquet > SQLite > DM
 
         // 1. 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
@@ -96,6 +100,17 @@ impl ExporterManager {
             info!("Using CSV exporter: {}", csv_config.file);
             return Ok(Self {
                 exporter: Box::new(csv_exporter),
+                batch_size,
+            });
+        }
+
+        // 2. 尝试创建 Parquet 导出器
+        #[cfg(feature = "parquet")]
+        if let Some(parquet_config) = config.exporter.parquet() {
+            let parquet_exporter = ParquetExporter::from_config(parquet_config, batch_size);
+            info!("Using Parquet exporter: {}", parquet_config.file);
+            return Ok(Self {
+                exporter: Box::new(parquet_exporter),
                 batch_size,
             });
         }
@@ -113,13 +128,13 @@ impl ExporterManager {
     }
 
     /// 批量导出日志记录
-    pub fn export_batch(&mut self, sqllogs: &[Sqllog]) -> Result<()> {
+    pub fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
         if sqllogs.is_empty() {
             return Ok(());
         }
 
         // 转换为引用的切片
-        let refs: Vec<&Sqllog> = sqllogs.iter().collect();
+        let refs: Vec<&Sqllog<'_>> = sqllogs.iter().collect();
         self.exporter.export_batch(&refs)
     }
 

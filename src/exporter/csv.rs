@@ -109,35 +109,40 @@ impl CsvExporter {
     }
 
     /// 将 Sqllog 转换为 CSV 行（优化版本，使用预分配缓冲区）
-    fn sqllog_to_csv_line_into(sqllog: &Sqllog, buf: &mut String) {
+    fn sqllog_to_csv_line_into(sqllog: &Sqllog<'_>, buf: &mut String) {
         buf.clear();
         buf.reserve(256); // 预分配合理大小
 
         Self::write_csv_field(buf, &sqllog.ts);
         buf.push(',');
 
-        use std::fmt::Write;
-        let _ = write!(buf, "{},", sqllog.meta.ep);
+        // 解析元数据
+        let meta = sqllog.parse_meta();
 
-        Self::write_csv_field(buf, &sqllog.meta.sess_id);
+        use std::fmt::Write;
+        let _ = write!(buf, "{},", meta.ep);
+
+        Self::write_csv_field(buf, &meta.sess_id);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.thrd_id);
+        Self::write_csv_field(buf, &meta.thrd_id);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.username);
+        Self::write_csv_field(buf, &meta.username);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.trxid);
+        Self::write_csv_field(buf, &meta.trxid);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.statement);
+        Self::write_csv_field(buf, &meta.statement);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.appname);
+        Self::write_csv_field(buf, &meta.appname);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.meta.client_ip);
+        Self::write_csv_field(buf, &meta.client_ip);
         buf.push(',');
-        Self::write_csv_field(buf, &sqllog.body);
+
+        // 获取 SQL 语句体
+        Self::write_csv_field(buf, &sqllog.body());
         buf.push(',');
 
         // 性能指标
-        if let Some(indicators) = &sqllog.indicators {
+        if let Some(indicators) = sqllog.parse_indicators() {
             let _ = write!(
                 buf,
                 "{},{},{}",
@@ -197,7 +202,7 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    fn export(&mut self, sqllog: &Sqllog) -> Result<()> {
+    fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
         // 检查是否已初始化
         if self.writer.is_none() {
             return Err(Error::Export(ExportError::CsvExportFailed {
@@ -230,7 +235,7 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[&Sqllog]) -> Result<()> {
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
         debug!("Exported {} records to CSV in batch", sqllogs.len());
 
         for sqllog in sqllogs {
