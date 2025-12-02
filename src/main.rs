@@ -36,7 +36,10 @@ fn main() -> Result<()> {
                 }
                 Err(e) => {
                     if let error::Error::Config(error::ConfigError::NotFound(_)) = &e {
-                        eprintln!("Configuration file not found: {}, using default configuration", config);
+                        eprintln!(
+                            "Configuration file not found: {}, using default configuration",
+                            config
+                        );
                         eprintln!("Tip: run 'sqllog2db init' to generate a configuration file");
                         Config::default()
                     } else {

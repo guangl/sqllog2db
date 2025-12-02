@@ -1,8 +1,10 @@
 use super::{ExportStats, Exporter};
+use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use duckdb::{Connection, params};
 use log::{debug, info, warn};
+use std::fs;
 use std::path::Path;
 
 /// DuckDB 导出器
@@ -44,7 +46,7 @@ impl DuckdbExporter {
     }
 
     /// 从配置创建 DuckDB 导出器
-    pub fn from_config(config: &crate::config::DuckdbExporter, batch_size: usize) -> Self {
+    pub fn from_config(config: &config::DuckdbExporter, batch_size: usize) -> Self {
         Self::new(config.database_url.clone(), batch_size)
     }
 
@@ -93,7 +95,7 @@ impl DuckdbExporter {
             return Ok(());
         }
 
-        let conn = self.conn.as_ref().ok_or_else(|| {
+        let conn = self.conn.as_mut().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
                 reason: "Connection not initialized".to_string(),
             })
@@ -193,7 +195,7 @@ impl Exporter for DuckdbExporter {
         let path = Path::new(&self.database_url);
         if let Some(parent) = path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
+                fs::create_dir_all(parent).map_err(|e| {
                     Error::Export(ExportError::DatabaseError {
                         reason: format!("Failed to create directory: {}", e),
                     })

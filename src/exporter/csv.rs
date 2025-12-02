@@ -1,10 +1,11 @@
 use super::util::ensure_parent_dir;
 use super::{ExportStats, Exporter};
+use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{debug, info, warn};
 use once_cell::sync::Lazy;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -50,7 +51,7 @@ impl CsvExporter {
     }
 
     /// 从配置创建 CSV 导出器，支持自定义批量大小
-    pub fn from_config(config: &crate::config::CsvExporter, batch_size: usize) -> Self {
+    pub fn from_config(config: &config::CsvExporter, batch_size: usize) -> Self {
         let mut exporter = if batch_size > 0 {
             Self::with_batch_size(&config.file, config.overwrite, batch_size)
         } else {
@@ -172,12 +173,12 @@ impl Exporter for CsvExporter {
         let file_exists = self.path.exists();
 
         let file = if append_mode {
-            std::fs::OpenOptions::new()
+            OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&self.path)
         } else {
-            std::fs::OpenOptions::new()
+            OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(self.overwrite)
@@ -278,10 +279,10 @@ impl Exporter for CsvExporter {
 
 impl Drop for CsvExporter {
     fn drop(&mut self) {
-        if self.writer.is_some() {
-            if let Err(e) = self.finalize() {
-                warn!("CSV exporter finalization on Drop failed: {}", e);
-            }
+        if self.writer.is_some()
+            && let Err(e) = self.finalize()
+        {
+            warn!("CSV exporter finalization on Drop failed: {}", e);
         }
     }
 }

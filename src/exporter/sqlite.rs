@@ -181,26 +181,21 @@ impl Exporter for SqliteExporter {
 
         // 确保目录存在
         let path = Path::new(&self.database_url);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to create directory: {}", e),
-                    })
-                })?;
-            }
+        if let Some(parent) = path.parent().filter(|p| !p.exists()) {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to create directory: {}", e),
+                })
+            })?;
         }
 
         // 创建连接池
         let manager = ConnectionManager::<SqliteConnection>::new(&self.database_url);
-        let pool = Pool::builder()
-            .max_size(5)
-            .build(manager)
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to create connection pool: {}", e),
-                })
-            })?;
+        let pool = Pool::builder().max_size(5).build(manager).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create connection pool: {}", e),
+            })
+        })?;
 
         self.pool = Some(pool);
 
@@ -257,10 +252,10 @@ impl Exporter for SqliteExporter {
 
 impl Drop for SqliteExporter {
     fn drop(&mut self) {
-        if !self.pending_records.is_empty() {
-            if let Err(e) = self.finalize() {
-                warn!("SQLite exporter finalization on Drop failed: {}", e);
-            }
+        if !self.pending_records.is_empty()
+            && let Err(e) = self.finalize()
+        {
+            warn!("SQLite exporter finalization on Drop failed: {}", e);
         }
     }
 }

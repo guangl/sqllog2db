@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, FileError, Result};
 use log::{debug, error, info, warn};
 use std::fs;
 use std::path::Path;
@@ -13,11 +13,9 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
     if path.exists() && !force {
         error!("Configuration file already exists: {}", output_path);
         info!("Tip: use --force to overwrite");
-        return Err(crate::error::Error::File(
-            crate::error::FileError::AlreadyExists {
-                path: path.to_path_buf(),
-            },
-        ));
+        return Err(Error::File(FileError::AlreadyExists {
+            path: path.to_path_buf(),
+        }));
     }
 
     if path.exists() && force {
@@ -67,22 +65,20 @@ use_dictionary = true   # enable dictionary encoding
 "#;
 
     // 创建目录（如果需要）
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            info!("Creating directory: {}", parent.display());
-            fs::create_dir_all(parent).map_err(|e| {
-                crate::error::Error::File(crate::error::FileError::CreateDirectoryFailed {
-                    path: parent.to_path_buf(),
-                    reason: e.to_string(),
-                })
-            })?;
-        }
+    if let Some(parent) = path.parent().filter(|p| !p.exists()) {
+        info!("Creating directory: {}", parent.display());
+        fs::create_dir_all(parent).map_err(|e| {
+            crate::error::Error::File(crate::error::FileError::CreateDirectoryFailed {
+                path: parent.to_path_buf(),
+                reason: e.to_string(),
+            })
+        })?;
     }
 
     // 写入配置文件
     debug!("Writing configuration file...");
     fs::write(path, default_config).map_err(|e| {
-        crate::error::Error::File(crate::error::FileError::WriteFailed {
+        Error::File(FileError::WriteFailed {
             path: path.to_path_buf(),
             reason: e.to_string(),
         })

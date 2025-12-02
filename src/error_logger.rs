@@ -54,16 +54,14 @@ impl ErrorLogger {
         let path_ref = path.as_ref();
         let path_str = path_ref.to_string_lossy().to_string();
 
-        // 创建父目录（如果不存在）
-        if let Some(parent) = path_ref.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
-                    Error::Export(ExportError::FileCreateFailed {
-                        path: parent.to_path_buf(),
-                        reason: e.to_string(),
-                    })
-                })?;
-            }
+        // 创建父目录(如果不存在)
+        if let Some(parent) = path_ref.parent().filter(|p| !p.exists()) {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                Error::Export(ExportError::FileCreateFailed {
+                    path: parent.to_path_buf(),
+                    reason: e.to_string(),
+                })
+            })?;
         }
 
         // 打开或创建文件（追加模式）

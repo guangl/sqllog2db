@@ -4,7 +4,7 @@
 /// - CSV 文件
 /// - SQLite 数据库
 use crate::config::Config;
-use crate::error::Result;
+use crate::error::{ConfigError, Error, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::info;
 
@@ -175,9 +175,7 @@ impl ExporterManager {
             });
         }
 
-        Err(crate::error::Error::Config(
-            crate::error::ConfigError::NoExporters,
-        ))
+        Err(Error::Config(ConfigError::NoExporters))
     }
     /// 初始化导出器
     pub fn initialize(&mut self) -> Result<()> {

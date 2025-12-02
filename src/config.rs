@@ -8,6 +8,7 @@ fn default_batch_size() -> usize {
     10000
 }
 
+#[cfg_attr(feature = "csv", derive(Default))]
 #[derive(Debug, Deserialize)]
 pub struct Config {
     /// 新增：SQL 日志输入相关配置
@@ -194,7 +195,7 @@ pub struct ReplaceParametersFeature {
     pub symbols: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct FeaturesConfig {
     /// 对应配置文件中的 `[features.replace_parameters]`
     #[serde(default)]
@@ -208,14 +209,6 @@ impl FeaturesConfig {
             .as_ref()
             .map(|f| f.enable)
             .unwrap_or(false)
-    }
-}
-
-impl Default for FeaturesConfig {
-    fn default() -> Self {
-        Self {
-            replace_parameters: None,
-        }
     }
 }
 
@@ -239,37 +232,37 @@ impl ExporterConfig {
     /// 获取 CSV 导出器配置
     #[cfg(feature = "csv")]
     pub fn csv(&self) -> Option<&CsvExporter> {
-        return self.csv.as_ref();
+        self.csv.as_ref()
     }
 
     #[cfg(feature = "parquet")]
     /// 获取 Parquet 导出器配置
     pub fn parquet(&self) -> Option<&ParquetExporter> {
-        return self.parquet.as_ref();
+        self.parquet.as_ref()
     }
 
     #[cfg(feature = "jsonl")]
     /// 获取 JSONL 导出器配置
     pub fn jsonl(&self) -> Option<&JsonlExporter> {
-        return self.jsonl.as_ref();
+        self.jsonl.as_ref()
     }
 
     #[cfg(feature = "sqlite")]
     /// 获取 SQLite 导出器配置
     pub fn sqlite(&self) -> Option<&SqliteExporter> {
-        return self.sqlite.as_ref();
+        self.sqlite.as_ref()
     }
 
     #[cfg(feature = "duckdb")]
     /// 获取 DuckDB 导出器配置
     pub fn duckdb(&self) -> Option<&DuckdbExporter> {
-        return self.duckdb.as_ref();
+        self.duckdb.as_ref()
     }
 
     #[cfg(feature = "postgres")]
     /// 获取 PostgreSQL 导出器配置
     pub fn postgres(&self) -> Option<&PostgresExporter> {
-        return self.postgres.as_ref();
+        self.postgres.as_ref()
     }
 
     /// 检查是否有任何导出器配置
@@ -372,12 +365,12 @@ impl Default for ExporterConfig {
             parquet: Some(ParquetExporter::default()),
             #[cfg(feature = "jsonl")]
             jsonl: None,
-                #[cfg(feature = "sqlite")]
-                sqlite: None,
-                #[cfg(feature = "duckdb")]
-                duckdb: None,
-                #[cfg(feature = "postgres")]
-                postgres: None,
+            #[cfg(feature = "sqlite")]
+            sqlite: None,
+            #[cfg(feature = "duckdb")]
+            duckdb: None,
+            #[cfg(feature = "postgres")]
+            postgres: None,
         }
     }
 }
@@ -496,19 +489,6 @@ impl Default for PostgresExporter {
         Self {
             connection_string: "host=localhost user=postgres password=postgres dbname=sqllog"
                 .to_string(),
-        }
-    }
-}
-
-#[cfg(feature = "csv")]
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            sqllog: SqllogConfig::default(),
-            error: ErrorConfig::default(),
-            logging: LoggingConfig::default(),
-            features: FeaturesConfig::default(),
-            exporter: ExporterConfig::default(),
         }
     }
 }

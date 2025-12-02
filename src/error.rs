@@ -125,6 +125,7 @@ pub enum ExportError {
     FileWriteFailed { path: PathBuf, reason: String },
 
     /// Database operation error
+    #[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
     #[error("Database error: {reason}")]
     DatabaseError { reason: String },
 }

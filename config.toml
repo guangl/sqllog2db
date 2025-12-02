@@ -42,10 +42,10 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # use_dictionary = true             # 是否启用字典编码
 
 # 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
-[exporter.jsonl]
-file = "export/sqllog2db.jsonl"
-overwrite = true
-append = false
+# [exporter.jsonl]
+# file = "export/sqllog2db.jsonl"
+# overwrite = true
+# append = false
 
 # 方案 4: SQLite 数据库导出
 # [exporter.sqlite]
@@ -56,5 +56,6 @@ append = false
 # database_url = "export/sqllog2db.duckdb"
 
 # 方案 6: PostgreSQL 数据库导出
-# [exporter.postgres]
-# connection_string = "host=localhost user=postgres password=postgres dbname=sqllog"
+[exporter.postgres]
+connection_string = "host=localhost user=postgres password=postgres dbname=sqllog"
+table_name = "sqllog_records"

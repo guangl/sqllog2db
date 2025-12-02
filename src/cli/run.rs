@@ -1,8 +1,9 @@
-use crate::config::Config;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
 use crate::parser::SqllogParser;
+use crate::{config::Config, error::ParserError};
+use dm_database_parser_sqllog::LogParser;
 use log::{info, warn};
 use std::time::Instant;
 
@@ -42,8 +43,8 @@ fn process_log_file(
 ) -> Result<()> {
     info!("Processing file: {}", file_path);
 
-    let parser = dm_database_parser_sqllog::LogParser::from_path(file_path).map_err(|e| {
-        crate::error::Error::Parser(crate::error::ParserError::InvalidPath {
+    let parser = LogParser::from_path(file_path).map_err(|e| {
+        Error::Parser(ParserError::InvalidPath {
             path: file_path.into(),
             reason: format!("{}", e),
         })
@@ -57,7 +58,7 @@ fn process_log_file(
                 // 由于 Sqllog 具有生命周期限制，直接导出每条记录
                 exporter_manager.export_batch(&[record])?;
 
-                if stats.total % log_every == 0 {
+                if stats.total.is_multiple_of(log_every) {
                     info!("Parsed {} records...", stats.total);
                 }
             }

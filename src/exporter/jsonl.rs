@@ -4,6 +4,7 @@ use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{debug, info, warn};
 use serde::Serialize;
+use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -98,12 +99,12 @@ impl Exporter for JsonlExporter {
         let append_mode = self.append;
 
         let file = if append_mode {
-            std::fs::OpenOptions::new()
+            fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&self.path)
         } else {
-            std::fs::OpenOptions::new()
+            fs::OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(self.overwrite)
@@ -206,10 +207,10 @@ impl Exporter for JsonlExporter {
 
 impl Drop for JsonlExporter {
     fn drop(&mut self) {
-        if self.writer.is_some() {
-            if let Err(e) = self.finalize() {
-                warn!("JSONL exporter finalization on Drop failed: {}", e);
-            }
+        if self.writer.is_some()
+            && let Err(e) = self.finalize()
+        {
+            warn!("JSONL exporter finalization on Drop failed: {}", e);
         }
     }
 }

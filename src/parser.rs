@@ -1,8 +1,8 @@
 /// SQL 日志解析模块
 /// 使用 dm-database-parser-sqllog 库解析达梦数据库的 SQL 日志文件
 use crate::error::{Error, ParserError, Result};
-use std::path::{Path, PathBuf};
 use log::{debug, info, warn};
+use std::path::{Path, PathBuf};
 
 /// SQL 日志解析器
 pub struct SqllogParser {
@@ -67,13 +67,9 @@ impl SqllogParser {
                 let entry_path = entry.path();
 
                 // 只处理 .log 文件
-                if entry_path.is_file() {
-                    if let Some(ext) = entry_path.extension() {
-                        if ext == "log" {
-                            debug!("Found log file: {}", entry_path.display());
-                            log_files.push(entry_path);
-                        }
-                    }
+                if entry_path.is_file() && entry_path.extension().is_some_and(|ext| ext == "log") {
+                    debug!("Found log file: {}", entry_path.display());
+                    log_files.push(entry_path);
                 }
             }
 

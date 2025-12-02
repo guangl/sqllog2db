@@ -252,10 +252,10 @@ impl Exporter for PostgresExporter {
 
 impl Drop for PostgresExporter {
     fn drop(&mut self) {
-        if !self.pending_records.is_empty() {
-            if let Err(e) = self.finalize() {
-                warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
-            }
+        if !self.pending_records.is_empty()
+            && let Err(e) = self.finalize()
+        {
+            warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
         }
     }
 }

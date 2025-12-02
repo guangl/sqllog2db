@@ -114,7 +114,7 @@ impl ParquetExporter {
 
         let props = props_builder.build();
         let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         self.writer = Some(writer);
         self.initialized = true;
@@ -146,7 +146,7 @@ impl ParquetExporter {
         self.row_count_vec
             .push(ind.as_ref().map_or(0, |i| i.row_count as i64));
         self.exec_id_vec
-            .push(ind.as_ref().map_or(0, |i| i.execute_id as i64));
+            .push(ind.as_ref().map_or(0, |i| i.execute_id));
 
         // 当缓存达到 row_group_size 时，写入一个 RecordBatch
         if self.ts_vec.len() >= self.row_group_size {
@@ -154,13 +154,6 @@ impl ParquetExporter {
         }
 
         self.stats.record_success();
-        Ok(())
-    }
-
-    pub fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
-        }
         Ok(())
     }
 
@@ -204,12 +197,12 @@ impl ParquetExporter {
                     exec_id_array,
                 ],
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
             // 写入 RecordBatch
             writer
                 .write(&batch)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
 
             // 清空缓存
             self.ts_vec.clear();
@@ -240,7 +233,7 @@ impl ParquetExporter {
         if let Some(writer) = self.writer.take() {
             writer
                 .close()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
         }
 
         info!(
