@@ -56,7 +56,6 @@ pub struct Config {
     /// 新增：SQL 日志输入相关配置
     #[serde(default)]
     pub sqllog: SqllogConfig,
-
     pub error: ErrorConfig,
     pub logging: LoggingConfig,
     pub features: FeaturesConfig,

@@ -9,6 +9,9 @@ use tempfile::NamedTempFile;
 /// SQLite 导出器 - 使用 CSV 批量导入
 pub struct SqliteExporter {
     database_url: String,
+    table_name: String,
+    overwrite: bool,
+    append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
     batch_size: usize,
@@ -18,9 +21,18 @@ pub struct SqliteExporter {
 
 impl SqliteExporter {
     /// 创建新的 SQLite 导出器
-    pub fn new(database_url: String, batch_size: usize) -> Self {
+    pub fn new(
+        database_url: String,
+        table_name: String,
+        overwrite: bool,
+        append: bool,
+        batch_size: usize,
+    ) -> Self {
         Self {
             database_url,
+            table_name,
+            overwrite,
+            append,
             conn: None,
             stats: ExportStats::new(),
             batch_size,
@@ -31,7 +43,13 @@ impl SqliteExporter {
 
     /// 从配置创建 SQLite 导出器
     pub fn from_config(config: &crate::config::SqliteExporter, batch_size: usize) -> Self {
-        Self::new(config.database_url.clone(), batch_size)
+        Self::new(
+            config.database_url.clone(),
+            config.table_name.clone(),
+            config.overwrite,
+            config.append,
+            batch_size,
+        )
     }
 
     /// 创建数据库表
@@ -42,9 +60,9 @@ impl SqliteExporter {
             })
         })?;
 
-        conn.execute(
+        let sql = format!(
             r#"
-            CREATE TABLE IF NOT EXISTS sqllog (
+            CREATE TABLE IF NOT EXISTS {} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts TEXT NOT NULL,
                 ep INTEGER NOT NULL,
@@ -61,13 +79,15 @@ impl SqliteExporter {
                 exec_id INTEGER
             )
             "#,
-            [],
-        )
-        .map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create table: {}", e),
-            })
-        })?;
+            self.table_name
+        );
+
+        conn.execute(&sql, [])
+            .map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to create table: {}", e),
+                })
+            })?;
 
         info!("SQLite table created or already exists");
         Ok(())
@@ -96,7 +116,7 @@ impl SqliteExporter {
 
         // 使用 SQLite 的 CSV 虚拟表功能直接导入
         let sql = format!(
-            r#"INSERT INTO sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
+            r#"INSERT INTO {} (ts, ep, sess_id, thrd_id, username, trx_id,
                                   statement, appname, client_ip, sql,
                                   exec_time_ms, row_count, exec_id)
                SELECT ts, ep, sess_id, thrd_id, username, trx_id,
@@ -105,6 +125,7 @@ impl SqliteExporter {
                       NULLIF(row_count, ''),
                       NULLIF(exec_id, '')
                FROM csvtab('{}', 'header=yes')"#,
+            self.table_name,
             csv_path.replace('\\', "\\\\").replace('\'', "''")
         );
 
@@ -144,6 +165,28 @@ impl Exporter for SqliteExporter {
         })?;
 
         self.conn = Some(conn);
+
+        // 处理 overwrite/append 逻辑
+        if self.overwrite {
+            // 如果 overwrite=true，删除已存在的表
+            let drop_sql = format!("DROP TABLE IF EXISTS {}", self.table_name);
+            if let Some(conn) = &self.conn {
+                conn.execute(&drop_sql, []).map_err(|e| {
+                    Error::Export(ExportError::DatabaseError {
+                        reason: format!("Failed to drop table: {}", e),
+                    })
+                })?;
+                info!("Dropped existing table: {}", self.table_name);
+            }
+        } else if !self.append {
+            // 如果 overwrite=false 且 append=false，清空表数据
+            if let Some(conn) = &self.conn {
+                let delete_sql = format!("DELETE FROM {}", self.table_name);
+                // 尝试清空，如果表不存在则忽略错误
+                let _ = conn.execute(&delete_sql, []);
+                info!("Cleared existing data from table: {}", self.table_name);
+            }
+        }
 
         // 创建表
         self.create_table()?;

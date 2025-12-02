@@ -11,6 +11,8 @@ pub struct PostgresExporter {
     connection_string: String,
     schema: String,
     table_name: String,
+    overwrite: bool,
+    append: bool,
     client: Option<Client>,
     stats: ExportStats,
     batch_size: usize,
@@ -24,12 +26,16 @@ impl PostgresExporter {
         connection_string: String,
         schema: String,
         table_name: String,
+        overwrite: bool,
+        append: bool,
         batch_size: usize,
     ) -> Self {
         Self {
             connection_string,
             schema,
             table_name,
+            overwrite,
+            append,
             client: None,
             stats: ExportStats::new(),
             batch_size,
@@ -44,6 +50,8 @@ impl PostgresExporter {
             config.connection_string(),
             config.schema.clone(),
             config.table_name.clone(),
+            config.overwrite,
+            config.append,
             batch_size,
         )
     }
@@ -168,6 +176,30 @@ impl Exporter for PostgresExporter {
         })?;
 
         self.client = Some(client);
+
+        // 处理 overwrite/append 逻辑
+        if self.overwrite {
+            // 如果 overwrite=true，删除已存在的表
+            let full_table_name = self.full_table_name();
+            if let Some(client) = &mut self.client {
+                let drop_sql = format!("DROP TABLE IF EXISTS {}", full_table_name);
+                client.execute(&drop_sql, &[]).map_err(|e| {
+                    Error::Export(ExportError::DatabaseError {
+                        reason: format!("Failed to drop table: {}", e),
+                    })
+                })?;
+                info!("Dropped existing table: {}", full_table_name);
+            }
+        } else if !self.append {
+            // 如果 overwrite=false 且 append=false，清空表数据
+            let full_table_name = self.full_table_name();
+            if let Some(client) = &mut self.client {
+                let delete_sql = format!("DELETE FROM {}", full_table_name);
+                // 尝试清空，如果表不存在则忽略错误
+                let _ = client.execute(&delete_sql, &[]);
+                info!("Cleared existing data from table: {}", full_table_name);
+            }
+        }
 
         // 创建表
         self.create_table()?;
