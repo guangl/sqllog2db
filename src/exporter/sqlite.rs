@@ -82,12 +82,11 @@ impl SqliteExporter {
             self.table_name
         );
 
-        conn.execute(&sql, [])
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to create table: {}", e),
-                })
-            })?;
+        conn.execute(&sql, []).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create table: {}", e),
+            })
+        })?;
 
         info!("SQLite table created or already exists");
         Ok(())
@@ -114,8 +113,22 @@ impl SqliteExporter {
             })
         })?;
 
-        // 使用 SQLite 的 CSV 虚拟表功能直接导入
-        let sql = format!(
+        // 创建临时虚拟表来导入 CSV
+        let virtual_table_name = format!("{}_temp_csv", self.table_name);
+        let create_vtab_sql = format!(
+            "CREATE VIRTUAL TABLE temp.{} USING csv(filename = '{}', header = yes)",
+            virtual_table_name,
+            csv_path.replace('\\', "\\\\").replace('\'', "''")
+        );
+
+        conn.execute(&create_vtab_sql, []).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create CSV virtual table: {}", e),
+            })
+        })?;
+
+        // 从虚拟表导入数据到实际表
+        let insert_sql = format!(
             r#"INSERT INTO {} (ts, ep, sess_id, thrd_id, username, trx_id,
                                   statement, appname, client_ip, sql,
                                   exec_time_ms, row_count, exec_id)
@@ -124,16 +137,19 @@ impl SqliteExporter {
                       NULLIF(exec_time_ms, ''),
                       NULLIF(row_count, ''),
                       NULLIF(exec_id, '')
-               FROM csvtab('{}', 'header=yes')"#,
-            self.table_name,
-            csv_path.replace('\\', "\\\\").replace('\'', "''")
+               FROM temp.{}"#,
+            self.table_name, virtual_table_name
         );
 
-        let count = conn.execute(&sql, []).map_err(|e| {
+        let count = conn.execute(&insert_sql, []).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to import CSV: {}", e),
             })
         })?;
+
+        // 删除临时虚拟表
+        let drop_vtab_sql = format!("DROP TABLE temp.{}", virtual_table_name);
+        let _ = conn.execute(&drop_vtab_sql, []);
 
         debug!("Flushed {} records to SQLite from CSV", count);
         self.stats.flush_operations += 1;
@@ -161,6 +177,13 @@ impl Exporter for SqliteExporter {
         let conn = Connection::open(&self.database_url).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to open database: {}", e),
+            })
+        })?;
+
+        // 加载 CSV 虚拟表模块
+        rusqlite::vtab::csvtab::load_module(&conn).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to load csvtab module: {}", e),
             })
         })?;
 

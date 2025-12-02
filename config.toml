@@ -5,7 +5,7 @@
 directory = "sqllogs"
 # 批量提交大小 (推荐 10000 以获得最佳性能)
 # 0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入
-batch_size = 100000
+batch_size = 50000
 
 [error]
 # 解析错误日志（JSON Lines 格式）输出路径
@@ -48,11 +48,11 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # append = false
 
 # 方案 4: SQLite 数据库导出
-[exporter.sqlite]
-database_url = "export/sqllog2db.db"
-table_name = "sqllog_records"
-overwrite = true
-append = false
+# [exporter.sqlite]
+# database_url = "export/sqllog2db.db"
+# table_name = "sqllog_records"
+# overwrite = true
+# append = false
 
 # 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
 # [exporter.duckdb]
@@ -63,11 +63,11 @@ append = false
 
 # 方案 6: PostgreSQL 数据库导出
 [exporter.postgres]
-host = "localhost"
+host = "192.168.15.5"
 port = 65432
 username = "postgres"
 password = "123456789"
-database = "sqllog"
+database = "postgres"
 schema = "public"
 table_name = "sqllog_records"
 overwrite = true
