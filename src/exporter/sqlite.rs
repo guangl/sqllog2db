@@ -1,56 +1,19 @@
-use super::{ExportStats, Exporter};
+use super::{ExportStats, Exporter, csv::CsvExporter};
 use crate::error::{Error, ExportError, Result};
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
 use dm_database_parser_sqllog::Sqllog;
 use log::{debug, info, warn};
+use rusqlite::Connection;
 use std::path::Path;
+use tempfile::NamedTempFile;
 
-// 定义数据库表结构
-table! {
-    sqllog (id) {
-        id -> Nullable<Integer>,
-        ts -> Text,
-        ep -> Integer,
-        sess_id -> Text,
-        thrd_id -> Text,
-        username -> Text,
-        trx_id -> Text,
-        statement -> Text,
-        appname -> Text,
-        client_ip -> Text,
-        sql -> Text,
-        exec_time_ms -> Nullable<Float>,
-        row_count -> Nullable<Integer>,
-        exec_id -> Nullable<BigInt>,
-    }
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = sqllog)]
-struct NewSqllogRecord<'a> {
-    ts: &'a str,
-    ep: i32,
-    sess_id: &'a str,
-    thrd_id: &'a str,
-    username: &'a str,
-    trx_id: &'a str,
-    statement: &'a str,
-    appname: &'a str,
-    client_ip: &'a str,
-    sql: &'a str,
-    exec_time_ms: Option<f32>,
-    row_count: Option<i32>,
-    exec_id: Option<i64>,
-}
-
-/// SQLite 导出器
+/// SQLite 导出器 - 使用 CSV 批量导入
 pub struct SqliteExporter {
     database_url: String,
-    pool: Option<Pool<ConnectionManager<SqliteConnection>>>,
+    conn: Option<Connection>,
     stats: ExportStats,
     batch_size: usize,
-    pending_records: Vec<NewSqllogRecord<'static>>,
+    csv_exporter: Option<CsvExporter>,
+    temp_csv: Option<NamedTempFile>,
 }
 
 impl SqliteExporter {
@@ -58,10 +21,11 @@ impl SqliteExporter {
     pub fn new(database_url: String, batch_size: usize) -> Self {
         Self {
             database_url,
-            pool: None,
+            conn: None,
             stats: ExportStats::new(),
             batch_size,
-            pending_records: Vec::with_capacity(batch_size),
+            csv_exporter: None,
+            temp_csv: None,
         }
     }
 
@@ -72,19 +36,13 @@ impl SqliteExporter {
 
     /// 创建数据库表
     fn create_table(&self) -> Result<()> {
-        let pool = self.pool.as_ref().ok_or_else(|| {
+        let conn = self.conn.as_ref().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
-                reason: "Connection pool not initialized".to_string(),
+                reason: "Connection not initialized".to_string(),
             })
         })?;
 
-        let mut conn = pool.get().map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to get connection: {}", e),
-            })
-        })?;
-
-        diesel::sql_query(
+        conn.execute(
             r#"
             CREATE TABLE IF NOT EXISTS sqllog (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,8 +61,8 @@ impl SqliteExporter {
                 exec_id INTEGER
             )
             "#,
+            [],
         )
-        .execute(&mut conn)
         .map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to create table: {}", e),
@@ -115,63 +73,52 @@ impl SqliteExporter {
         Ok(())
     }
 
-    /// 刷新待处理记录到数据库
+    /// 刷新待处理记录到数据库（使用 CSV 虚拟表导入）
     fn flush(&mut self) -> Result<()> {
-        if self.pending_records.is_empty() {
-            return Ok(());
+        // 先刷新 CSV 导出器
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            <CsvExporter as Exporter>::finalize(csv_exporter)?;
         }
 
-        let pool = self.pool.as_ref().ok_or_else(|| {
+        let temp_csv = self.temp_csv.take().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
-                reason: "Connection pool not initialized".to_string(),
+                reason: "No temporary CSV file".to_string(),
             })
         })?;
 
-        let mut conn = pool.get().map_err(|e| {
+        let csv_path = temp_csv.path().to_string_lossy().to_string();
+
+        let conn = self.conn.as_ref().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to get connection: {}", e),
+                reason: "Connection not initialized".to_string(),
             })
         })?;
 
-        let count = self.pending_records.len();
+        // 使用 SQLite 的 CSV 虚拟表功能直接导入
+        let sql = format!(
+            r#"INSERT INTO sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
+                                  statement, appname, client_ip, sql,
+                                  exec_time_ms, row_count, exec_id)
+               SELECT ts, ep, sess_id, thrd_id, username, trx_id,
+                      statement, appname, client_ip, sql,
+                      NULLIF(exec_time_ms, ''),
+                      NULLIF(row_count, ''),
+                      NULLIF(exec_id, '')
+               FROM csvtab('{}', 'header=yes')"#,
+            csv_path.replace('\\', "\\\\").replace('\'', "''")
+        );
 
-        diesel::insert_into(sqllog::table)
-            .values(&self.pending_records)
-            .execute(&mut conn)
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to insert records: {}", e),
-                })
-            })?;
+        let count = conn.execute(&sql, []).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to import CSV: {}", e),
+            })
+        })?;
 
-        debug!("Flushed {} records to SQLite", count);
+        debug!("Flushed {} records to SQLite from CSV", count);
         self.stats.flush_operations += 1;
         self.stats.last_flush_size = count;
-        self.pending_records.clear();
 
         Ok(())
-    }
-
-    /// 将 Sqllog 转换为数据库记录
-    fn sqllog_to_record(sqllog: &Sqllog<'_>) -> NewSqllogRecord<'static> {
-        let meta = sqllog.parse_meta();
-        let ind = sqllog.parse_indicators();
-
-        NewSqllogRecord {
-            ts: Box::leak(sqllog.ts.to_string().into_boxed_str()),
-            ep: meta.ep as i32,
-            sess_id: Box::leak(meta.sess_id.to_string().into_boxed_str()),
-            thrd_id: Box::leak(meta.thrd_id.to_string().into_boxed_str()),
-            username: Box::leak(meta.username.to_string().into_boxed_str()),
-            trx_id: Box::leak(meta.trxid.to_string().into_boxed_str()),
-            statement: Box::leak(meta.statement.to_string().into_boxed_str()),
-            appname: Box::leak(meta.appname.to_string().into_boxed_str()),
-            client_ip: Box::leak(meta.client_ip.to_string().into_boxed_str()),
-            sql: Box::leak(sqllog.body().to_string().into_boxed_str()),
-            exec_time_ms: ind.as_ref().map(|i| i.execute_time),
-            row_count: ind.as_ref().map(|i| i.row_count as i32),
-            exec_id: ind.as_ref().map(|i| i.execute_id),
-        }
     }
 }
 
@@ -189,48 +136,51 @@ impl Exporter for SqliteExporter {
             })?;
         }
 
-        // 创建连接池
-        let manager = ConnectionManager::<SqliteConnection>::new(&self.database_url);
-        let pool = Pool::builder().max_size(5).build(manager).map_err(|e| {
+        // 创建数据库连接
+        let conn = Connection::open(&self.database_url).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create connection pool: {}", e),
+                reason: format!("Failed to open database: {}", e),
             })
         })?;
 
-        self.pool = Some(pool);
+        self.conn = Some(conn);
 
         // 创建表
         self.create_table()?;
+
+        // 创建临时 CSV 文件
+        let temp_csv = NamedTempFile::new().map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create temp CSV file: {}", e),
+            })
+        })?;
+
+        // 创建 CSV 导出器
+        let csv_exporter = CsvExporter::with_batch_size(temp_csv.path(), true, self.batch_size);
+        self.csv_exporter = Some(csv_exporter);
+        self.temp_csv = Some(temp_csv);
+
+        // 初始化 CSV 导出器
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.initialize()?;
+        }
 
         info!("SQLite exporter initialized: {}", self.database_url);
         Ok(())
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        let record = Self::sqllog_to_record(sqllog);
-        self.pending_records.push(record);
-
-        // 当达到批量大小时刷新
-        if self.pending_records.len() >= self.batch_size {
-            self.flush()?;
+        // 导出到临时 CSV
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.export(sqllog)?;
         }
 
         self.stats.record_success();
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
-        debug!("Exporting {} records to SQLite in batch", sqllogs.len());
-
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
-        }
-
-        Ok(())
-    }
-
     fn finalize(&mut self) -> Result<()> {
-        // 刷新剩余记录
+        // 从 CSV 批量导入
         self.flush()?;
 
         info!(
@@ -252,7 +202,7 @@ impl Exporter for SqliteExporter {
 
 impl Drop for SqliteExporter {
     fn drop(&mut self) {
-        if !self.pending_records.is_empty()
+        if self.csv_exporter.is_some()
             && let Err(e) = self.finalize()
         {
             warn!("SQLite exporter finalization on Drop failed: {}", e);

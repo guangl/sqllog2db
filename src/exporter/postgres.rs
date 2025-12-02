@@ -1,33 +1,19 @@
-use super::{ExportStats, Exporter};
+use super::{ExportStats, Exporter, csv::CsvExporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{debug, info, warn};
 use postgres::{Client, NoTls};
+use std::io::Write;
+use tempfile::NamedTempFile;
 
-/// PostgreSQL 导出器
+/// PostgreSQL 导出器 - 使用 CSV + COPY FROM STDIN
 pub struct PostgresExporter {
     connection_string: String,
     client: Option<Client>,
     stats: ExportStats,
     batch_size: usize,
-    pending_records: Vec<PostgresRecord>,
-}
-
-#[derive(Debug, Clone)]
-struct PostgresRecord {
-    ts: String,
-    ep: i32,
-    sess_id: String,
-    thrd_id: String,
-    username: String,
-    trx_id: String,
-    statement: String,
-    appname: String,
-    client_ip: String,
-    sql: String,
-    exec_time_ms: Option<f32>,
-    row_count: Option<i32>,
-    exec_id: Option<i64>,
+    csv_exporter: Option<CsvExporter>,
+    temp_csv: Option<NamedTempFile>,
 }
 
 impl PostgresExporter {
@@ -38,7 +24,8 @@ impl PostgresExporter {
             client: None,
             stats: ExportStats::new(),
             batch_size,
-            pending_records: Vec::with_capacity(batch_size),
+            csv_exporter: None,
+            temp_csv: None,
         }
     }
 
@@ -87,11 +74,18 @@ impl PostgresExporter {
         Ok(())
     }
 
-    /// 刷新待处理记录到数据库
+    /// 刷新待处理记录到数据库（使用 COPY FROM STDIN）
     fn flush(&mut self) -> Result<()> {
-        if self.pending_records.is_empty() {
-            return Ok(());
+        // 先刷新 CSV 导出器
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            <CsvExporter as Exporter>::finalize(csv_exporter)?;
         }
+
+        let temp_csv = self.temp_csv.take().ok_or_else(|| {
+            Error::Export(ExportError::DatabaseError {
+                reason: "No temporary CSV file".to_string(),
+            })
+        })?;
 
         let client = self.client.as_mut().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
@@ -99,90 +93,44 @@ impl PostgresExporter {
             })
         })?;
 
-        let count = self.pending_records.len();
-
-        // 使用事务批量插入
-        let mut tx = client.transaction().map_err(|e| {
+        // 读取 CSV 文件内容
+        let csv_content = std::fs::read(temp_csv.path()).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to start transaction: {}", e),
+                reason: format!("Failed to read CSV file: {}", e),
             })
         })?;
 
-        let stmt = tx
-            .prepare(
-                r#"
-                INSERT INTO sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
-                                   statement, appname, client_ip, sql,
-                                   exec_time_ms, row_count, exec_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                "#,
+        // 使用 COPY FROM STDIN 导入
+        let mut writer = client
+            .copy_in(
+                r#"COPY sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
+                             statement, appname, client_ip, sql,
+                             exec_time_ms, row_count, exec_id)
+                   FROM STDIN WITH (FORMAT CSV, HEADER true)"#,
             )
             .map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to prepare statement: {}", e),
+                    reason: format!("Failed to start COPY: {}", e),
                 })
             })?;
 
-        for record in &self.pending_records {
-            tx.execute(
-                &stmt,
-                &[
-                    &record.ts,
-                    &record.ep,
-                    &record.sess_id,
-                    &record.thrd_id,
-                    &record.username,
-                    &record.trx_id,
-                    &record.statement,
-                    &record.appname,
-                    &record.client_ip,
-                    &record.sql,
-                    &record.exec_time_ms,
-                    &record.row_count,
-                    &record.exec_id,
-                ],
-            )
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to execute insert: {}", e),
-                })
-            })?;
-        }
-
-        tx.commit().map_err(|e| {
+        writer.write_all(&csv_content).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to commit transaction: {}", e),
+                reason: format!("Failed to write CSV data: {}", e),
             })
         })?;
 
-        debug!("Flushed {} records to PostgreSQL", count);
+        let count = writer.finish().map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to finish COPY: {}", e),
+            })
+        })?;
+
+        debug!("Flushed {} records to PostgreSQL from CSV", count);
         self.stats.flush_operations += 1;
-        self.stats.last_flush_size = count;
-        self.pending_records.clear();
+        self.stats.last_flush_size = count as usize;
 
         Ok(())
-    }
-
-    /// 将 Sqllog 转换为数据库记录
-    fn sqllog_to_record(sqllog: &Sqllog<'_>) -> PostgresRecord {
-        let meta = sqllog.parse_meta();
-        let ind = sqllog.parse_indicators();
-
-        PostgresRecord {
-            ts: sqllog.ts.to_string(),
-            ep: meta.ep as i32,
-            sess_id: meta.sess_id.to_string(),
-            thrd_id: meta.thrd_id.to_string(),
-            username: meta.username.to_string(),
-            trx_id: meta.trxid.to_string(),
-            statement: meta.statement.to_string(),
-            appname: meta.appname.to_string(),
-            client_ip: meta.client_ip.to_string(),
-            sql: sqllog.body().to_string(),
-            exec_time_ms: ind.as_ref().map(|i| i.execute_time),
-            row_count: ind.as_ref().map(|i| i.row_count as i32),
-            exec_id: ind.as_ref().map(|i| i.execute_id),
-        }
     }
 }
 
@@ -202,35 +150,39 @@ impl Exporter for PostgresExporter {
         // 创建表
         self.create_table()?;
 
+        // 创建临时 CSV 文件
+        let temp_csv = NamedTempFile::new().map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create temp CSV file: {}", e),
+            })
+        })?;
+
+        // 创建 CSV 导出器
+        let csv_exporter = CsvExporter::with_batch_size(temp_csv.path(), true, self.batch_size);
+        self.csv_exporter = Some(csv_exporter);
+        self.temp_csv = Some(temp_csv);
+
+        // 初始化 CSV 导出器
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.initialize()?;
+        }
+
         info!("PostgreSQL exporter initialized");
         Ok(())
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        let record = Self::sqllog_to_record(sqllog);
-        self.pending_records.push(record);
-
-        // 当达到批量大小时刷新
-        if self.pending_records.len() >= self.batch_size {
-            self.flush()?;
+        // 导出到临时 CSV
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.export(sqllog)?;
         }
 
         self.stats.record_success();
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
-        debug!("Exporting {} records to PostgreSQL in batch", sqllogs.len());
-
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
-        }
-
-        Ok(())
-    }
-
     fn finalize(&mut self) -> Result<()> {
-        // 刷新剩余记录
+        // 从 CSV 批量导入
         self.flush()?;
 
         info!(
@@ -252,7 +204,7 @@ impl Exporter for PostgresExporter {
 
 impl Drop for PostgresExporter {
     fn drop(&mut self) {
-        if !self.pending_records.is_empty()
+        if self.csv_exporter.is_some()
             && let Err(e) = self.finalize()
         {
             warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
