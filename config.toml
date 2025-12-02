@@ -50,12 +50,25 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # 方案 4: SQLite 数据库导出
 [exporter.sqlite]
 database_url = "export/sqllog2db.db"
+table_name = "sqllog_records"
+overwrite = true
+append = false
 
 # 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
 # [exporter.duckdb]
 # database_url = "export/sqllog2db.duckdb"
+# table_name = "sqllog_records"
+# overwrite = true
+# append = false
 
 # 方案 6: PostgreSQL 数据库导出
-# [exporter.postgres]
-# connection_string = "host=localhost user=postgres password=postgres dbname=sqllog"
-# table_name = "sqllog_records"
+[exporter.postgres]
+host = "localhost"
+port = 65432
+username = "postgres"
+password = "123456789"
+database = "sqllog"
+schema = "public"
+table_name = "sqllog_records"
+overwrite = true
+append = false

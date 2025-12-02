@@ -8,6 +8,48 @@ fn default_batch_size() -> usize {
     10000
 }
 
+/// 默认表名
+#[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
+fn default_table_name() -> String {
+    "sqllog_records".to_string()
+}
+
+/// 默认 true 值
+#[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
+fn default_true() -> bool {
+    true
+}
+
+/// PostgreSQL 默认主机
+#[cfg(feature = "postgres")]
+fn default_postgres_host() -> String {
+    "localhost".to_string()
+}
+
+/// PostgreSQL 默认端口
+#[cfg(feature = "postgres")]
+fn default_postgres_port() -> u16 {
+    5432
+}
+
+/// PostgreSQL 默认用户名
+#[cfg(feature = "postgres")]
+fn default_postgres_username() -> String {
+    "postgres".to_string()
+}
+
+/// PostgreSQL 默认数据库
+#[cfg(feature = "postgres")]
+fn default_postgres_database() -> String {
+    "sqllog".to_string()
+}
+
+/// PostgreSQL 默认 schema
+#[cfg(feature = "postgres")]
+fn default_postgres_schema() -> String {
+    "public".to_string()
+}
+
 #[cfg_attr(feature = "csv", derive(Default))]
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -449,6 +491,15 @@ impl Default for JsonlExporter {
 pub struct SqliteExporter {
     /// SQLite 数据库文件路径
     pub database_url: String,
+    /// 表名
+    #[serde(default = "default_table_name")]
+    pub table_name: String,
+    /// 是否覆盖已存在的表
+    #[serde(default = "default_true")]
+    pub overwrite: bool,
+    /// 是否追加模式
+    #[serde(default)]
+    pub append: bool,
 }
 
 #[cfg(feature = "sqlite")]
@@ -456,6 +507,9 @@ impl Default for SqliteExporter {
     fn default() -> Self {
         Self {
             database_url: "export/sqllog2db.db".to_string(),
+            table_name: "sqllog_records".to_string(),
+            overwrite: true,
+            append: false,
         }
     }
 }
@@ -465,6 +519,15 @@ impl Default for SqliteExporter {
 pub struct DuckdbExporter {
     /// DuckDB 数据库文件路径
     pub database_url: String,
+    /// 表名
+    #[serde(default = "default_table_name")]
+    pub table_name: String,
+    /// 是否覆盖已存在的表
+    #[serde(default = "default_true")]
+    pub overwrite: bool,
+    /// 是否追加模式
+    #[serde(default)]
+    pub append: bool,
 }
 
 #[cfg(feature = "duckdb")]
@@ -472,6 +535,9 @@ impl Default for DuckdbExporter {
     fn default() -> Self {
         Self {
             database_url: "export/sqllog2db.duckdb".to_string(),
+            table_name: "sqllog_records".to_string(),
+            overwrite: true,
+            append: false,
         }
     }
 }
@@ -479,16 +545,58 @@ impl Default for DuckdbExporter {
 #[cfg(feature = "postgres")]
 #[derive(Debug, Deserialize)]
 pub struct PostgresExporter {
-    /// PostgreSQL 连接字符串
-    pub connection_string: String,
+    /// PostgreSQL 主机地址
+    #[serde(default = "default_postgres_host")]
+    pub host: String,
+    /// PostgreSQL 端口
+    #[serde(default = "default_postgres_port")]
+    pub port: u16,
+    /// 用户名
+    #[serde(default = "default_postgres_username")]
+    pub username: String,
+    /// 密码
+    pub password: String,
+    /// 数据库名
+    #[serde(default = "default_postgres_database")]
+    pub database: String,
+    /// Schema 名称
+    #[serde(default = "default_postgres_schema")]
+    pub schema: String,
+    /// 表名
+    #[serde(default = "default_table_name")]
+    pub table_name: String,
+    /// 是否覆盖已存在的表
+    #[serde(default = "default_true")]
+    pub overwrite: bool,
+    /// 是否追加模式
+    #[serde(default)]
+    pub append: bool,
 }
 
 #[cfg(feature = "postgres")]
 impl Default for PostgresExporter {
     fn default() -> Self {
         Self {
-            connection_string: "host=localhost user=postgres password=postgres dbname=sqllog"
-                .to_string(),
+            host: "localhost".to_string(),
+            port: 5432,
+            username: "postgres".to_string(),
+            password: "postgres".to_string(),
+            database: "sqllog".to_string(),
+            schema: "public".to_string(),
+            table_name: "sqllog_records".to_string(),
+            overwrite: true,
+            append: false,
         }
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl PostgresExporter {
+    /// 获取连接字符串
+    pub fn connection_string(&self) -> String {
+        format!(
+            "host={} port={} user={} password={} dbname={}",
+            self.host, self.port, self.username, self.password, self.database
+        )
     }
 }

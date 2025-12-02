@@ -9,6 +9,8 @@ use tempfile::NamedTempFile;
 /// PostgreSQL 导出器 - 使用 CSV + COPY FROM STDIN
 pub struct PostgresExporter {
     connection_string: String,
+    schema: String,
+    table_name: String,
     client: Option<Client>,
     stats: ExportStats,
     batch_size: usize,
@@ -18,9 +20,16 @@ pub struct PostgresExporter {
 
 impl PostgresExporter {
     /// 创建新的 PostgreSQL 导出器
-    pub fn new(connection_string: String, batch_size: usize) -> Self {
+    pub fn new(
+        connection_string: String,
+        schema: String,
+        table_name: String,
+        batch_size: usize,
+    ) -> Self {
         Self {
             connection_string,
+            schema,
+            table_name,
             client: None,
             stats: ExportStats::new(),
             batch_size,
@@ -31,21 +40,31 @@ impl PostgresExporter {
 
     /// 从配置创建 PostgreSQL 导出器
     pub fn from_config(config: &crate::config::PostgresExporter, batch_size: usize) -> Self {
-        Self::new(config.connection_string.clone(), batch_size)
+        Self::new(
+            config.connection_string(),
+            config.schema.clone(),
+            config.table_name.clone(),
+            batch_size,
+        )
+    }
+
+    /// 获取完整表名
+    fn full_table_name(&self) -> String {
+        format!("{}.{}", self.schema, self.table_name)
     }
 
     /// 创建数据库表
     fn create_table(&mut self) -> Result<()> {
+        let full_table_name = self.full_table_name();
         let client = self.client.as_mut().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
                 reason: "Connection not initialized".to_string(),
             })
         })?;
 
-        client
-            .execute(
-                r#"
-                CREATE TABLE IF NOT EXISTS sqllog (
+        let sql = format!(
+            r#"
+                CREATE TABLE IF NOT EXISTS {} (
                     id SERIAL PRIMARY KEY,
                     ts VARCHAR NOT NULL,
                     ep INTEGER NOT NULL,
@@ -62,13 +81,14 @@ impl PostgresExporter {
                     exec_id BIGINT
                 )
                 "#,
-                &[],
-            )
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to create table: {}", e),
-                })
-            })?;
+            full_table_name
+        );
+
+        client.execute(&sql, &[]).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to create table: {}", e),
+            })
+        })?;
 
         info!("PostgreSQL table created or already exists");
         Ok(())
@@ -87,6 +107,7 @@ impl PostgresExporter {
             })
         })?;
 
+        let full_table_name = self.full_table_name();
         let client = self.client.as_mut().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
                 reason: "Connection not initialized".to_string(),
@@ -101,18 +122,19 @@ impl PostgresExporter {
         })?;
 
         // 使用 COPY FROM STDIN 导入
-        let mut writer = client
-            .copy_in(
-                r#"COPY sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
+        let copy_sql = format!(
+            r#"COPY {} (ts, ep, sess_id, thrd_id, username, trx_id,
                              statement, appname, client_ip, sql,
                              exec_time_ms, row_count, exec_id)
-                   FROM STDIN WITH (FORMAT CSV, HEADER true)"#,
-            )
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to start COPY: {}", e),
-                })
-            })?;
+               FROM STDIN WITH (FORMAT CSV, HEADER true)"#,
+            full_table_name
+        );
+
+        let mut writer = client.copy_in(&copy_sql).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to start COPY: {}", e),
+            })
+        })?;
 
         writer.write_all(&csv_content).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
