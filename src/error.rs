@@ -123,6 +123,10 @@ pub enum ExportError {
     /// Failed to write file
     #[error("Failed to write file {path}: {reason}")]
     FileWriteFailed { path: PathBuf, reason: String },
+
+    /// Database operation error
+    #[error("Database error: {reason}")]
+    DatabaseError { reason: String },
 }
 
 /// 应用程序 Result 类型别名

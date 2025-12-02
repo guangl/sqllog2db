@@ -46,6 +46,13 @@ parquet = { version = "57.1.0", optional = true }
 arrow = { version = "57.1.0", optional = true }
 serde_json = { version = "1.0.145", optional = true }
 
+# 数据库依赖
+diesel = { version = "2.3.4", optional = true, features = ["chrono", "r2d2"] }
+libsqlite3-sys = { version = "0.35.0", optional = true, features = ["bundled"] }
+duckdb = { version = "1.4.2", optional = true }
+postgres = { version = "0.19.12", optional = true }
+r2d2 = { version = "0.8.10", optional = true }
+
 [dev-dependencies]
 tempfile = "3.23.0"
 
@@ -57,6 +64,9 @@ default = ["csv"]
 csv = []
 parquet = ["dep:parquet", "dep:arrow"]
 jsonl = ["dep:serde_json"]
+sqlite = ["dep:diesel", "dep:libsqlite3-sys", "diesel/sqlite", "dep:r2d2"]
+duckdb = ["dep:diesel", "dep:duckdb", "dep:r2d2"]
+postgres = ["dep:diesel", "dep:postgres", "diesel/postgres", "dep:r2d2"]
 
 # 其他功能特性开关
 replace_parameters = ["dep:anyhow"]

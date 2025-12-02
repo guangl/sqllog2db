@@ -25,8 +25,8 @@ enable = false
 symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
-# 只能配置一个导出器 (csv / parquet / jsonl 三选一)
-# 同时配置多个时，按优先级使用：csv > parquet > jsonl
+# 只能配置一个导出器
+# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres
 
 # 方案 1: csv 导出（默认）
 # [exporter.csv]
@@ -46,3 +46,15 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 file = "export/sqllog2db.jsonl"
 overwrite = true
 append = false
+
+# 方案 4: SQLite 数据库导出
+# [exporter.sqlite]
+# database_url = "export/sqllog2db.db"
+
+# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
+# [exporter.duckdb]
+# database_url = "export/sqllog2db.duckdb"
+
+# 方案 6: PostgreSQL 数据库导出
+# [exporter.postgres]
+# connection_string = "host=localhost user=postgres password=postgres dbname=sqllog"

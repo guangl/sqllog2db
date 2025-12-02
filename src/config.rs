@@ -227,6 +227,12 @@ pub struct ExporterConfig {
     pub parquet: Option<ParquetExporter>,
     #[cfg(feature = "jsonl")]
     pub jsonl: Option<JsonlExporter>,
+    #[cfg(feature = "sqlite")]
+    pub sqlite: Option<SqliteExporter>,
+    #[cfg(feature = "duckdb")]
+    pub duckdb: Option<DuckdbExporter>,
+    #[cfg(feature = "postgres")]
+    pub postgres: Option<PostgresExporter>,
 }
 
 impl ExporterConfig {
@@ -248,6 +254,24 @@ impl ExporterConfig {
         return self.jsonl.as_ref();
     }
 
+    #[cfg(feature = "sqlite")]
+    /// 获取 SQLite 导出器配置
+    pub fn sqlite(&self) -> Option<&SqliteExporter> {
+        return self.sqlite.as_ref();
+    }
+
+    #[cfg(feature = "duckdb")]
+    /// 获取 DuckDB 导出器配置
+    pub fn duckdb(&self) -> Option<&DuckdbExporter> {
+        return self.duckdb.as_ref();
+    }
+
+    #[cfg(feature = "postgres")]
+    /// 获取 PostgreSQL 导出器配置
+    pub fn postgres(&self) -> Option<&PostgresExporter> {
+        return self.postgres.as_ref();
+    }
+
     /// 检查是否有任何导出器配置
     pub fn has_exporters(&self) -> bool {
         let mut found = false;
@@ -262,6 +286,18 @@ impl ExporterConfig {
         #[cfg(feature = "jsonl")]
         {
             found = found || self.jsonl.is_some();
+        }
+        #[cfg(feature = "sqlite")]
+        {
+            found = found || self.sqlite.is_some();
+        }
+        #[cfg(feature = "duckdb")]
+        {
+            found = found || self.duckdb.is_some();
+        }
+        #[cfg(feature = "postgres")]
+        {
+            found = found || self.postgres.is_some();
         }
         found
     }
@@ -284,6 +320,24 @@ impl ExporterConfig {
         #[cfg(feature = "jsonl")]
         {
             if self.jsonl.is_some() {
+                count += 1;
+            }
+        }
+        #[cfg(feature = "sqlite")]
+        {
+            if self.sqlite.is_some() {
+                count += 1;
+            }
+        }
+        #[cfg(feature = "duckdb")]
+        {
+            if self.duckdb.is_some() {
+                count += 1;
+            }
+        }
+        #[cfg(feature = "postgres")]
+        {
+            if self.postgres.is_some() {
                 count += 1;
             }
         }
@@ -318,6 +372,12 @@ impl Default for ExporterConfig {
             parquet: Some(ParquetExporter::default()),
             #[cfg(feature = "jsonl")]
             jsonl: None,
+                #[cfg(feature = "sqlite")]
+                sqlite: None,
+                #[cfg(feature = "duckdb")]
+                duckdb: None,
+                #[cfg(feature = "postgres")]
+                postgres: None,
         }
     }
 }
@@ -387,6 +447,55 @@ impl Default for JsonlExporter {
             file: "export/sqllog2db.jsonl".to_string(),
             overwrite: true,
             append: false,
+        }
+    }
+}
+
+#[cfg(feature = "sqlite")]
+#[derive(Debug, Deserialize)]
+pub struct SqliteExporter {
+    /// SQLite 数据库文件路径
+    pub database_url: String,
+}
+
+#[cfg(feature = "sqlite")]
+impl Default for SqliteExporter {
+    fn default() -> Self {
+        Self {
+            database_url: "export/sqllog2db.db".to_string(),
+        }
+    }
+}
+
+#[cfg(feature = "duckdb")]
+#[derive(Debug, Deserialize)]
+pub struct DuckdbExporter {
+    /// DuckDB 数据库文件路径
+    pub database_url: String,
+}
+
+#[cfg(feature = "duckdb")]
+impl Default for DuckdbExporter {
+    fn default() -> Self {
+        Self {
+            database_url: "export/sqllog2db.duckdb".to_string(),
+        }
+    }
+}
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Deserialize)]
+pub struct PostgresExporter {
+    /// PostgreSQL 连接字符串
+    pub connection_string: String,
+}
+
+#[cfg(feature = "postgres")]
+impl Default for PostgresExporter {
+    fn default() -> Self {
+        Self {
+            connection_string: "host=localhost user=postgres password=postgres dbname=sqllog"
+                .to_string(),
         }
     }
 }

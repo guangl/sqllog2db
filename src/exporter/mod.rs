@@ -10,18 +10,30 @@ use log::info;
 
 #[cfg(feature = "csv")]
 pub mod csv;
+#[cfg(feature = "duckdb")]
+pub mod duckdb;
 #[cfg(feature = "jsonl")]
 pub mod jsonl;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+#[cfg(feature = "postgres")]
+pub mod postgres;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
+#[cfg(feature = "duckdb")]
+pub use duckdb::DuckdbExporter;
 #[cfg(feature = "jsonl")]
 pub use jsonl::JsonlExporter;
 #[cfg(feature = "parquet")]
 pub use parquet::ParquetExporter;
+#[cfg(feature = "postgres")]
+pub use postgres::PostgresExporter;
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteExporter;
 
 /// Exporter 基础 trait - 所有导出器必须实现此接口
 /// 导出器 trait
@@ -126,6 +138,39 @@ impl ExporterManager {
             info!("Using JSONL exporter: {}", jsonl_config.file);
             return Ok(Self {
                 exporter: Box::new(jsonl_exporter),
+                batch_size,
+            });
+        }
+
+        // 4. 尝试创建 SQLite 导出器
+        #[cfg(feature = "sqlite")]
+        if let Some(sqlite_config) = config.exporter.sqlite() {
+            let sqlite_exporter = SqliteExporter::from_config(sqlite_config, batch_size);
+            info!("Using SQLite exporter: {}", sqlite_config.database_url);
+            return Ok(Self {
+                exporter: Box::new(sqlite_exporter),
+                batch_size,
+            });
+        }
+
+        // 5. 尝试创建 DuckDB 导出器
+        #[cfg(feature = "duckdb")]
+        if let Some(duckdb_config) = config.exporter.duckdb() {
+            let duckdb_exporter = DuckdbExporter::from_config(duckdb_config, batch_size);
+            info!("Using DuckDB exporter: {}", duckdb_config.database_url);
+            return Ok(Self {
+                exporter: Box::new(duckdb_exporter),
+                batch_size,
+            });
+        }
+
+        // 6. 尝试创建 PostgreSQL 导出器
+        #[cfg(feature = "postgres")]
+        if let Some(postgres_config) = config.exporter.postgres() {
+            let postgres_exporter = PostgresExporter::from_config(postgres_config, batch_size);
+            info!("Using PostgreSQL exporter");
+            return Ok(Self {
+                exporter: Box::new(postgres_exporter),
                 batch_size,
             });
         }
