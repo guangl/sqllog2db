@@ -76,14 +76,14 @@ impl PostgresExporter {
                     id SERIAL PRIMARY KEY,
                     ts VARCHAR NOT NULL,
                     ep INTEGER NOT NULL,
-                    sess_id VARCHAR NOT NULL,
-                    thrd_id VARCHAR NOT NULL,
-                    username VARCHAR NOT NULL,
-                    trx_id VARCHAR NOT NULL,
-                    statement VARCHAR NOT NULL,
-                    appname VARCHAR NOT NULL,
-                    client_ip VARCHAR NOT NULL,
-                    sql TEXT NOT NULL,
+                    sess_id VARCHAR,
+                    thrd_id VARCHAR,
+                    username VARCHAR,
+                    trx_id VARCHAR,
+                    statement VARCHAR,
+                    appname VARCHAR,
+                    client_ip VARCHAR,
+                    sql TEXT,
                     exec_time_ms REAL,
                     row_count INTEGER,
                     exec_id BIGINT
@@ -122,13 +122,6 @@ impl PostgresExporter {
             })
         })?;
 
-        // 读取 CSV 文件内容
-        let csv_content = std::fs::read(temp_csv.path()).map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to read CSV file: {}", e),
-            })
-        })?;
-
         // 使用 COPY FROM STDIN 导入
         let copy_sql = format!(
             r#"COPY {} (ts, ep, sess_id, thrd_id, username, trx_id,
@@ -144,11 +137,37 @@ impl PostgresExporter {
             })
         })?;
 
-        writer.write_all(&csv_content).map_err(|e| {
+        // 流式读取和写入 CSV 文件，分块处理避免内存占用过大
+        use std::io::{BufReader, Read};
+        let file = std::fs::File::open(temp_csv.path()).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to write CSV data: {}", e),
+                reason: format!("Failed to open CSV file: {}", e),
             })
         })?;
+
+        let mut reader = BufReader::with_capacity(8 * 1024 * 1024, file); // 8MB buffer
+        let mut buffer = vec![0u8; 1024 * 1024]; // 1MB chunks
+        let mut total_bytes = 0usize;
+
+        loop {
+            let bytes_read = reader.read(&mut buffer).map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to read CSV file: {}", e),
+                })
+            })?;
+
+            if bytes_read == 0 {
+                break;
+            }
+
+            writer.write_all(&buffer[..bytes_read]).map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to write CSV data: {}", e),
+                })
+            })?;
+
+            total_bytes += bytes_read;
+        }
 
         let count = writer.finish().map_err(|e| {
             Error::Export(ExportError::DatabaseError {
@@ -156,7 +175,10 @@ impl PostgresExporter {
             })
         })?;
 
-        debug!("Flushed {} records to PostgreSQL from CSV", count);
+        debug!(
+            "Flushed {} records ({} bytes) to PostgreSQL from CSV",
+            count, total_bytes
+        );
         self.stats.flush_operations += 1;
         self.stats.last_flush_size = count as usize;
 
