@@ -225,6 +225,8 @@ pub struct ExporterConfig {
     pub csv: Option<CsvExporter>,
     #[cfg(feature = "parquet")]
     pub parquet: Option<ParquetExporter>,
+    #[cfg(feature = "jsonl")]
+    pub jsonl: Option<JsonlExporter>,
 }
 
 impl ExporterConfig {
@@ -240,6 +242,12 @@ impl ExporterConfig {
         return self.parquet.as_ref();
     }
 
+    #[cfg(feature = "jsonl")]
+    /// 获取 JSONL 导出器配置
+    pub fn jsonl(&self) -> Option<&JsonlExporter> {
+        return self.jsonl.as_ref();
+    }
+
     /// 检查是否有任何导出器配置
     pub fn has_exporters(&self) -> bool {
         let mut found = false;
@@ -250,6 +258,10 @@ impl ExporterConfig {
         #[cfg(feature = "parquet")]
         {
             found = found || self.parquet.is_some();
+        }
+        #[cfg(feature = "jsonl")]
+        {
+            found = found || self.jsonl.is_some();
         }
         found
     }
@@ -269,6 +281,12 @@ impl ExporterConfig {
                 count += 1;
             }
         }
+        #[cfg(feature = "jsonl")]
+        {
+            if self.jsonl.is_some() {
+                count += 1;
+            }
+        }
         count
     }
 
@@ -284,7 +302,7 @@ impl ExporterConfig {
                 "Warning: {} exporters configured, but only one is supported.",
                 total
             );
-            eprintln!("Will use the first exporter by priority: CSV > Parquet > SQLite");
+            eprintln!("Will use the first exporter by priority: CSV > Parquet > JSONL");
         }
 
         Ok(())
@@ -298,6 +316,8 @@ impl Default for ExporterConfig {
             csv: Some(CsvExporter::default()),
             #[cfg(feature = "parquet")]
             parquet: Some(ParquetExporter::default()),
+            #[cfg(feature = "jsonl")]
+            jsonl: None,
         }
     }
 }
@@ -343,6 +363,28 @@ impl Default for CsvExporter {
     fn default() -> Self {
         Self {
             file: "outputs/sqllog.csv".to_string(),
+            overwrite: true,
+            append: false,
+        }
+    }
+}
+
+#[cfg(feature = "jsonl")]
+#[derive(Debug, Deserialize)]
+pub struct JsonlExporter {
+    /// JSONL 输出文件路径
+    pub file: String,
+    /// 是否覆盖已存在的文件
+    pub overwrite: bool,
+    /// 是否追加模式
+    pub append: bool,
+}
+
+#[cfg(feature = "jsonl")]
+impl Default for JsonlExporter {
+    fn default() -> Self {
+        Self {
+            file: "export/sqllog2db.jsonl".to_string(),
             overwrite: true,
             append: false,
         }

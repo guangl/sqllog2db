@@ -10,12 +10,16 @@ use log::info;
 
 #[cfg(feature = "csv")]
 pub mod csv;
+#[cfg(feature = "jsonl")]
+pub mod jsonl;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
+#[cfg(feature = "jsonl")]
+pub use jsonl::JsonlExporter;
 #[cfg(feature = "parquet")]
 pub use parquet::ParquetExporter;
 
@@ -91,7 +95,7 @@ impl ExporterManager {
 
         info!("Initializing exporter manager...");
 
-        // 优先级：CSV > Parquet > SQLite > DM
+        // 优先级：CSV > Parquet > JSONL > SQLite > DM
 
         // 1. 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
@@ -111,6 +115,17 @@ impl ExporterManager {
             info!("Using Parquet exporter: {}", parquet_config.file);
             return Ok(Self {
                 exporter: Box::new(parquet_exporter),
+                batch_size,
+            });
+        }
+
+        // 3. 尝试创建 JSONL 导出器
+        #[cfg(feature = "jsonl")]
+        if let Some(jsonl_config) = config.exporter.jsonl() {
+            let jsonl_exporter = JsonlExporter::from_config(jsonl_config, batch_size);
+            info!("Using JSONL exporter: {}", jsonl_config.file);
+            return Ok(Self {
+                exporter: Box::new(jsonl_exporter),
                 batch_size,
             });
         }

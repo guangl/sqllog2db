@@ -44,6 +44,7 @@ chrono = { version = "0.4.42", features = ["clock"] }
 anyhow = { version = "1.0.100", optional = true }
 parquet = { version = "57.1.0", optional = true }
 arrow = { version = "57.1.0", optional = true }
+serde_json = { version = "1.0.145", optional = true }
 
 [dev-dependencies]
 tempfile = "3.23.0"
@@ -55,6 +56,7 @@ default = ["csv"]
 # 各导出器特性开关
 csv = []
 parquet = ["dep:parquet", "dep:arrow"]
+jsonl = ["dep:serde_json"]
 
 # 其他功能特性开关
 replace_parameters = ["dep:anyhow"]
