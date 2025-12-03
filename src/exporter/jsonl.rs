@@ -52,7 +52,7 @@ impl JsonlExporter {
     }
 
     /// 从配置创建 JSONL 导出器
-    pub fn from_config(config: &crate::config::JsonlExporter, _batch_size: usize) -> Self {
+    pub fn from_config(config: &crate::config::JsonlExporter) -> Self {
         let mut exporter = Self::new(&config.file, config.overwrite);
         // 追加模式优先级高于 overwrite
         if config.append {

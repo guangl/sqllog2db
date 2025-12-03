@@ -1,53 +1,47 @@
-use super::{ExportStats, Exporter};
+use super::{ExportStats, Exporter, csv::CsvExporter};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use duckdb::{Connection, params};
+use duckdb::Connection;
 use log::{debug, info, warn};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// DuckDB 导出器
+/// DuckDB 导出器 - 使用 CSV 批量导入
 pub struct DuckdbExporter {
     database_url: String,
+    table_name: String,
+    overwrite: bool,
+    append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
-    batch_size: usize,
-    pending_records: Vec<DuckdbRecord>,
-}
-
-#[derive(Debug, Clone)]
-struct DuckdbRecord {
-    ts: String,
-    ep: i32,
-    sess_id: String,
-    thrd_id: String,
-    username: String,
-    trx_id: String,
-    statement: String,
-    appname: String,
-    client_ip: String,
-    sql: String,
-    exec_time_ms: Option<f32>,
-    row_count: Option<i32>,
-    exec_id: Option<i64>,
+    csv_exporter: Option<CsvExporter>,
+    temp_csv_path: Option<PathBuf>,
 }
 
 impl DuckdbExporter {
     /// 创建新的 DuckDB 导出器
-    pub fn new(database_url: String, batch_size: usize) -> Self {
+    pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         Self {
             database_url,
+            table_name,
+            overwrite,
+            append,
             conn: None,
             stats: ExportStats::new(),
-            batch_size,
-            pending_records: Vec::with_capacity(batch_size),
+            csv_exporter: None,
+            temp_csv_path: None,
         }
     }
 
     /// 从配置创建 DuckDB 导出器
-    pub fn from_config(config: &config::DuckdbExporter, batch_size: usize) -> Self {
-        Self::new(config.database_url.clone(), batch_size)
+    pub fn from_config(config: &config::DuckdbExporter) -> Self {
+        Self::new(
+            config.database_url.clone(),
+            config.table_name.clone(),
+            config.overwrite,
+            config.append,
+        )
     }
 
     /// 创建数据库表
@@ -58,10 +52,8 @@ impl DuckdbExporter {
             })
         })?;
 
-        conn.execute(
-            r#"
-            CREATE TABLE IF NOT EXISTS sqllog (
-                id INTEGER PRIMARY KEY,
+        let create_table_sql = format!(
+            r#"CREATE TABLE IF NOT EXISTS {} (
                 ts VARCHAR NOT NULL,
                 ep INTEGER NOT NULL,
                 sess_id VARCHAR NOT NULL,
@@ -69,17 +61,17 @@ impl DuckdbExporter {
                 username VARCHAR NOT NULL,
                 trx_id VARCHAR NOT NULL,
                 statement VARCHAR NOT NULL,
-                appname VARCHAR NOT NULL,
-                client_ip VARCHAR NOT NULL,
+                appname VARCHAR,
+                client_ip VARCHAR,
                 sql TEXT NOT NULL,
                 exec_time_ms FLOAT,
                 row_count INTEGER,
                 exec_id BIGINT
-            )
-            "#,
-            [],
-        )
-        .map_err(|e| {
+            )"#,
+            self.table_name
+        );
+
+        conn.execute(&create_table_sql, []).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to create table: {}", e),
             })
@@ -87,103 +79,6 @@ impl DuckdbExporter {
 
         info!("DuckDB table created or already exists");
         Ok(())
-    }
-
-    /// 刷新待处理记录到数据库
-    fn flush(&mut self) -> Result<()> {
-        if self.pending_records.is_empty() {
-            return Ok(());
-        }
-
-        let conn = self.conn.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::DatabaseError {
-                reason: "Connection not initialized".to_string(),
-            })
-        })?;
-
-        let count = self.pending_records.len();
-
-        // 使用事务批量插入
-        let tx = conn.transaction().map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to start transaction: {}", e),
-            })
-        })?;
-
-        {
-            let mut stmt = tx
-                .prepare(
-                    r#"
-                    INSERT INTO sqllog (ts, ep, sess_id, thrd_id, username, trx_id,
-                                       statement, appname, client_ip, sql,
-                                       exec_time_ms, row_count, exec_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    "#,
-                )
-                .map_err(|e| {
-                    Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to prepare statement: {}", e),
-                    })
-                })?;
-
-            for record in &self.pending_records {
-                stmt.execute(params![
-                    record.ts,
-                    record.ep,
-                    record.sess_id,
-                    record.thrd_id,
-                    record.username,
-                    record.trx_id,
-                    record.statement,
-                    record.appname,
-                    record.client_ip,
-                    record.sql,
-                    record.exec_time_ms,
-                    record.row_count,
-                    record.exec_id,
-                ])
-                .map_err(|e| {
-                    Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to execute insert: {}", e),
-                    })
-                })?;
-            }
-        }
-
-        tx.commit().map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to commit transaction: {}", e),
-            })
-        })?;
-
-        debug!("Flushed {} records to DuckDB", count);
-        self.stats.flush_operations += 1;
-        self.stats.last_flush_size = count;
-        self.pending_records.clear();
-
-        Ok(())
-    }
-
-    /// 将 Sqllog 转换为数据库记录
-    fn sqllog_to_record(sqllog: &Sqllog<'_>) -> DuckdbRecord {
-        let meta = sqllog.parse_meta();
-        let ind = sqllog.parse_indicators();
-
-        DuckdbRecord {
-            ts: sqllog.ts.to_string(),
-            ep: meta.ep as i32,
-            sess_id: meta.sess_id.to_string(),
-            thrd_id: meta.thrd_id.to_string(),
-            username: meta.username.to_string(),
-            trx_id: meta.trxid.to_string(),
-            statement: meta.statement.to_string(),
-            appname: meta.appname.to_string(),
-            client_ip: meta.client_ip.to_string(),
-            sql: sqllog.body().to_string(),
-            exec_time_ms: ind.as_ref().map(|i| i.execute_time),
-            row_count: ind.as_ref().map(|i| i.row_count as i32),
-            exec_id: ind.as_ref().map(|i| i.execute_id),
-        }
     }
 }
 
@@ -212,23 +107,53 @@ impl Exporter for DuckdbExporter {
 
         self.conn = Some(conn);
 
-        // 创建表
+        // 处理 overwrite 和 append 模式
+        if self.overwrite {
+            info!("Overwrite mode: dropping existing table if it exists");
+            if let Some(ref conn) = self.conn {
+                conn.execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), [])
+                    .map_err(|e| {
+                        Error::Export(ExportError::DatabaseError {
+                            reason: format!("Failed to drop table: {}", e),
+                        })
+                    })?;
+            }
+        } else if !self.append {
+            info!("Truncate mode: clearing existing table data");
+            if let Some(ref conn) = self.conn {
+                conn.execute(&format!("DELETE FROM {}", self.table_name), [])
+                    .map_err(|e| {
+                        Error::Export(ExportError::DatabaseError {
+                            reason: format!("Failed to truncate table: {}", e),
+                        })
+                    })?;
+            }
+        } else {
+            info!("Append mode: keeping existing data");
+        }
+
+        // 创建表（如果不存在）
         self.create_table()?;
+
+        // 创建临时 CSV 文件用于批量导入
+        let temp_dir = std::env::temp_dir();
+        let temp_csv_path = temp_dir.join(format!("duckdb_import_{}.csv", std::process::id()));
+
+        let mut csv_exporter = CsvExporter::new(&temp_csv_path, true);
+        csv_exporter.initialize()?;
+        self.csv_exporter = Some(csv_exporter);
+        self.temp_csv_path = Some(temp_csv_path);
 
         info!("DuckDB exporter initialized: {}", self.database_url);
         Ok(())
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        let record = Self::sqllog_to_record(sqllog);
-        self.pending_records.push(record);
-
-        // 当达到批量大小时刷新
-        if self.pending_records.len() >= self.batch_size {
-            self.flush()?;
+        // 导出到临时 CSV
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.export(sqllog)?;
+            self.stats.record_success();
         }
-
-        self.stats.record_success();
         Ok(())
     }
 
@@ -243,8 +168,62 @@ impl Exporter for DuckdbExporter {
     }
 
     fn finalize(&mut self) -> Result<()> {
-        // 刷新剩余记录
-        self.flush()?;
+        // 先关闭 CSV 导出器
+        if let Some(mut csv_exporter) = self.csv_exporter.take() {
+            <CsvExporter as Exporter>::finalize(&mut csv_exporter)?;
+        }
+
+        // 获取 CSV 文件路径
+        let csv_path = self.temp_csv_path.as_ref().ok_or_else(|| {
+            Error::Export(ExportError::DatabaseError {
+                reason: "No temporary CSV file".to_string(),
+            })
+        })?;
+
+        info!(
+            "Importing {} records from CSV to DuckDB...",
+            self.stats.exported
+        );
+
+        // 关闭连接以释放数据库锁
+        self.conn = None;
+
+        // 使用 DuckDB CLI 执行导入（使用 std::process::Command）
+        let csv_path_str = csv_path.to_string_lossy().replace('\\', "/");
+        let sql = format!(
+            "PRAGMA threads=8; PRAGMA memory_limit='8GB'; COPY {} FROM '{}' (HEADER true, DELIMITER ',')",
+            self.table_name,
+            csv_path_str.replace('\'', "''")
+        );
+
+        let output = std::process::Command::new("duckdb")
+            .arg(&self.database_url)
+            .arg("-c")
+            .arg(&sql)
+            .output()
+            .map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to execute duckdb CLI: {}", e),
+                })
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Export(ExportError::DatabaseError {
+                reason: format!("DuckDB import failed: {}", stderr),
+            }));
+        }
+
+        info!(
+            "Successfully imported {} records to DuckDB",
+            self.stats.exported
+        );
+
+        // 清理临时文件
+        if csv_path.exists() {
+            let _ = fs::remove_file(csv_path);
+        }
+        self.temp_csv_path = None;
 
         info!(
             "DuckDB export finished: {} (success: {}, failed: {})",
@@ -265,7 +244,8 @@ impl Exporter for DuckdbExporter {
 
 impl Drop for DuckdbExporter {
     fn drop(&mut self) {
-        if !self.pending_records.is_empty() {
+        // 仅当 CSV 导出器仍存在时才尝试 finalize
+        if self.csv_exporter.is_some() {
             if let Err(e) = self.finalize() {
                 warn!("DuckDB exporter finalization on Drop failed: {}", e);
             }

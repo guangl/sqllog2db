@@ -128,6 +128,16 @@ pub enum ExportError {
     #[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
     #[error("Database error: {reason}")]
     DatabaseError { reason: String },
+
+    /// IO error
+    #[cfg(feature = "dm")]
+    #[error("IO error {path}: {reason}")]
+    IoError { path: PathBuf, reason: String },
+
+    /// External tool error
+    #[cfg(feature = "dm")]
+    #[error("External tool '{tool}' failed: {reason}")]
+    ExternalToolError { tool: String, reason: String },
 }
 
 /// 应用程序 Result 类型别名

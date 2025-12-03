@@ -3,60 +3,40 @@ use super::{ExportStats, Exporter};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use log::{debug, info, warn};
-use once_cell::sync::Lazy;
+// 移除模块内日志记录以降低开销
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-// 使用 once_cell 缓存 CSV 头部，避免每次重新构建
-static CSV_HEADER: Lazy<&str> = Lazy::new(
-    || "ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n",
-);
-
-/// 检查字段是否需要引号包围
-#[inline]
-fn needs_quoting(field: &str) -> bool {
-    field.contains(',') || field.contains('"') || field.contains('\n')
-}
-
-/// CSV 导出器 - 将 SQL 日志导出为 CSV 格式
+/// CSV 导出器 - 高性能批量写入版本
 pub struct CsvExporter {
     path: PathBuf,
     overwrite: bool,
     append: bool,
     writer: Option<BufWriter<File>>,
     stats: ExportStats,
-    header_written: bool,
-    line_buf: String, // 重用的行缓冲区
+    itoa_buf: itoa::Buffer, // itoa 复用缓冲区
+    line_buf: Vec<u8>,      // 行缓冲区复用
 }
 
 impl CsvExporter {
     /// 创建新的 CSV 导出器
     pub fn new(path: impl AsRef<Path>, overwrite: bool) -> Self {
-        Self::with_batch_size(path, overwrite, 0)
-    }
-
-    /// 创建新的 CSV 导出器（指定批量大小）
-    pub fn with_batch_size(path: impl AsRef<Path>, overwrite: bool, batch_size: usize) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
             overwrite,
             append: false,
             writer: None,
             stats: ExportStats::new(),
-            header_written: false,
-            line_buf: String::with_capacity(batch_size),
+            itoa_buf: itoa::Buffer::new(),      // itoa 缓冲区
+            line_buf: Vec::with_capacity(1024), // 预分配 1KB
         }
     }
 
-    /// 从配置创建 CSV 导出器，支持自定义批量大小
-    pub fn from_config(config: &config::CsvExporter, batch_size: usize) -> Self {
-        let mut exporter = if batch_size > 0 {
-            Self::with_batch_size(&config.file, config.overwrite, batch_size)
-        } else {
-            Self::new(&config.file, config.overwrite)
-        };
+    /// 从配置创建 CSV 导出器
+    pub fn from_config(config: &config::CsvExporter) -> Self {
+        let mut exporter = Self::new(&config.file, config.overwrite);
+
         // 追加模式优先级高于 overwrite
         if config.append {
             exporter.overwrite = false;
@@ -64,102 +44,11 @@ impl CsvExporter {
         }
         exporter
     }
-
-    /// 写入 CSV 头部
-    fn write_header(&mut self) -> Result<()> {
-        if self.header_written {
-            return Ok(());
-        }
-
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: "CSV exporter not initialized".to_string(),
-            })
-        })?;
-
-        // 使用预编译的 CSV 头部
-        writer.write_all(CSV_HEADER.as_bytes()).map_err(|e| {
-            Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: format!("Failed to write CSV header: {}", e),
-            })
-        })?;
-
-        self.header_written = true;
-        debug!("CSV header written");
-        Ok(())
-    }
-
-    /// 写入 CSV 字段到缓冲区（避免分配）
-    fn write_csv_field(buf: &mut String, field: &str) {
-        if needs_quoting(field) {
-            buf.push('"');
-            for ch in field.chars() {
-                if ch == '"' {
-                    buf.push('"');
-                    buf.push('"');
-                } else {
-                    buf.push(ch);
-                }
-            }
-            buf.push('"');
-        } else {
-            buf.push_str(field);
-        }
-    }
-
-    /// 将 Sqllog 转换为 CSV 行（优化版本，使用预分配缓冲区）
-    fn sqllog_to_csv_line_into(sqllog: &Sqllog<'_>, buf: &mut String) {
-        buf.clear();
-        buf.reserve(256); // 预分配合理大小
-
-        Self::write_csv_field(buf, &sqllog.ts);
-        buf.push(',');
-
-        // 解析元数据
-        let meta = sqllog.parse_meta();
-
-        use std::fmt::Write;
-        let _ = write!(buf, "{},", meta.ep);
-
-        Self::write_csv_field(buf, &meta.sess_id);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.thrd_id);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.username);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.trxid);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.statement);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.appname);
-        buf.push(',');
-        Self::write_csv_field(buf, &meta.client_ip);
-        buf.push(',');
-
-        // 获取 SQL 语句体
-        Self::write_csv_field(buf, &sqllog.body());
-        buf.push(',');
-
-        // 性能指标
-        if let Some(indicators) = sqllog.parse_indicators() {
-            let _ = write!(
-                buf,
-                "{},{},{}",
-                indicators.execute_time, indicators.row_count, indicators.execute_id
-            );
-        } else {
-            buf.push_str(",,");
-        }
-
-        buf.push('\n');
-    }
 }
 
 impl Exporter for CsvExporter {
     fn initialize(&mut self) -> Result<()> {
-        info!("Initializing CSV exporter: {}", self.path.display());
+        // 初始化，无日志
 
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
@@ -168,7 +57,6 @@ impl Exporter for CsvExporter {
             })
         })?;
 
-        // 判断 append 模式（基于实例字段，不再读取全局默认配置）
         let append_mode = self.append;
         let file_exists = self.path.exists();
 
@@ -184,38 +72,37 @@ impl Exporter for CsvExporter {
                 .truncate(self.overwrite)
                 .open(&self.path)
         };
+
         let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
                 reason: format!("Failed to open file: {}", e),
             })
         })?;
-        self.writer = Some(BufWriter::new(file));
 
-        // 追加模式且文件已存在，不写表头
-        if append_mode && file_exists {
-            self.header_written = true;
-        } else {
-            self.write_header()?;
+        // 16MB 缓冲区
+        let mut writer = BufWriter::with_capacity(16 * 1024 * 1024, file);
+
+        // 写入表头（如果需要）
+        if !append_mode || !file_exists {
+            writer.write_all(b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n")
+                .map_err(|e| {
+                    Error::Export(ExportError::CsvExportFailed {
+                        path: self.path.clone(),
+                        reason: format!("Failed to write CSV header: {}", e),
+                    })
+                })?;
         }
 
-        info!("CSV exporter initialized: {}", self.path.display());
+        self.writer = Some(writer);
+
+        // 初始化完成日志
+        // 初始化完成，无日志
         Ok(())
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        // 检查是否已初始化
-        if self.writer.is_none() {
-            return Err(Error::Export(ExportError::CsvExportFailed {
-                path: self.path.clone(),
-                reason: "CSV exporter not initialized".to_string(),
-            }));
-        }
-
-        // 使用重用缓冲区生成 CSV 行
-        Self::sqllog_to_csv_line_into(sqllog, &mut self.line_buf);
-
-        // 直接写入，避免额外的字符串克隆和缓冲
+        let meta = sqllog.parse_meta();
         let writer = self.writer.as_mut().ok_or_else(|| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
@@ -223,29 +110,78 @@ impl Exporter for CsvExporter {
             })
         })?;
 
-        writer.write_all(self.line_buf.as_bytes()).map_err(|e| {
+        // 复用缓冲区
+        self.line_buf.clear();
+        let buf = &mut self.line_buf;
+
+        // 时间戳 - 直接写入(不需要转义)
+        buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
+        buf.push(b',');
+
+        // ep - 使用 itoa 快速整数转换
+        buf.extend_from_slice(self.itoa_buf.format(meta.ep).as_bytes());
+        buf.push(b',');
+
+        // 字符串字段 - 直接写入(大部分不需要转义)
+        buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.username.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.statement.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.appname.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.client_ip.as_ref().as_bytes());
+        buf.push(b',');
+
+        // SQL body - 仅为 SQL 字段进行转义（其余字段直接写入）
+        // 优化：直接遍历字节，避免 UTF-8 解码开销
+        buf.push(b'"');
+        for &byte in sqllog.body().as_ref().as_bytes() {
+            if byte == b'"' {
+                buf.push(b'"');
+                buf.push(b'"');
+            } else {
+                buf.push(byte);
+            }
+        }
+        buf.push(b'"');
+        buf.push(b',');
+
+        // 性能指标 - 使用 itoa
+        if let Some(indicators) = sqllog.parse_indicators() {
+            buf.extend_from_slice(
+                self.itoa_buf
+                    .format(indicators.execute_time as i64)
+                    .as_bytes(),
+            );
+            buf.push(b',');
+            buf.extend_from_slice(self.itoa_buf.format(indicators.row_count as i64).as_bytes());
+            buf.push(b',');
+            buf.extend_from_slice(self.itoa_buf.format(indicators.execute_id).as_bytes());
+            buf.push(b'\n');
+        } else {
+            buf.extend_from_slice(b",,\n");
+        }
+
+        // 直接写入
+        writer.write_all(buf).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to write CSV row: {}", e),
+                reason: format!("Failed to write CSV line: {}", e),
             })
         })?;
 
-        // 无论哪种模式，都记录成功（数据已被接受）
+        // 仅记录成功计数，避免过多统计开销
         self.stats.record_success();
-
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
-        debug!("Exported {} records to CSV in batch", sqllogs.len());
-
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
-        }
-
-        Ok(())
-    }
-
+    /// 刷新缓冲区并关闭
     fn finalize(&mut self) -> Result<()> {
         if let Some(mut writer) = self.writer.take() {
             writer.flush().map_err(|e| {
@@ -254,15 +190,9 @@ impl Exporter for CsvExporter {
                     reason: format!("Failed to flush buffer: {}", e),
                 })
             })?;
-
-            info!(
-                "CSV export finished: {} (success: {}, failed: {})",
-                self.path.display(),
-                self.stats.exported,
-                self.stats.failed
-            );
+            // 完成，无日志
         } else {
-            warn!("CSV exporter not initialized or already finished");
+            // 未初始化或已完成
         }
 
         Ok(())
@@ -277,12 +207,12 @@ impl Exporter for CsvExporter {
     }
 }
 
+impl CsvExporter {}
+
 impl Drop for CsvExporter {
     fn drop(&mut self) {
-        if self.writer.is_some()
-            && let Err(e) = self.finalize()
-        {
-            warn!("CSV exporter finalization on Drop failed: {}", e);
+        if self.writer.is_some() {
+            let _ = self.finalize();
         }
     }
 }

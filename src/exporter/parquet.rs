@@ -8,6 +8,7 @@ use log::info;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use std::fs::File;
+use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,7 +20,7 @@ pub struct ParquetExporter {
     pub use_dictionary: bool,
     pub stats: ExportStats,
     pub schema: Arc<Schema>,
-    pub writer: Option<ArrowWriter<File>>,
+    pub writer: Option<ArrowWriter<BufWriter<File>>>,
     pub initialized: bool,
     // 缓存数据用于批量写入
     pub ts_vec: Vec<String>,
@@ -80,7 +81,7 @@ impl ParquetExporter {
         }
     }
 
-    pub fn from_config(config: &crate::config::ParquetExporter, _batch_size: usize) -> Self {
+    pub fn from_config(config: &crate::config::ParquetExporter) -> Self {
         let row_group_size = config.row_group_size.unwrap_or(100000);
         let use_dictionary = config.use_dictionary.unwrap_or(true);
         Self::new(
@@ -103,8 +104,9 @@ impl ParquetExporter {
             std::fs::remove_file(path)?;
         }
 
-        // 创建 Parquet Writer
+        // 创建 Parquet Writer with BufWriter for better I/O performance
         let file = File::create(&self.file)?;
+        let buf_writer = BufWriter::with_capacity(8 * 1024 * 1024, file); // 8MB buffer
         let mut props_builder =
             WriterProperties::builder().set_max_row_group_size(self.row_group_size);
 
@@ -113,7 +115,7 @@ impl ParquetExporter {
         }
 
         let props = props_builder.build();
-        let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))
+        let writer = ArrowWriter::try_new(buf_writer, self.schema.clone(), Some(props))
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         self.writer = Some(writer);
@@ -163,20 +165,31 @@ impl ParquetExporter {
         }
 
         if let Some(writer) = &mut self.writer {
-            // 创建 Arrow Arrays
-            let ts_array: ArrayRef = Arc::new(StringArray::from(self.ts_vec.clone()));
-            let ep_array: ArrayRef = Arc::new(Int32Array::from(self.ep_vec.clone()));
-            let sess_id_array: ArrayRef = Arc::new(StringArray::from(self.sess_id_vec.clone()));
-            let thrd_id_array: ArrayRef = Arc::new(StringArray::from(self.thrd_id_vec.clone()));
-            let username_array: ArrayRef = Arc::new(StringArray::from(self.username_vec.clone()));
-            let trx_id_array: ArrayRef = Arc::new(StringArray::from(self.trx_id_vec.clone()));
-            let statement_array: ArrayRef = Arc::new(StringArray::from(self.statement_vec.clone()));
-            let appname_array: ArrayRef = Arc::new(StringArray::from(self.appname_vec.clone()));
-            let client_ip_array: ArrayRef = Arc::new(StringArray::from(self.client_ip_vec.clone()));
-            let sql_array: ArrayRef = Arc::new(StringArray::from(self.sql_vec.clone()));
-            let exec_time_array: ArrayRef = Arc::new(Int64Array::from(self.exec_time_vec.clone()));
-            let row_count_array: ArrayRef = Arc::new(Int64Array::from(self.row_count_vec.clone()));
-            let exec_id_array: ArrayRef = Arc::new(Int64Array::from(self.exec_id_vec.clone()));
+            // 使用 std::mem::take 避免克隆,直接转移所有权
+            let ts_array: ArrayRef = Arc::new(StringArray::from(std::mem::take(&mut self.ts_vec)));
+            let ep_array: ArrayRef = Arc::new(Int32Array::from(std::mem::take(&mut self.ep_vec)));
+            let sess_id_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.sess_id_vec)));
+            let thrd_id_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.thrd_id_vec)));
+            let username_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.username_vec)));
+            let trx_id_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.trx_id_vec)));
+            let statement_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.statement_vec)));
+            let appname_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.appname_vec)));
+            let client_ip_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.client_ip_vec)));
+            let sql_array: ArrayRef =
+                Arc::new(StringArray::from(std::mem::take(&mut self.sql_vec)));
+            let exec_time_array: ArrayRef =
+                Arc::new(Int64Array::from(std::mem::take(&mut self.exec_time_vec)));
+            let row_count_array: ArrayRef =
+                Arc::new(Int64Array::from(std::mem::take(&mut self.row_count_vec)));
+            let exec_id_array: ArrayRef =
+                Arc::new(Int64Array::from(std::mem::take(&mut self.exec_id_vec)));
 
             // 创建 RecordBatch
             let batch = RecordBatch::try_new(
@@ -204,20 +217,7 @@ impl ParquetExporter {
                 .write(&batch)
                 .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-            // 清空缓存
-            self.ts_vec.clear();
-            self.ep_vec.clear();
-            self.sess_id_vec.clear();
-            self.thrd_id_vec.clear();
-            self.username_vec.clear();
-            self.trx_id_vec.clear();
-            self.statement_vec.clear();
-            self.appname_vec.clear();
-            self.client_ip_vec.clear();
-            self.sql_vec.clear();
-            self.exec_time_vec.clear();
-            self.row_count_vec.clear();
-            self.exec_id_vec.clear();
+            // std::mem::take 已经清空了所有 Vec,无需再次调用 clear()
 
             self.stats.flush_operations += 1;
             self.stats.last_flush_size = batch.num_rows();

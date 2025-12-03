@@ -3,19 +3,24 @@ use crate::error::{ConfigError, Error, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-/// 默认批量大小
-fn default_batch_size() -> usize {
-    10000
-}
-
 /// 默认表名
-#[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
+#[cfg(any(
+    feature = "sqlite",
+    feature = "duckdb",
+    feature = "postgres",
+    feature = "dm"
+))]
 fn default_table_name() -> String {
     "sqllog_records".to_string()
 }
 
 /// 默认 true 值
-#[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
+#[cfg(any(
+    feature = "sqlite",
+    feature = "duckdb",
+    feature = "postgres",
+    feature = "dm"
+))]
 fn default_true() -> bool {
     true
 }
@@ -106,16 +111,12 @@ impl Config {
 pub struct SqllogConfig {
     /// SQL 日志输入目录（可包含多个日志文件）
     pub directory: String,
-    /// 批量提交大小，0 表示全部解析完之后一次性写入，>0 表示每 N 条记录批量提交一次
-    #[serde(default = "default_batch_size")]
-    pub batch_size: usize,
 }
 
 impl Default for SqllogConfig {
     fn default() -> Self {
         Self {
             directory: "sqllog".to_string(),
-            batch_size: 10000, // 默认使用 10000 批量大小以获得最佳性能
         }
     }
 }
@@ -124,11 +125,6 @@ impl SqllogConfig {
     /// 获取 SQL 日志输入目录
     pub fn directory(&self) -> &str {
         &self.directory
-    }
-
-    /// 获取批量提交大小
-    pub fn batch_size(&self) -> usize {
-        self.batch_size
     }
 
     /// 验证配置
@@ -267,6 +263,8 @@ pub struct ExporterConfig {
     pub duckdb: Option<DuckdbExporter>,
     #[cfg(feature = "postgres")]
     pub postgres: Option<PostgresExporter>,
+    #[cfg(feature = "dm")]
+    pub dm: Option<DmExporter>,
 }
 
 impl ExporterConfig {
@@ -306,6 +304,12 @@ impl ExporterConfig {
         self.postgres.as_ref()
     }
 
+    #[cfg(feature = "dm")]
+    /// 获取 DM 导出器配置
+    pub fn dm(&self) -> Option<&DmExporter> {
+        self.dm.as_ref()
+    }
+
     /// 检查是否有任何导出器配置
     pub fn has_exporters(&self) -> bool {
         let mut found = false;
@@ -332,6 +336,10 @@ impl ExporterConfig {
         #[cfg(feature = "postgres")]
         {
             found = found || self.postgres.is_some();
+        }
+        #[cfg(feature = "dm")]
+        {
+            found = found || self.dm.is_some();
         }
         found
     }
@@ -375,6 +383,12 @@ impl ExporterConfig {
                 count += 1;
             }
         }
+        #[cfg(feature = "dm")]
+        {
+            if self.dm.is_some() {
+                count += 1;
+            }
+        }
         count
     }
 
@@ -412,6 +426,8 @@ impl Default for ExporterConfig {
             duckdb: None,
             #[cfg(feature = "postgres")]
             postgres: None,
+            #[cfg(feature = "dm")]
+            dm: None,
         }
     }
 }
@@ -593,9 +609,55 @@ impl Default for PostgresExporter {
 impl PostgresExporter {
     /// 获取连接字符串
     pub fn connection_string(&self) -> String {
-        format!(
-            "host={} port={} user={} password={} dbname={}",
-            self.host, self.port, self.username, self.password, self.database
-        )
+        if self.password.is_empty() {
+            format!(
+                "host={} port={} user={} dbname={}",
+                self.host, self.port, self.username, self.database
+            )
+        } else {
+            format!(
+                "host={} port={} user={} password={} dbname={}",
+                self.host, self.port, self.username, self.password, self.database
+            )
+        }
+    }
+}
+
+#[cfg(feature = "dm")]
+fn default_charset() -> String {
+    "UTF-8".to_string()
+}
+
+#[cfg(feature = "dm")]
+#[derive(Debug, Deserialize)]
+pub struct DmExporter {
+    /// DM 数据库连接字符串 (例如: SYSDBA/SYSDBA@localhost:5236)
+    pub userid: String,
+    /// 表名
+    #[serde(default = "default_table_name")]
+    pub table_name: String,
+    /// 控制文件路径
+    pub control_file: String,
+    /// 日志目录
+    pub log_dir: String,
+    /// 是否覆盖已存在的表数据 (mode='REPLACE')
+    #[serde(default = "default_true")]
+    pub overwrite: bool,
+    /// 字符集 (例如: UTF-8)
+    #[serde(default = "default_charset")]
+    pub charset: String,
+}
+
+#[cfg(feature = "dm")]
+impl Default for DmExporter {
+    fn default() -> Self {
+        Self {
+            userid: "SYSDBA/SYSDBA@localhost:5236".to_string(),
+            table_name: "sqllog_records".to_string(),
+            control_file: "export/sqllog.ctl".to_string(),
+            log_dir: "export/log".to_string(),
+            overwrite: true,
+            charset: "UTF-8".to_string(),
+        }
     }
 }

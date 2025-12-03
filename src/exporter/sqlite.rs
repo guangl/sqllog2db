@@ -1,12 +1,11 @@
-use super::{ExportStats, Exporter, csv::CsvExporter};
+use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use log::{debug, info, warn};
-use rusqlite::Connection;
+use log::{info, warn};
+use rusqlite::{Connection, params};
 use std::path::Path;
-use tempfile::NamedTempFile;
 
-/// SQLite 导出器 - 使用 CSV 批量导入
+/// SQLite 导出器 - 直接插入版本 (高性能)
 pub struct SqliteExporter {
     database_url: String,
     table_name: String,
@@ -14,20 +13,11 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
-    batch_size: usize,
-    csv_exporter: Option<CsvExporter>,
-    temp_csv: Option<NamedTempFile>,
 }
 
 impl SqliteExporter {
     /// 创建新的 SQLite 导出器
-    pub fn new(
-        database_url: String,
-        table_name: String,
-        overwrite: bool,
-        append: bool,
-        batch_size: usize,
-    ) -> Self {
+    pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         Self {
             database_url,
             table_name,
@@ -35,20 +25,16 @@ impl SqliteExporter {
             append,
             conn: None,
             stats: ExportStats::new(),
-            batch_size,
-            csv_exporter: None,
-            temp_csv: None,
         }
     }
 
     /// 从配置创建 SQLite 导出器
-    pub fn from_config(config: &crate::config::SqliteExporter, batch_size: usize) -> Self {
+    pub fn from_config(config: &crate::config::SqliteExporter) -> Self {
         Self::new(
             config.database_url.clone(),
             config.table_name.clone(),
             config.overwrite,
             config.append,
-            batch_size,
         )
     }
 
@@ -63,7 +49,6 @@ impl SqliteExporter {
         let sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS {} (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts TEXT NOT NULL,
                 ep INTEGER NOT NULL,
                 sess_id TEXT NOT NULL,
@@ -91,72 +76,6 @@ impl SqliteExporter {
         info!("SQLite table created or already exists");
         Ok(())
     }
-
-    /// 刷新待处理记录到数据库（使用 CSV 虚拟表导入）
-    fn flush(&mut self) -> Result<()> {
-        // 先刷新 CSV 导出器
-        if let Some(csv_exporter) = &mut self.csv_exporter {
-            <CsvExporter as Exporter>::finalize(csv_exporter)?;
-        }
-
-        let temp_csv = self.temp_csv.take().ok_or_else(|| {
-            Error::Export(ExportError::DatabaseError {
-                reason: "No temporary CSV file".to_string(),
-            })
-        })?;
-
-        let csv_path = temp_csv.path().to_string_lossy().to_string();
-
-        let conn = self.conn.as_ref().ok_or_else(|| {
-            Error::Export(ExportError::DatabaseError {
-                reason: "Connection not initialized".to_string(),
-            })
-        })?;
-
-        // 创建临时虚拟表来导入 CSV
-        let virtual_table_name = format!("{}_temp_csv", self.table_name);
-        let create_vtab_sql = format!(
-            "CREATE VIRTUAL TABLE temp.{} USING csv(filename = '{}', header = yes)",
-            virtual_table_name,
-            csv_path.replace('\\', "\\\\").replace('\'', "''")
-        );
-
-        conn.execute(&create_vtab_sql, []).map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create CSV virtual table: {}", e),
-            })
-        })?;
-
-        // 从虚拟表导入数据到实际表
-        let insert_sql = format!(
-            r#"INSERT INTO {} (ts, ep, sess_id, thrd_id, username, trx_id,
-                                  statement, appname, client_ip, sql,
-                                  exec_time_ms, row_count, exec_id)
-               SELECT ts, ep, sess_id, thrd_id, username, trx_id,
-                      statement, appname, client_ip, sql,
-                      NULLIF(exec_time_ms, ''),
-                      NULLIF(row_count, ''),
-                      NULLIF(exec_id, '')
-               FROM temp.{}"#,
-            self.table_name, virtual_table_name
-        );
-
-        let count = conn.execute(&insert_sql, []).map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to import CSV: {}", e),
-            })
-        })?;
-
-        // 删除临时虚拟表
-        let drop_vtab_sql = format!("DROP TABLE temp.{}", virtual_table_name);
-        let _ = conn.execute(&drop_vtab_sql, []);
-
-        debug!("Flushed {} records to SQLite from CSV", count);
-        self.stats.flush_operations += 1;
-        self.stats.last_flush_size = count;
-
-        Ok(())
-    }
 }
 
 impl Exporter for SqliteExporter {
@@ -180,10 +99,20 @@ impl Exporter for SqliteExporter {
             })
         })?;
 
-        // 加载 CSV 虚拟表模块
-        rusqlite::vtab::csvtab::load_module(&conn).map_err(|e| {
+        // 性能优化: 关闭同步和日志，使用内存模式
+        conn.execute_batch(
+            "PRAGMA journal_mode = OFF;
+             PRAGMA synchronous = OFF;
+             PRAGMA cache_size = 1000000;
+             PRAGMA locking_mode = EXCLUSIVE;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA mmap_size = 30000000000;
+             PRAGMA page_size = 65536;
+             PRAGMA threads = 4;",
+        )
+        .map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to load csvtab module: {}", e),
+                reason: format!("Failed to set PRAGMAs: {}", e),
             })
         })?;
 
@@ -214,21 +143,13 @@ impl Exporter for SqliteExporter {
         // 创建表
         self.create_table()?;
 
-        // 创建临时 CSV 文件
-        let temp_csv = NamedTempFile::new().map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create temp CSV file: {}", e),
-            })
-        })?;
-
-        // 创建 CSV 导出器
-        let csv_exporter = CsvExporter::with_batch_size(temp_csv.path(), true, self.batch_size);
-        self.csv_exporter = Some(csv_exporter);
-        self.temp_csv = Some(temp_csv);
-
-        // 初始化 CSV 导出器
-        if let Some(csv_exporter) = &mut self.csv_exporter {
-            csv_exporter.initialize()?;
+        // 开启事务
+        if let Some(conn) = &self.conn {
+            conn.execute_batch("BEGIN TRANSACTION;").map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to begin transaction: {}", e),
+                })
+            })?;
         }
 
         info!("SQLite exporter initialized: {}", self.database_url);
@@ -236,18 +157,131 @@ impl Exporter for SqliteExporter {
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        // 导出到临时 CSV
-        if let Some(csv_exporter) = &mut self.csv_exporter {
-            csv_exporter.export(sqllog)?;
-        }
+        let conn = self.conn.as_ref().ok_or_else(|| {
+            Error::Export(ExportError::DatabaseError {
+                reason: "Connection not initialized".to_string(),
+            })
+        })?;
+
+        // 使用 prepare_cached 缓存预编译语句
+        // 注意：这里每次都 format 字符串，但由于 table_name 不变，字符串内容不变，prepare_cached 会命中缓存
+        let sql = format!(
+            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self.table_name
+        );
+
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to prepare statement: {}", e),
+            })
+        })?;
+
+        let meta = sqllog.parse_meta();
+        let indicators = sqllog.parse_indicators();
+
+        let (exec_time, row_count, exec_id) = if let Some(ind) = indicators {
+            (
+                Some(ind.execute_time),
+                Some(ind.row_count),
+                Some(ind.execute_id),
+            )
+        } else {
+            (None, None, None)
+        };
+
+        stmt.execute(params![
+            sqllog.ts,
+            meta.ep,
+            meta.sess_id,
+            meta.thrd_id,
+            meta.username,
+            meta.trxid,
+            meta.statement,
+            meta.appname,
+            meta.client_ip,
+            sqllog.body().as_ref(),
+            exec_time,
+            row_count,
+            exec_id
+        ])
+        .map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to insert record: {}", e),
+            })
+        })?;
 
         self.stats.record_success();
         Ok(())
     }
 
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        let conn = self.conn.as_ref().ok_or_else(|| {
+            Error::Export(ExportError::DatabaseError {
+                reason: "Connection not initialized".to_string(),
+            })
+        })?;
+
+        let sql = format!(
+            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self.table_name
+        );
+
+        let mut stmt = conn.prepare_cached(&sql).map_err(|e| {
+            Error::Export(ExportError::DatabaseError {
+                reason: format!("Failed to prepare statement: {}", e),
+            })
+        })?;
+
+        for sqllog in sqllogs {
+            let meta = sqllog.parse_meta();
+            let indicators = sqllog.parse_indicators();
+
+            let (exec_time, row_count, exec_id) = if let Some(ind) = indicators {
+                (
+                    Some(ind.execute_time),
+                    Some(ind.row_count),
+                    Some(ind.execute_id),
+                )
+            } else {
+                (None, None, None)
+            };
+
+            stmt.execute(params![
+                sqllog.ts,
+                meta.ep,
+                meta.sess_id,
+                meta.thrd_id,
+                meta.username,
+                meta.trxid,
+                meta.statement,
+                meta.appname,
+                meta.client_ip,
+                sqllog.body().as_ref(),
+                exec_time,
+                row_count,
+                exec_id
+            ])
+            .map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to insert record: {}", e),
+                })
+            })?;
+
+            self.stats.record_success();
+        }
+
+        Ok(())
+    }
+
     fn finalize(&mut self) -> Result<()> {
-        // 从 CSV 批量导入
-        self.flush()?;
+        // 提交事务
+        if let Some(conn) = &self.conn {
+            conn.execute_batch("COMMIT;").map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to commit transaction: {}", e),
+                })
+            })?;
+        }
 
         info!(
             "SQLite export finished: {} (success: {}, failed: {})",
@@ -268,10 +302,8 @@ impl Exporter for SqliteExporter {
 
 impl Drop for SqliteExporter {
     fn drop(&mut self) {
-        if self.csv_exporter.is_some()
-            && let Err(e) = self.finalize()
-        {
-            warn!("SQLite exporter finalization on Drop failed: {}", e);
-        }
+        // 如果连接存在且未显式 finalize (可能 panic 或提前退出)，尝试回滚或提交？
+        // 这里不做复杂处理，依赖 OS 回收文件锁
+        // 如果事务未提交，SQLite 会自动回滚
     }
 }

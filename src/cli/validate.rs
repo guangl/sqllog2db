@@ -8,7 +8,6 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     info!("配置验证已在 main 中完成");
 
     info!("SQL日志输入目录: {}", cfg.sqllog.directory());
-    info!("Batch size: {}", cfg.sqllog.batch_size());
     info!("日志级别: {}", cfg.logging.level());
     info!("日志文件: {}", cfg.logging.file());
     info!("日志保留: {} 天", cfg.logging.retention_days());

@@ -17,7 +17,6 @@ pub struct OracleExporter {
     overwrite: bool,
     append: bool,
     stats: ExportStats,
-    batch_size: usize,
     pending_records: Vec<OracleRecord>,
 }
 
@@ -46,7 +45,6 @@ impl OracleExporter {
         table_name: String,
         overwrite: bool,
         append: bool,
-        batch_size: usize,
     ) -> Self {
         Self {
             username,
@@ -57,12 +55,11 @@ impl OracleExporter {
             overwrite,
             append,
             stats: ExportStats::new(),
-            batch_size,
-            pending_records: Vec::with_capacity(batch_size),
+            pending_records: Vec::new(),
         }
     }
 
-    pub fn from_config(config: &crate::config::OracleExporter, batch_size: usize) -> Self {
+    pub fn from_config(config: &crate::config::OracleExporter) -> Self {
         // 从连接字符串解析参数 (简单实现,假设格式为 user/password@host:port/service)
         let parts: Vec<&str> = config.connection_string.split('@').collect();
         let (username, password) = if parts.len() >= 2 {
@@ -89,7 +86,6 @@ impl OracleExporter {
             "sqllog".to_string(), // 默认表名
             false,                // 默认不覆盖
             false,                // 默认不追加
-            batch_size,
         )
     }
 
@@ -288,9 +284,7 @@ impl Exporter for OracleExporter {
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
         let record = Self::sqllog_to_record(sqllog);
         self.pending_records.push(record);
-        if self.pending_records.len() >= self.batch_size {
-            self.flush()?;
-        }
+        self.flush()?;
         self.stats.record_success();
         Ok(())
     }

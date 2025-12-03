@@ -15,7 +15,6 @@ pub struct PostgresExporter {
     append: bool,
     client: Option<Client>,
     stats: ExportStats,
-    batch_size: usize,
     csv_exporter: Option<CsvExporter>,
     temp_csv: Option<NamedTempFile>,
 }
@@ -28,7 +27,6 @@ impl PostgresExporter {
         table_name: String,
         overwrite: bool,
         append: bool,
-        batch_size: usize,
     ) -> Self {
         Self {
             connection_string,
@@ -38,21 +36,19 @@ impl PostgresExporter {
             append,
             client: None,
             stats: ExportStats::new(),
-            batch_size,
             csv_exporter: None,
             temp_csv: None,
         }
     }
 
     /// 从配置创建 PostgreSQL 导出器
-    pub fn from_config(config: &crate::config::PostgresExporter, batch_size: usize) -> Self {
+    pub fn from_config(config: &crate::config::PostgresExporter) -> Self {
         Self::new(
             config.connection_string(),
             config.schema.clone(),
             config.table_name.clone(),
             config.overwrite,
             config.append,
-            batch_size,
         )
     }
 
@@ -73,7 +69,6 @@ impl PostgresExporter {
         let sql = format!(
             r#"
                 CREATE TABLE IF NOT EXISTS {} (
-                    id SERIAL PRIMARY KEY,
                     ts VARCHAR NOT NULL,
                     ep INTEGER NOT NULL,
                     sess_id VARCHAR,
@@ -131,6 +126,11 @@ impl PostgresExporter {
             full_table_name
         );
 
+        info!(
+            "Starting CSV import into PostgreSQL via COPY for table: {}",
+            full_table_name
+        );
+
         let mut writer = client.copy_in(&copy_sql).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to start COPY: {}", e),
@@ -175,6 +175,10 @@ impl PostgresExporter {
             })
         })?;
 
+        info!(
+            "Finished CSV import into PostgreSQL: {} rows ({} bytes) committed",
+            count, total_bytes
+        );
         debug!(
             "Flushed {} records ({} bytes) to PostgreSQL from CSV",
             count, total_bytes
@@ -189,6 +193,9 @@ impl PostgresExporter {
 impl Exporter for PostgresExporter {
     fn initialize(&mut self) -> Result<()> {
         info!("Initializing PostgreSQL exporter");
+
+        // 输出连接字符串用于调试
+        debug!("Connection string: {}", self.connection_string);
 
         // 创建连接
         let client = Client::connect(&self.connection_string, NoTls).map_err(|e| {
@@ -234,7 +241,7 @@ impl Exporter for PostgresExporter {
         })?;
 
         // 创建 CSV 导出器
-        let csv_exporter = CsvExporter::with_batch_size(temp_csv.path(), true, self.batch_size);
+        let csv_exporter = CsvExporter::new(temp_csv.path(), true);
         self.csv_exporter = Some(csv_exporter);
         self.temp_csv = Some(temp_csv);
 
@@ -261,6 +268,10 @@ impl Exporter for PostgresExporter {
         // 从 CSV 批量导入
         self.flush()?;
 
+        // 成功后释放资源，避免 Drop 时重复 finalize 产生告警
+        self.csv_exporter = None;
+        self.temp_csv = None;
+
         info!(
             "PostgreSQL export finished (success: {}, failed: {})",
             self.stats.exported, self.stats.failed
@@ -280,10 +291,11 @@ impl Exporter for PostgresExporter {
 
 impl Drop for PostgresExporter {
     fn drop(&mut self) {
-        if self.csv_exporter.is_some()
-            && let Err(e) = self.finalize()
-        {
-            warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
+        // 仅当仍持有 CSV 导出器与临时文件时才尝试 finalize
+        if self.csv_exporter.is_some() && self.temp_csv.is_some() {
+            if let Err(e) = self.finalize() {
+                warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
+            }
         }
     }
 }

@@ -29,9 +29,6 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 [sqllog]
 # SQL 日志目录或文件路径
 directory = "sqllogs"
-# 批量提交大小 (推荐 10000 以获得最佳性能)
-# 0 表示全部解析完成后一次性写入; >0 表示每 N 条记录批量写入
-batch_size = 10000
 
 [error]
 # 解析错误日志(JSON Lines 格式)输出路径
