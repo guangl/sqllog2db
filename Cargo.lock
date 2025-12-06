@@ -940,7 +940,6 @@ dependencies = [
  "env_logger",
  "itoa",
  "log",
- "once_cell",
  "parquet",
  "postgres",
  "rayon",

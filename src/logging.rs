@@ -4,15 +4,14 @@ use crate::error::{Error, FileError, Result};
 use chrono::Local;
 use log::SetLoggerError;
 use log::{Level, LevelFilter, Metadata, Record};
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-// 使用 once_cell 缓存日志级别映射表，避免每次查找时重新构建
-static LOG_LEVEL_MAP: Lazy<HashMap<&'static str, LevelFilter>> = Lazy::new(|| {
+// 使用 LazyLock 缓存日志级别映射表，避免每次查找时重新构建
+static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert("trace", LevelFilter::Trace);
     map.insert("debug", LevelFilter::Debug);

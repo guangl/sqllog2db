@@ -257,7 +257,9 @@ impl Exporter for DuckdbExporter {
 impl Drop for DuckdbExporter {
     fn drop(&mut self) {
         // 仅当 CSV 导出器仍存在时才尝试 finalize
-        if self.csv_exporter.is_some() && let Err(e) = self.finalize() {
+        if self.csv_exporter.is_some()
+            && let Err(e) = self.finalize()
+        {
             warn!("DuckDB exporter finalization on Drop failed: {}", e);
         }
     }

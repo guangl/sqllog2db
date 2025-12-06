@@ -331,7 +331,10 @@ impl Exporter for PostgresExporter {
 impl Drop for PostgresExporter {
     fn drop(&mut self) {
         // 仅当仍持有 CSV 导出器与临时文件时才尝试 finalize
-        if self.csv_exporter.is_some() && self.temp_csv.is_some() && let Err(e) = self.finalize() {
+        if self.csv_exporter.is_some()
+            && self.temp_csv.is_some()
+            && let Err(e) = self.finalize()
+        {
             warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
         }
     }
