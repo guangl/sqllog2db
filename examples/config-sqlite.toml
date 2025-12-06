@@ -1,0 +1,22 @@
+# SQL 日志导出工具示例配置 - SQLite 导出
+
+[sqllog]
+directory = "sqllogs"
+
+[error]
+file = "export/errors.log"
+
+[logging]
+file = "logs/sqllog2db.log"
+level = "info"
+retention_days = 7
+
+[features.replace_parameters]
+enable = false
+
+# SQLite 导出（需编译时启用 sqlite 特性）
+[exporter.sqlite]
+database_url = "export/sqllog2db.db"
+table_name = "sqllog_records"
+overwrite = true
+append = false

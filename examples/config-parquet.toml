@@ -1,0 +1,22 @@
+# SQL 日志导出工具示例配置 - Parquet 导出
+
+[sqllog]
+directory = "sqllogs"
+
+[error]
+file = "export/errors.log"
+
+[logging]
+file = "logs/sqllog2db.log"
+level = "info"
+retention_days = 7
+
+[features.replace_parameters]
+enable = false
+
+# Parquet 导出（需编译时启用 parquet 特性）
+[exporter.parquet]
+file = "export/sqllog2db.parquet"
+overwrite = true
+row_group_size = 100000
+use_dictionary = true

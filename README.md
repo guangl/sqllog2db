@@ -23,6 +23,9 @@
 - [GitHub Releases](https://github.com/guangl/sqllog2db/releases)
 - [CHANGELOG](./CHANGELOG.md)
 - [Quickstart](./docs/quickstart.md)
+- [Architecture](./docs/architecture.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Security Policy](./SECURITY.md)
 
 ---
 
@@ -89,6 +92,8 @@ cargo build --release --features "parquet jsonl sqlite"
 
 ## 快速开始
 
+### 本地运行
+
 1) 生成默认配置（如已存在可加 `--force` 覆盖）：
 
 ```powershell
@@ -105,6 +110,36 @@ sqllog2db validate -c config.toml
 
 ```powershell
 sqllog2db run -c config.toml
+```
+
+### Docker 运行
+
+```bash
+# 构建镜像
+docker build -t sqllog2db:latest .
+
+# 运行（挂载配置和数据目录）
+docker run --rm \
+  -v $(pwd)/config.toml:/app/config/config.toml \
+  -v $(pwd)/sqllogs:/app/sqllogs \
+  -v $(pwd)/export:/app/export \
+  -v $(pwd)/logs:/app/logs \
+  sqllog2db:latest
+```
+
+### Shell 补全
+
+生成 shell 自动补全脚本：
+
+```bash
+# Bash
+sqllog2db completions bash > /etc/bash_completion.d/sqllog2db
+
+# Zsh
+sqllog2db completions zsh > ~/.zfunc/_sqllog2db
+
+# Fish
+sqllog2db completions fish > ~/.config/fish/completions/sqllog2db.fish
 ```
 
 ---
@@ -233,6 +268,20 @@ cargo build --release --features replace_parameters
 > 💡 **体积优化提示**：只启用必要的导出器特性，可以让二进制更小。
 
 ---
+
+## 高级用法
+
+### 日志级别控制
+
+使用全局选项覆盖配置文件中的日志级别：
+
+```bash
+# 详细输出（debug 级别）
+sqllog2db -v run -c config.toml
+
+# 静默模式（仅错误）
+sqllog2db -q run -c config.toml
+```
 
 ## 开发与测试
 

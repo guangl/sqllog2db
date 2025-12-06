@@ -1,0 +1,22 @@
+# SQL 日志导出工具示例配置 - CSV 导出
+
+[sqllog]
+directory = "sqllogs"
+
+[error]
+file = "export/errors.log"
+
+[logging]
+file = "logs/sqllog2db.log"
+level = "info"
+retention_days = 7
+
+[features.replace_parameters]
+enable = false
+symbols = ["?", ":name", "$1"]
+
+# CSV 导出（默认）
+[exporter.csv]
+file = "outputs/sqllog.csv"
+overwrite = true
+append = false

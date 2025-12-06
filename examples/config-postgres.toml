@@ -1,0 +1,27 @@
+# SQL 日志导出工具示例配置 - PostgreSQL 导出
+
+[sqllog]
+directory = "sqllogs"
+
+[error]
+file = "export/errors.log"
+
+[logging]
+file = "logs/sqllog2db.log"
+level = "info"
+retention_days = 7
+
+[features.replace_parameters]
+enable = false
+
+# PostgreSQL 导出（需编译时启用 postgres 特性）
+[exporter.postgres]
+host = "localhost"
+port = 5432
+username = "postgres"
+password = "postgres"
+database = "sqllog"
+schema = "public"
+table_name = "sqllog_records"
+overwrite = true
+append = false

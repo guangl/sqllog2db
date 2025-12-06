@@ -12,6 +12,21 @@ use error::Result;
 use log::info;
 use std::path::Path;
 
+/// Initialize simple console logging for init/completions commands
+fn init_simple_logging(verbose: bool, quiet: bool) {
+    let level = if verbose {
+        "debug"
+    } else if quiet {
+        "error"
+    } else {
+        "info"
+    };
+    unsafe {
+        std::env::set_var("RUST_LOG", level);
+    }
+    env_logger::init();
+}
+
 fn main() -> Result<()> {
     // 解析命令行参数
     use clap::Parser;
@@ -21,15 +36,20 @@ fn main() -> Result<()> {
     match &cli.command {
         Some(cli::opts::Commands::Init { output, force }) => {
             // init 命令不需要加载配置,使用简单的控制台日志
-            env_logger::init();
+            init_simple_logging(cli.verbose, cli.quiet);
 
             cli::init::handle_init(output, *force)
+        }
+        Some(cli::opts::Commands::Completions { shell }) => {
+            // 生成 shell 补全脚本
+            cli::opts::Cli::generate_completions(*shell);
+            Ok(())
         }
         Some(cli::opts::Commands::Run { config })
         | Some(cli::opts::Commands::Validate { config }) => {
             // 加载配置,如果文件不存在则使用默认配置
             let path = Path::new(config);
-            let cfg = match Config::from_file(path) {
+            let mut cfg = match Config::from_file(path) {
                 Ok(c) => {
                     eprintln!("Loaded configuration file: {}", config);
                     c
@@ -51,6 +71,13 @@ fn main() -> Result<()> {
             // 验证配置
             cfg.validate()?;
             eprintln!("Configuration validation passed");
+
+            // Override log level based on CLI flags
+            if cli.verbose {
+                cfg.logging.level = "debug".to_string();
+            } else if cli.quiet {
+                cfg.logging.level = "error".to_string();
+            }
 
             // 初始化日志系统
             logging::init_logging(&cfg.logging)?;

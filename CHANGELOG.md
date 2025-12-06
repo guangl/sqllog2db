@@ -8,12 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2025-12-06
 
 ### Added
-- 新增 `docs/quickstart.md`，提供最小用例与特性开关示例
+- **Shell 自动补全**：新增 `completions` 子命令，支持生成 Bash/Zsh/Fish 补全脚本
+- **全局日志级别选项**：`-v/--verbose` 和 `-q/--quiet` 覆盖配置文件日志级别
+- **容器化支持**：添加 `Dockerfile` 和 `.dockerignore`，支持 Docker 部署
+- **示例配置**：`examples/` 目录包含 CSV/Parquet/SQLite/PostgreSQL 示例配置
+- **开发者文档**：
+  - `CONTRIBUTING.md`：贡献指南
+  - `docs/architecture.md`：架构设计文档
+  - `docs/quickstart.md`：快速开始指南
+- **安全策略**：`SECURITY.md` 安全漏洞报告流程
+- **CI/CD 增强**：
+  - `.github/workflows/ci.yaml`：自动化测试、Clippy、格式检查、文档检查
+  - `.github/dependabot.yml`：自动依赖更新
 
 ### Changed
-- CLI 版本号更新为 v0.2.0
+- **Cargo.toml**：添加 `authors` 字段，增加 `clap_complete` 依赖
+- **CLI 描述优化**：更详细的 `about` 和 `long_about` 说明
 - 默认配置模板与代码默认值对齐：`sqllog.directory = "sqllogs"`、错误日志默认输出到 `export/errors.log`（按行文本）
 - README 配置示例与导出器优先级、默认路径保持一致
+- 导出器优先级警告信息更详细（包含完整优先级列表）
 
 ### Performance
 - 内存优化：总峰值内存从 2.42GB 降至约 179MB（-92.6%），Parquet 峰值从 2.37GB 降至 ~134MB

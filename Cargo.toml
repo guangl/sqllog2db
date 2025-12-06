@@ -2,6 +2,7 @@
 name = "dm-database-sqllog2db"
 version = "0.2.0"
 edition = "2024"
+authors = ["guangl <guangl@example.com>"]
 description = "命令行工具：将达梦 SQL 日志解析并导出为 CSV 或嵌入式数据库 (SQLite)。"
 homepage = "https://github.com/guangl/sqllog2db"
 repository = "https://github.com/guangl/sqllog2db"
@@ -39,6 +40,7 @@ rayon = "1.10"                      # 并行迭代
 dashmap = "6.1"                     # 并发哈希表
 
 clap = { version = "4.5.51", features = ["derive"] }
+clap_complete = "4.5"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = { version = "0.9.8", features = ["serde"] }
 chrono = { version = "0.4.42", features = ["clock"] }
