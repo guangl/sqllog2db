@@ -7,13 +7,17 @@ use dm_database_parser_sqllog::LogParser;
 use log::{info, warn};
 use std::time::Instant;
 
-/// 处理单个日志文件
+/// 处理单个日志文件，带进度统计
 fn process_log_file(
     file_path: &str,
+    file_index: usize,
+    total_files: usize,
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
 ) -> Result<()> {
-    info!("Processing file: {file_path}");
+    let file_start = Instant::now();
+    eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
+    info!("Processing file {file_index}/{total_files}: {file_path}");
 
     let parser = LogParser::from_path(file_path).map_err(|e| {
         Error::Parser(ParserError::InvalidPath {
@@ -25,16 +29,23 @@ fn process_log_file(
     // 内存优化：使用更小的批次大小（1000 而不是 5000）
     // 这样可以更及时地释放内存，降低峰值
     let mut batch = Vec::with_capacity(1000);
+    let mut records_in_file = 0;
+    let mut errors_in_file = 0;
+
     for result in parser.iter() {
         match result {
             Ok(record) => {
                 batch.push(record);
+                records_in_file += 1;
                 if batch.len() >= 1000 {
                     exporter_manager.export_batch(&batch)?;
                     batch.clear();
+                    // 每 1000 条记录输出一次进度
+                    eprintln!("  [Progress] {records_in_file} records processed");
                 }
             }
             Err(e) => {
+                errors_in_file += 1;
                 // 如果有未处理的批次，先导出
                 if !batch.is_empty() {
                     exporter_manager.export_batch(&batch)?;
@@ -52,6 +63,26 @@ fn process_log_file(
     if !batch.is_empty() {
         exporter_manager.export_batch(&batch)?;
     }
+
+    let file_elapsed = file_start.elapsed();
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_lossless
+    )]
+    let throughput = if file_elapsed.as_secs_f64() > 0.0 {
+        (records_in_file as f64 / file_elapsed.as_secs_f64()).round() as usize
+    } else {
+        0
+    };
+
+    let file_secs = file_elapsed.as_secs_f64();
+    eprintln!(
+        "  [Complete] {records_in_file} records, {errors_in_file} errors, {file_secs:.2}s, {throughput} records/sec"
+    );
+    info!(
+        "File {file_path} processed: {records_in_file} records, {errors_in_file} errors, {file_secs:.2}s"
+    );
 
     Ok(())
 }
@@ -96,13 +127,13 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     // 处理所有日志文件
     for (idx, log_file) in log_files.iter().enumerate() {
         let file_path_str = log_file.to_string_lossy().to_string();
-        info!(
-            "Processing file {}/{}: {}",
+        process_log_file(
+            &file_path_str,
             idx + 1,
             log_files.len(),
-            log_file.display()
-        );
-        process_log_file(&file_path_str, &mut exporter_manager, &mut error_logger)?;
+            &mut exporter_manager,
+            &mut error_logger,
+        )?;
     }
 
     // 第六步：完成导出
@@ -123,7 +154,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     eprintln!("  Exporter:  {}", exporter_manager.name());
     let elapsed_secs = total_elapsed.as_secs_f64();
-    eprintln!("  Elapsed:   {elapsed_secs:.3} seconds");
+    eprintln!("  Elapsed:   {elapsed_secs:.2} seconds");
     if let Some(stats) = exporter_manager.stats() {
         let elapsed_millis = total_elapsed.as_millis();
         let throughput = if elapsed_millis > 0 {

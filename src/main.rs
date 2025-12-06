@@ -30,6 +30,15 @@ fn init_simple_logging(verbose: bool, quiet: bool) {
         .init();
 }
 
+/// Apply CLI flags (verbose/quiet) to configuration
+fn apply_cli_flags_to_config(cfg: &mut Config, verbose: bool, quiet: bool) {
+    if verbose {
+        cfg.logging.level = "debug".to_string();
+    } else if quiet {
+        cfg.logging.level = "error".to_string();
+    }
+}
+
 #[cfg(feature = "tui")]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -50,12 +59,7 @@ async fn main() -> Result<()> {
             cfg.validate()?;
             eprintln!("Configuration validation passed");
 
-            if cli.verbose {
-                cfg.logging.level = "debug".to_string();
-            } else if cli.quiet {
-                cfg.logging.level = "error".to_string();
-            }
-
+            apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
@@ -75,12 +79,7 @@ async fn main() -> Result<()> {
             cfg.validate()?;
             eprintln!("Configuration validation passed");
 
-            if cli.verbose {
-                cfg.logging.level = "debug".to_string();
-            } else if cli.quiet {
-                cfg.logging.level = "error".to_string();
-            }
-
+            apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
@@ -88,7 +87,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         None => {
-            print_help();
+            let _ = cli::opts::Cli::try_parse_from(["sqllog2db", "--help"]);
             std::process::exit(1);
         }
     }
@@ -113,12 +112,7 @@ fn main() -> Result<()> {
             cfg.validate()?;
             eprintln!("Configuration validation passed");
 
-            if cli.verbose {
-                cfg.logging.level = "debug".to_string();
-            } else if cli.quiet {
-                cfg.logging.level = "error".to_string();
-            }
-
+            apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
@@ -129,12 +123,7 @@ fn main() -> Result<()> {
             cfg.validate()?;
             eprintln!("Configuration validation passed");
 
-            if cli.verbose {
-                cfg.logging.level = "debug".to_string();
-            } else if cli.quiet {
-                cfg.logging.level = "error".to_string();
-            }
-
+            apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
@@ -142,7 +131,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         None => {
-            print_help();
+            let _ = cli::opts::Cli::try_parse_from(["sqllog2db", "--help"]);
             std::process::exit(1);
         }
     }
@@ -167,37 +156,4 @@ fn load_config(config_path: &str) -> Result<Config> {
             }
         }
     }
-}
-
-fn print_help() {
-    eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    eprintln!("sqllog2db - SQL Log Exporter for DM Database");
-    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    eprintln!("\nUsage: sqllog2db <COMMAND> [OPTIONS]");
-    eprintln!("\nCommands:");
-    eprintln!("  run        Run the log export task");
-    eprintln!("  init       Generate a default configuration file");
-    eprintln!("  validate   Validate a configuration file");
-    eprintln!("  complete   Generate shell completion scripts");
-    eprintln!("\nOptions:");
-    eprintln!("  -v, --verbose   Enable verbose output (debug level)");
-    eprintln!("  -q, --quiet     Suppress non-error output");
-    eprintln!("  -h, --help      Print help information");
-    eprintln!("  -V, --version   Print version information");
-    eprintln!("\nExamples:");
-    eprintln!("  # Initialize configuration");
-    eprintln!("  sqllog2db init");
-    eprintln!("\n  # Run with default config");
-    eprintln!("  sqllog2db run");
-    eprintln!("\n  # Run with custom config and verbose logging");
-    eprintln!("  sqllog2db -v run -c custom.toml");
-    eprintln!("\n  # Validate configuration");
-    eprintln!("  sqllog2db validate -c config.toml");
-    #[cfg(feature = "tui")]
-    {
-        eprintln!("\n  # Run with TUI mode");
-        eprintln!("  sqllog2db run --tui");
-    }
-    eprintln!("\nFor more help: sqllog2db --help");
-    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 }
