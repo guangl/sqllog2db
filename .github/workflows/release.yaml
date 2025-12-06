@@ -97,6 +97,27 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog for version
+        id: changelog
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          # Extract the section for this version from CHANGELOG.md
+          awk "/## \[${VERSION}\]/,/## \[/" CHANGELOG.md | sed '$d' > release_notes.md
+          # If no specific version found, use a generic message
+          if [ ! -s release_notes.md ]; then
+            echo "Release version ${VERSION}" > release_notes.md
+            echo "" >> release_notes.md
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." >> release_notes.md
+          fi
+          cat release_notes.md
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -108,6 +129,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release_notes.md
           files: |
             dist/**/sqllog2db-*
         env:
