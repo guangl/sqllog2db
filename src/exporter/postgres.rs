@@ -265,7 +265,7 @@ impl Exporter for PostgresExporter {
             })?;
 
         // 创建 CSV 导出器
-        let csv_exporter = CsvExporter::new(temp_csv.path(), true);
+        let csv_exporter = CsvExporter::new(temp_csv.path());
         self.csv_exporter = Some(csv_exporter);
         self.temp_csv = Some(temp_csv);
 

@@ -151,7 +151,7 @@ impl Exporter for DuckdbExporter {
         let temp_dir = std::env::temp_dir();
         let temp_csv_path = temp_dir.join(format!("duckdb_import_{}.csv", std::process::id()));
 
-        let mut csv_exporter = CsvExporter::new(&temp_csv_path, true);
+        let mut csv_exporter = CsvExporter::new(&temp_csv_path);
         csv_exporter.initialize()?;
         self.csv_exporter = Some(csv_exporter);
         self.temp_csv_path = Some(temp_csv_path);

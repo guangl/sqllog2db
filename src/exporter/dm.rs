@@ -193,7 +193,7 @@ impl Exporter for DmExporter {
         info!("Initializing DM exporter...");
 
         // 初始化 CSV 导出器（CSV 导出器会自动创建父目录）
-        let mut csv_exporter = CsvExporter::new(&self.data_file, true);
+        let mut csv_exporter = CsvExporter::new(&self.data_file);
         csv_exporter.initialize()?;
         self.csv_exporter = Some(csv_exporter);
 

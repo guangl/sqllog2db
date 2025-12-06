@@ -33,10 +33,10 @@ impl std::fmt::Debug for CsvExporter {
 
 impl CsvExporter {
     /// 创建新的 CSV 导出器
-    pub fn new(path: impl AsRef<Path>, overwrite: bool) -> Self {
+    pub fn new(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
-            overwrite,
+            overwrite: false,
             append: false,
             writer: None,
             stats: ExportStats::new(),
@@ -48,7 +48,7 @@ impl CsvExporter {
     /// 从配置创建 CSV 导出器
     #[must_use]
     pub fn from_config(config: &config::CsvExporter) -> Self {
-        let mut exporter = Self::new(&config.file, config.overwrite);
+        let mut exporter = Self::new(&config.file);
 
         // 追加模式优先级高于 overwrite
         if config.append {
