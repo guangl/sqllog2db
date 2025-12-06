@@ -34,7 +34,7 @@ impl SqllogParser {
         let path = &self.path;
 
         if !path.exists() {
-            return Err(Error::File(FileError::NotFound {
+            return Err(Error::Parser(ParserError::PathNotFound {
                 path: path.clone(),
             }));
         }
