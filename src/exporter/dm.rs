@@ -38,11 +38,11 @@ impl DmExporter {
         };
 
         Self {
-            userid: config.userid.to_string(),
-            table_name: config.table_name.to_string(),
-            control_file: config.control_file.to_string(),
+            userid: config.userid.clone(),
+            table_name: config.table_name.clone(),
+            control_file: config.control_file.clone(),
             data_file,
-            log_dir: config.log_dir.to_string(),
+            log_dir: config.log_dir.clone(),
             csv_exporter: None,
         }
     }
