@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-12-07
+
+### Fixed
+- **代码质量改进**：
+  - 修复所有 `cargo clippy` 告警（默认特性和所有特性模式）
+  - 移除 `unreadable_literal` 警告（数字分隔符）
+  - 修复 `unused_variables`、`dead_code`、`format_push_string` 等编译告警
+  - 修复结构体更新语法中的冗余 `..Default::default()`
+  - 改进字符串文字比较（使用 `contains()` 替代 `ends_with()`）
+  - 使用 `writeln!()` 替代 `format!() + push_str()`
+
+### Changed
+- 测试框架增强：
+  - 调整所有测试以兼容默认特性和完整特性两种编译模式
+  - 添加 `#[allow(clippy::needless_update)]` 来处理特性条件编译下的结构体更新
+
+### Testing
+- ✅ 所有 690+ 测试通过
+- ✅ `cargo clippy --all-targets -- -D warnings` 通过
+- ✅ `cargo clippy --all-targets --all-features -- -D warnings` 通过
+- ✅ `cargo fmt --all -- --check` 通过
+- ✅ `cargo doc --all-features` 通过
+
 ## [0.2.0] - 2025-12-06
 
 ### Added

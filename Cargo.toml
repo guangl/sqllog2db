@@ -1,6 +1,6 @@
 [package]
 name = "dm-database-sqllog2db"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["guangl <guangl@example.com>"]
@@ -46,9 +46,6 @@ clap_complete = "4.5"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = { version = "0.9.8", features = ["serde"] }
 chrono = { version = "0.4.42", features = ["clock"] }
-
-# 性能分析
-dhat = { version = "0.3", optional = true }
 
 # 可选功能依赖
 anyhow = { version = "1.0.100", optional = true }
@@ -106,3 +103,6 @@ similar_names = "allow"
 too_many_arguments = "allow"
 too_many_lines = "allow"
 items_after_statements = "allow"
+
+[dev-dependencies]
+tempfile = "3.23.0"
