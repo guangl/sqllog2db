@@ -36,7 +36,7 @@ path = "src/main.rs"
 [dependencies]
 dm-database-parser-sqllog = "0.6.0"
 env_logger = "0.11.8"
-log = "0.4.28"
+log = "0.4.29"
 thiserror = "2.0.17"
 itoa = "1.0"                        # 快速整数转字符串
 rayon = "1.10"                      # 并行迭代
