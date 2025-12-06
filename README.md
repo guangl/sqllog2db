@@ -1,11 +1,11 @@
-# sqllog2db
+# 🚀 sqllog2db
 
-[![Crates.io](https://img.shields.io/crates/v/dm-database-sqllog2db.svg?logo=rust&logoColor=white)](https://crates.io/crates/dm-database-sqllog2db)
-[![Downloads](https://img.shields.io/crates/d/dm-database-sqllog2db.svg)](https://crates.io/crates/dm-database-sqllog2db)
-[![CI](https://github.com/guangl/sqllog2db/workflows/CI/badge.svg)](https://github.com/guangl/sqllog2db/actions/workflows/ci.yaml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?logo=apache&logoColor=white)](https://opensource.org/licenses/Apache-2.0)
-[![GitHub Release](https://img.shields.io/github/v/release/guangl/sqllog2db?logo=github)](https://github.com/guangl/sqllog2db/releases)
-[![Rust 1.78+](https://img.shields.io/badge/Rust-1.78%2B-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Crates.io](https://img.shields.io/crates/v/dm-database-sqllog2db?style=flat-square&logo=rust&logoColor=white&label=crates.io&color=d96109)](https://crates.io/crates/dm-database-sqllog2db)
+[![Downloads](https://img.shields.io/crates/d/dm-database-sqllog2db?style=flat-square&label=downloads&color=informational)](https://crates.io/crates/dm-database-sqllog2db)
+[![CI](https://img.shields.io/github/actions/workflow/status/guangl/sqllog2db/ci.yaml?style=flat-square&logo=github-actions&logoColor=white&label=ci)](https://github.com/guangl/sqllog2db/actions/workflows/ci.yaml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square&logo=apache&logoColor=white)](https://opensource.org/licenses/Apache-2.0)
+[![Release](https://img.shields.io/github/v/release/guangl/sqllog2db?style=flat-square&logo=github&logoColor=white&label=release)](https://github.com/guangl/sqllog2db/releases)
+[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
 一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / Parquet / JSONL / SQLite / DuckDB / PostgreSQL / DM，并提供按行落盘的错误追踪。
 
