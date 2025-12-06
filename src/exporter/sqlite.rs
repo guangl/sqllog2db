@@ -1,7 +1,7 @@
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use log::{info, warn};
+use log::info;
 use rayon::prelude::*;
 use rusqlite::{Connection, params};
 use std::path::Path;

@@ -115,7 +115,8 @@ impl ParquetExporter {
         let buf_writer = BufWriter::with_capacity(32 * 1024 * 1024, file); // 32MB buffer for faster writes
         let props_builder = WriterProperties::builder()
             .set_max_row_group_size(self.row_group_size)
-            .set_compression(parquet::basic::Compression::UNCOMPRESSED); // 禁用压缩以提升速度
+            .set_compression(parquet::basic::Compression::UNCOMPRESSED)
+            .set_dictionary_enabled(self.use_dictionary);
 
         let props = props_builder.build();
         let writer = ArrowWriter::try_new(buf_writer, self.schema.clone(), Some(props))
@@ -324,10 +325,10 @@ impl crate::exporter::Exporter for ParquetExporter {
 
 impl Drop for ParquetExporter {
     fn drop(&mut self) {
-        if self.initialized {
-            if let Err(e) = self.finalize() {
-                log::warn!("Parquet exporter finalization on Drop failed: {}", e);
-            }
+        if self.initialized
+            && let Err(e) = self.finalize()
+        {
+            log::warn!("Parquet exporter finalization on Drop failed: {}", e);
         }
     }
 }

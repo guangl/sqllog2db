@@ -13,6 +13,7 @@ pub struct DmExporter {
     control_file: String,
     data_file: String, // 临时 CSV 文件路径，自动生成
     log_dir: String,
+    #[allow(dead_code)]
     overwrite: bool,
     #[allow(dead_code)]
     charset: String,
@@ -53,9 +54,6 @@ impl DmExporter {
             .to_string()
             .replace(r"\\?\", "")
             .replace("\\", "/");
-
-        let bad_file = Path::new(&self.log_dir).join("dmfldr.bad");
-        let bad_file_display = bad_file.display().to_string().replace("\\", "/");
 
         let content = format!(
             r#"LOAD DATA

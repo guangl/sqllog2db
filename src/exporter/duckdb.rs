@@ -88,14 +88,12 @@ impl Exporter for DuckdbExporter {
 
         // 确保目录存在
         let path = Path::new(&self.database_url);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to create directory: {}", e),
-                    })
-                })?;
-            }
+        if let Some(parent) = path.parent().filter(|p| !p.exists()) {
+            fs::create_dir_all(parent).map_err(|e| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: format!("Failed to create directory: {}", e),
+                })
+            })?;
         }
 
         // 创建连接
@@ -247,10 +245,8 @@ impl Exporter for DuckdbExporter {
 impl Drop for DuckdbExporter {
     fn drop(&mut self) {
         // 仅当 CSV 导出器仍存在时才尝试 finalize
-        if self.csv_exporter.is_some() {
-            if let Err(e) = self.finalize() {
-                warn!("DuckDB exporter finalization on Drop failed: {}", e);
-            }
+        if self.csv_exporter.is_some() && let Err(e) = self.finalize() {
+            warn!("DuckDB exporter finalization on Drop failed: {}", e);
         }
     }
 }

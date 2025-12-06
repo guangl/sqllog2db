@@ -78,4 +78,3 @@ dm = ["dep:tempfile", "csv"]
 
 # 其他功能特性开关
 replace_parameters = ["dep:anyhow"]
-profiling = ["dep:dhat"]
