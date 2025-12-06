@@ -5,7 +5,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/guangl/sqllog2db)](https://github.com/guangl/sqllog2db/releases)
 [![Rust 1.56+](https://img.shields.io/badge/Rust-1.56%2B-orange.svg)](https://www.rust-lang.org/)
 
-一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV 或数据库（SQLite），并提供完善的错误追踪与统计。
+一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / Parquet / JSONL / SQLite / DuckDB / PostgreSQL / DM，并提供完善的错误追踪与统计。
 
 - **高性能**：单线程流式处理，~150万条/秒吞吐量（极致优化）
 - **稳健可靠**：批量导出 + 错误聚合与摘要（errors.summary.txt）
@@ -28,9 +28,11 @@
 ## 功能特性
 
 - **流式解析 SQL 日志**：单线程顺序处理，性能优秀且可预测（~150万条/秒）
-- **单导出目标**（简化架构）：
-  - CSV（默认特性，8MB 缓冲优化）
-  - SQLite（可选特性，WAL 模式优化）
+- **单导出目标（按优先级选择）**：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
+  - CSV（默认特性，16MB 缓冲优化）
+  - Parquet（可选特性，行组/内存优化）
+  - JSONL（可选特性，轻量流式）
+  - SQLite / DuckDB / PostgreSQL / DM（可选特性）
 - **完善的错误追踪**：
   - 解析失败逐条记录到 `errors.json`（JSON Lines 格式）
   - 自动生成 `errors.summary.txt`，包含总数、分类与子类型统计
@@ -64,15 +66,25 @@ cargo build --release
 cargo install --path .
 ```
 
-### 构建数据库导出支持（可选）
-
-启用 SQLite 数据库导出：
+### 构建可选导出器（特性开关）
 
 ```powershell
+# 默认仅 CSV
+cargo build --release
+
+# 选择性启用
+cargo build --release --features parquet
+cargo build --release --features jsonl
 cargo build --release --features sqlite
+cargo build --release --features duckdb
+cargo build --release --features postgres
+cargo build --release --features dm
+
+# 启用多个
+cargo build --release --features "parquet jsonl sqlite"
 ```
 
-> 💡 提示：默认仅包含 CSV 导出，如需数据库导出请启用 `sqlite` 特性
+> 💡 提示：默认仅包含 CSV 导出，如需其他导出器请按需启用对应 feature。
 
 ---
 
@@ -100,58 +112,95 @@ sqllog2db run -c config.toml
 
 ## 配置文件说明（config.toml）
 
-以下为 `sqllog2db init` 生成的默认模版（可根据需要修改）：
+以下为 `sqllog2db init` 生成的默认模版（与仓库 `config.toml` 保持一致，可根据需要修改）：
 
 ```toml
-# SQL 日志导出工具配置文件
+# SQL 日志导出工具默认配置文件 (请根据需要修改)
 
 [sqllog]
-# SQL 日志输入目录（可包含多个日志文件）
+# SQL 日志目录或文件路径
 directory = "sqllogs"
 
 [error]
-# 解析错误日志输出文件路径（JSON Lines 格式）
-file = "errors.jsonl"
+# 解析错误日志（JSON Lines 格式）输出路径
+file = "export/errors.jsonl"
 
 [logging]
-# 应用日志输出文件路径
+# 应用日志输出目录或文件路径 (当前版本要求为"文件路径"，例如 logs/sqllog2db.log)
+# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
 file = "logs/sqllog2db.log"
 # 日志级别: trace | debug | info | warn | error
 level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
-[features]
-# 是否替换 SQL 中的参数占位符（如 ? -> 实际值）
-replace_sql_parameters = false
-# 是否启用分散导出（按日期或其他维度拆分输出文件）
-scatter = false
+[features.replace_parameters]
+enable = false
+symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
-# 只支持单个导出器，按优先级选择：CSV > Database
+# 只能配置一个导出器
+# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
 
-# CSV 导出（默认）
+# 方案 1: csv 导出（默认）
 [exporter.csv]
 file = "export/sqllog2db.csv"
 overwrite = true
+append = false
 
-# 数据库导出示例（需编译时启用 sqlite 特性）
-# [exporter.database]
-# database_type = "sqlite"
-# file = "export/sqllog2db.sqlite"
+# 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
+# [exporter.parquet]
+# file = "export/sqllog2db.parquet"
 # overwrite = true
+# row_group_size = 1500000          # 每个 row group 的行数 (优化后推荐值)
+# use_dictionary = false            # 是否启用字典编码
+
+# 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
+# [exporter.jsonl]
+# file = "export/sqllog2db.jsonl"
+# overwrite = true
+# append = false
+
+# 方案 4: SQLite 数据库导出
+# [exporter.sqlite]
+# database_url = "export/sqllog2db.db"
+# table_name = "sqllog_records"
+# overwrite = true
+# append = false
+
+# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
+# [exporter.duckdb]
+# database_url = "export/sqllog2db.duckdb"
 # table_name = "sqllog"
+# overwrite = true
+# append = false
+
+# 方案 6: PostgreSQL 数据库导出
+# [exporter.postgres]
+# host = "localhost"
+# port = 5432
+# username = "postgres"
+# password = ""
+# database = "postgres"
+# schema = "public"
+# table_name = "sqllog"
+# overwrite = true
+# append = false
+
+# 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
+# [exporter.dm]
+# userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
+# table_name = "sqllog_records"
+# control_file = "export/sqllog.ctl"
+# log_dir = "export/log"
+# overwrite = true
+# charset = "UTF-8"
 ```
 
 **配置说明：**
-- **字段命名更新（v0.1.2）**：
-  - `sqllog.path` → `sqllog.directory` (输入目录)
-  - 所有 `path` 字段 → `file` (输出文件)
-  - 旧字段名仍然兼容，但建议使用新名称
-- 只支持单个导出器，如配置多个将按优先级选择第一个
+- 只支持单个导出器，如配置多个按优先级选择第一个
 - `logging.retention_days` 必须在 1-365 之间
-
-> **注意**：从 v0.1.1 开始，仅支持单个导出器（简化架构），配置格式为 `[exporter.csv]` 或 `[exporter.database]`。
+- 默认仅启用 CSV，其他导出器需在编译期开启对应 feature
 
 ## 导出与错误日志
 
