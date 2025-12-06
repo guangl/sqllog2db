@@ -25,31 +25,31 @@ fn default_true() -> bool {
     true
 }
 
-/// PostgreSQL 默认主机
+/// `PostgreSQL` 默认主机
 #[cfg(feature = "postgres")]
 fn default_postgres_host() -> String {
     "localhost".to_string()
 }
 
-/// PostgreSQL 默认端口
+/// `PostgreSQL` 默认端口
 #[cfg(feature = "postgres")]
 fn default_postgres_port() -> u16 {
     5432
 }
 
-/// PostgreSQL 默认用户名
+/// `PostgreSQL` 默认用户名
 #[cfg(feature = "postgres")]
 fn default_postgres_username() -> String {
     "postgres".to_string()
 }
 
-/// PostgreSQL 默认数据库
+/// `PostgreSQL` 默认数据库
 #[cfg(feature = "postgres")]
 fn default_postgres_database() -> String {
     "sqllog".to_string()
 }
 
-/// PostgreSQL 默认 schema
+/// `PostgreSQL` 默认 schema
 #[cfg(feature = "postgres")]
 fn default_postgres_schema() -> String {
     "public".to_string()
@@ -280,36 +280,42 @@ impl ExporterConfig {
 
     #[cfg(feature = "parquet")]
     /// 获取 Parquet 导出器配置
+    #[must_use]
     pub fn parquet(&self) -> Option<&ParquetExporter> {
         self.parquet.as_ref()
     }
 
     #[cfg(feature = "jsonl")]
     /// 获取 JSONL 导出器配置
+    #[must_use]
     pub fn jsonl(&self) -> Option<&JsonlExporter> {
         self.jsonl.as_ref()
     }
 
     #[cfg(feature = "sqlite")]
-    /// 获取 SQLite 导出器配置
+    /// 获取 `SQLite` 导出器配置
+    #[must_use]
     pub fn sqlite(&self) -> Option<&SqliteExporter> {
         self.sqlite.as_ref()
     }
 
     #[cfg(feature = "duckdb")]
-    /// 获取 DuckDB 导出器配置
+    /// 获取 `DuckDB` 导出器配置
+    #[must_use]
     pub fn duckdb(&self) -> Option<&DuckdbExporter> {
         self.duckdb.as_ref()
     }
 
     #[cfg(feature = "postgres")]
-    /// 获取 PostgreSQL 导出器配置
+    /// 获取 `PostgreSQL` 导出器配置
+    #[must_use]
     pub fn postgres(&self) -> Option<&PostgresExporter> {
         self.postgres.as_ref()
     }
 
     #[cfg(feature = "dm")]
     /// 获取 DM 导出器配置
+    #[must_use]
     pub fn dm(&self) -> Option<&DmExporter> {
         self.dm.as_ref()
     }
@@ -456,7 +462,7 @@ impl Default for ParquetExporter {
         Self {
             file: "export/sqllog2db.parquet".to_string(),
             overwrite: true,
-            row_group_size: Some(100000),
+            row_group_size: Some(100_000),
             use_dictionary: Some(true),
         }
     }
@@ -509,7 +515,7 @@ impl Default for JsonlExporter {
 #[cfg(feature = "sqlite")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqliteExporter {
-    /// SQLite 数据库文件路径
+    /// `SQLite` 数据库文件路径
     pub database_url: String,
     /// 表名
     #[serde(default = "default_table_name")]
@@ -537,7 +543,7 @@ impl Default for SqliteExporter {
 #[cfg(feature = "duckdb")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct DuckdbExporter {
-    /// DuckDB 数据库文件路径
+    /// `DuckDB` 数据库文件路径
     pub database_url: String,
     /// 表名
     #[serde(default = "default_table_name")]
@@ -565,10 +571,10 @@ impl Default for DuckdbExporter {
 #[cfg(feature = "postgres")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct PostgresExporter {
-    /// PostgreSQL 主机地址
+    /// `PostgreSQL` 主机地址
     #[serde(default = "default_postgres_host")]
     pub host: String,
-    /// PostgreSQL 端口
+    /// `PostgreSQL` 端口
     #[serde(default = "default_postgres_port")]
     pub port: u16,
     /// 用户名
@@ -613,6 +619,7 @@ impl Default for PostgresExporter {
 #[cfg(feature = "postgres")]
 impl PostgresExporter {
     /// 获取连接字符串
+    #[must_use]
     pub fn connection_string(&self) -> String {
         if self.password.is_empty() {
             format!(

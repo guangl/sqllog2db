@@ -1,6 +1,5 @@
 /// TUI 进度事件系统
 /// 用于导出任务将进度信息通过通道发送给 TUI
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -49,6 +48,7 @@ pub struct ProgressTracker {
 }
 
 impl ProgressTracker {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             current_file_index: Arc::new(AtomicU64::new(0)),
@@ -69,14 +69,17 @@ impl ProgressTracker {
         self.total_errors.fetch_add(count, Ordering::Relaxed);
     }
 
+    #[must_use]
     pub fn get_file_index(&self) -> u64 {
         self.current_file_index.load(Ordering::Relaxed)
     }
 
+    #[must_use]
     pub fn get_total_records(&self) -> u64 {
         self.total_records.load(Ordering::Relaxed)
     }
 
+    #[must_use]
     pub fn get_total_errors(&self) -> u64 {
         self.total_errors.load(Ordering::Relaxed)
     }

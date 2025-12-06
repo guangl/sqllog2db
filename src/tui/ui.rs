@@ -4,7 +4,7 @@ use crate::tui::app::TuiApp;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 #[cfg(feature = "tui")]
 use ratatui::{
@@ -29,7 +29,9 @@ pub fn init_terminal() -> io::Result<Terminal<CrosstermBackend<std::io::Stdout>>
 
 /// 恢复终端
 #[cfg(feature = "tui")]
-pub fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> io::Result<()> {
+pub fn restore_terminal(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+) -> io::Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -78,10 +80,11 @@ pub fn draw_ui(f: &mut Frame, app: &TuiApp) {
     f.render_widget(title, chunks[0]);
 
     // 进度条
+    let progress_pct = app.progress_percent();
     let progress = Gauge::default()
         .block(Block::default().title("Progress").borders(Borders::ALL))
         .gauge_style(Style::default().fg(Color::Green).bold())
-        .percent(app.progress_percent() as u16)
+        .percent(progress_pct)
         .label(format!(
             "{}/{} files",
             app.current_file_index, app.total_files
@@ -102,7 +105,7 @@ pub fn draw_ui(f: &mut Frame, app: &TuiApp) {
     let throughput = app.throughput();
     let stats = Paragraph::new(format!(
         "Records: {}\nErrors: {}\nElapsed: {:.0}s\nThroughput: {:.0} rec/s",
-        app.exported_records, app.error_records, elapsed as f64, throughput
+        app.exported_records, app.error_records, elapsed, throughput
     ))
     .block(Block::default().title("Statistics").borders(Borders::ALL))
     .style(Style::default().fg(Color::Yellow));
@@ -111,6 +114,9 @@ pub fn draw_ui(f: &mut Frame, app: &TuiApp) {
 
 /// 运行 TUI
 #[cfg(feature = "tui")]
+///
+/// # Panics
+/// Panics if the TUI app state mutex is poisoned when locking.
 pub async fn run_tui(app_state: Arc<Mutex<TuiApp>>) -> io::Result<()> {
     let mut terminal = init_terminal()?;
     terminal.clear()?;

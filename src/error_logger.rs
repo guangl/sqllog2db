@@ -88,7 +88,7 @@ impl ErrorLogger {
     }
 
     /// 记录一个解析错误
-    pub fn log_error(&mut self, record: ParseErrorRecord) -> Result<()> {
+    pub fn log_error(&mut self, record: &ParseErrorRecord) -> Result<()> {
         // 将记录以可读文本行写入（file | error | raw | line）
         let raw = record.raw_content.clone().unwrap_or_default();
         let line_no = record
@@ -131,7 +131,7 @@ impl ErrorLogger {
         // 粗略使用 Debug 字符串作为 variant 标识
         let variant = format!("{error:?}");
         self.metrics.incr_parse_variant(&variant);
-        self.log_error(record)
+        self.log_error(&record)
     }
 
     /// 完成错误记录并生成 summary.json

@@ -7,7 +7,7 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// DuckDB 导出器 - 使用 CSV 批量导入
+/// `DuckDB` 导出器 - 使用 CSV 批量导入
 pub struct DuckdbExporter {
     database_url: String,
     table_name: String,
@@ -18,7 +18,7 @@ pub struct DuckdbExporter {
     csv_exporter: Option<CsvExporter>,
     temp_csv_path: Option<PathBuf>,
 }
-
+/// `DuckDB` 导出器 - 使用 CSV 批量导入
 impl std::fmt::Debug for DuckdbExporter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DuckdbExporter")
@@ -27,12 +27,13 @@ impl std::fmt::Debug for DuckdbExporter {
             .field("overwrite", &self.overwrite)
             .field("append", &self.append)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl DuckdbExporter {
-    /// 创建新的 DuckDB 导出器
+    /// 创建新的 `DuckDB` 导出器
+    #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         Self {
             database_url,
@@ -46,7 +47,8 @@ impl DuckdbExporter {
         }
     }
 
-    /// 从配置创建 DuckDB 导出器
+    /// 从配置创建 `DuckDB` 导出器
+    #[must_use]
     pub fn from_config(config: &config::DuckdbExporter) -> Self {
         Self::new(
             config.database_url.clone(),
@@ -65,7 +67,7 @@ impl DuckdbExporter {
         })?;
 
         let create_table_sql = format!(
-            r#"CREATE TABLE IF NOT EXISTS {} (
+            r"CREATE TABLE IF NOT EXISTS {} (
                 ts VARCHAR NOT NULL,
                 ep INTEGER NOT NULL,
                 sess_id VARCHAR NOT NULL,
@@ -79,13 +81,13 @@ impl DuckdbExporter {
                 exec_time_ms FLOAT,
                 row_count INTEGER,
                 exec_id BIGINT
-            )"#,
+            )",
             self.table_name
         );
 
         conn.execute(&create_table_sql, []).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create table: {}", e),
+                reason: format!("Failed to create table: {e}"),
             })
         })?;
 
@@ -103,7 +105,7 @@ impl Exporter for DuckdbExporter {
         if let Some(parent) = path.parent().filter(|p| !p.exists()) {
             fs::create_dir_all(parent).map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to create directory: {}", e),
+                    reason: format!("Failed to create directory: {e}"),
                 })
             })?;
         }
@@ -111,7 +113,7 @@ impl Exporter for DuckdbExporter {
         // 创建连接
         let conn = Connection::open(&self.database_url).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to open database: {}", e),
+                reason: format!("Failed to open database: {e}"),
             })
         })?;
 
@@ -124,7 +126,7 @@ impl Exporter for DuckdbExporter {
                 conn.execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), [])
                     .map_err(|e| {
                         Error::Export(ExportError::DatabaseError {
-                            reason: format!("Failed to drop table: {}", e),
+                            reason: format!("Failed to drop table: {e}"),
                         })
                     })?;
             }
@@ -134,7 +136,7 @@ impl Exporter for DuckdbExporter {
                 conn.execute(&format!("DELETE FROM {}", self.table_name), [])
                     .map_err(|e| {
                         Error::Export(ExportError::DatabaseError {
-                            reason: format!("Failed to truncate table: {}", e),
+                            reason: format!("Failed to truncate table: {e}"),
                         })
                     })?;
             }
@@ -215,14 +217,14 @@ impl Exporter for DuckdbExporter {
             .output()
             .map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to execute duckdb CLI: {}", e),
+                    reason: format!("Failed to execute duckdb CLI: {e}"),
                 })
             })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(Error::Export(ExportError::DatabaseError {
-                reason: format!("DuckDB import failed: {}", stderr),
+                reason: format!("DuckDB import failed: {stderr}"),
             }));
         }
 
@@ -245,7 +247,7 @@ impl Exporter for DuckdbExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DuckDB"
     }
 
@@ -260,7 +262,7 @@ impl Drop for DuckdbExporter {
         if self.csv_exporter.is_some()
             && let Err(e) = self.finalize()
         {
-            warn!("DuckDB exporter finalization on Drop failed: {}", e);
+            warn!("DuckDB exporter finalization on Drop failed: {e}");
         }
     }
 }

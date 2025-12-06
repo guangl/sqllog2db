@@ -62,6 +62,8 @@ async fn main() -> Result<()> {
             #[cfg(feature = "tui")]
             if let Some(cli::opts::Commands::Run { use_tui, .. }) = &cli.command {
                 if *use_tui {
+                    // 在 TUI 模式下禁用控制台日志输出
+                    logging::set_log_to_console(false);
                     return cli::run_tui::handle_run_tui(&cfg).await;
                 }
             }
@@ -82,7 +84,8 @@ async fn main() -> Result<()> {
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
-            cli::validate::handle_validate(&cfg)
+            cli::validate::handle_validate(&cfg);
+            Ok(())
         }
         None => {
             print_help();
@@ -135,7 +138,8 @@ fn main() -> Result<()> {
             logging::init_logging(&cfg.logging)?;
             info!("Application started");
 
-            cli::validate::handle_validate(&cfg)
+            cli::validate::handle_validate(&cfg);
+            Ok(())
         }
         None => {
             print_help();

@@ -1,10 +1,9 @@
 use log::info;
 
 use crate::config::Config;
-use crate::error::Result;
 
 /// 验证配置文件
-pub fn handle_validate(cfg: &Config) -> Result<()> {
+pub fn handle_validate(cfg: &Config) {
     info!("配置验证已在 main 中完成");
 
     info!("SQL日志输入目录: {}", cfg.sqllog.directory());
@@ -37,5 +36,4 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
         );
     }
 
-    Ok(())
 }

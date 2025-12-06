@@ -47,7 +47,7 @@ impl std::fmt::Debug for JsonlExporter {
             .field("overwrite", &self.overwrite)
             .field("append", &self.append)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -64,6 +64,7 @@ impl JsonlExporter {
     }
 
     /// 从配置创建 JSONL 导出器
+    #[must_use]
     pub fn from_config(config: &crate::config::JsonlExporter) -> Self {
         let mut exporter = Self::new(&config.file, config.overwrite);
         // 追加模式优先级高于 overwrite
@@ -74,7 +75,7 @@ impl JsonlExporter {
         exporter
     }
 
-    /// 将 Sqllog 转换为 JsonlRecord
+    /// 将 Sqllog 转换为 `JsonlRecord`
     fn sqllog_to_jsonl_record(sqllog: &Sqllog<'_>) -> JsonlRecord {
         let meta = sqllog.parse_meta();
         let ind = sqllog.parse_indicators();
@@ -104,7 +105,7 @@ impl Exporter for JsonlExporter {
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to create directory: {}", e),
+                reason: format!("Failed to create directory: {e}"),
             })
         })?;
 
@@ -126,7 +127,7 @@ impl Exporter for JsonlExporter {
         let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to open file: {}", e),
+                reason: format!("Failed to open file: {e}"),
             })
         })?;
 
@@ -152,7 +153,7 @@ impl Exporter for JsonlExporter {
         let json_line = serde_json::to_string(&record).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to serialize to JSON: {}", e),
+                reason: format!("Failed to serialize to JSON: {e}"),
             })
         })?;
 
@@ -164,10 +165,10 @@ impl Exporter for JsonlExporter {
             })
         })?;
 
-        writeln!(writer, "{}", json_line).map_err(|e| {
+        writeln!(writer, "{json_line}").map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to write JSONL line: {}", e),
+                reason: format!("Failed to write JSONL line: {e}"),
             })
         })?;
 
@@ -201,10 +202,10 @@ impl Exporter for JsonlExporter {
                 .collect();
 
             for json_line in json_lines {
-                writeln!(writer, "{}", json_line).map_err(|e| {
+                writeln!(writer, "{json_line}").map_err(|e| {
                     Error::Export(ExportError::CsvExportFailed {
                         path: self.path.clone(),
-                        reason: format!("Failed to write JSONL line: {}", e),
+                        reason: format!("Failed to write JSONL line: {e}"),
                     })
                 })?;
                 self.stats.record_success();
@@ -219,7 +220,7 @@ impl Exporter for JsonlExporter {
             writer.flush().map_err(|e| {
                 Error::Export(ExportError::CsvExportFailed {
                     path: self.path.clone(),
-                    reason: format!("Failed to flush buffer: {}", e),
+                    reason: format!("Failed to flush buffer: {e}"),
                 })
             })?;
 
@@ -236,7 +237,7 @@ impl Exporter for JsonlExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "JSONL"
     }
 
@@ -250,7 +251,7 @@ impl Drop for JsonlExporter {
         if self.writer.is_some()
             && let Err(e) = self.finalize()
         {
-            warn!("JSONL exporter finalization on Drop failed: {}", e);
+            warn!("JSONL exporter finalization on Drop failed: {e}");
         }
     }
 }

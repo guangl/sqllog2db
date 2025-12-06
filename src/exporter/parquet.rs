@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::exporter::ExportStats;
+use crate::exporter::{ExportStats, util::f32_ms_to_i64};
 use arrow::array::{ArrayRef, Int32Array, Int64Array, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -48,16 +48,17 @@ impl std::fmt::Debug for ParquetExporter {
             .field("use_dictionary", &self.use_dictionary)
             .field("stats", &self.stats)
             .field("initialized", &self.initialized)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl ParquetExporter {
+    #[must_use]
     pub fn new(file: String, overwrite: bool, row_group_size: usize, use_dictionary: bool) -> Self {
         // 内存优化：使用更小的行组大小
         // 原来: 3.5M 记录 = 2.37GB 峰值内存
         // 新的: 100k 记录 = ~70MB 峰值内存
-        let actual_row_group_size = (row_group_size / 35).max(100000);
+        let actual_row_group_size = (row_group_size / 35).max(100_000);
 
         let schema = Arc::new(Schema::new(vec![
             Field::new("ts", DataType::Utf8, false),
@@ -100,8 +101,9 @@ impl ParquetExporter {
         }
     }
 
+    #[must_use]
     pub fn from_config(config: &crate::config::ParquetExporter) -> Self {
-        let row_group_size = config.row_group_size.unwrap_or(100000);
+        let row_group_size = config.row_group_size.unwrap_or(100_000);
         let use_dictionary = config.use_dictionary.unwrap_or(true);
         Self::new(
             config.file.clone(),
@@ -151,7 +153,7 @@ impl ParquetExporter {
 
         // 将数据添加到缓存
         self.ts_vec.push(sqllog.ts.to_string());
-        self.ep_vec.push(meta.ep as i32);
+        self.ep_vec.push(i32::from(meta.ep));
         self.sess_id_vec.push(meta.sess_id.to_string());
         self.thrd_id_vec.push(meta.thrd_id.to_string());
         self.username_vec.push(meta.username.to_string());
@@ -160,10 +162,10 @@ impl ParquetExporter {
         self.appname_vec.push(meta.appname.to_string());
         self.client_ip_vec.push(meta.client_ip.to_string());
         self.sql_vec.push(sqllog.body().to_string());
-        self.exec_time_vec
-            .push(ind.as_ref().map_or(0, |i| i.execute_time as i64));
+        let exec_time = ind.as_ref().map_or(0, |i| f32_ms_to_i64(i.execute_time));
+        self.exec_time_vec.push(exec_time);
         self.row_count_vec
-            .push(ind.as_ref().map_or(0, |i| i.row_count as i64));
+            .push(ind.as_ref().map_or(0, |i| i64::from(i.row_count)));
         self.exec_id_vec
             .push(ind.as_ref().map_or(0, |i| i.execute_id));
 
@@ -235,12 +237,14 @@ impl ParquetExporter {
         Ok(())
     }
 
-    pub fn name(&self) -> &str {
+    #[must_use]
+    pub fn name() -> &'static str {
         "Parquet"
     }
 
-    pub fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats.clone())
+    #[must_use]
+    pub fn stats_snapshot(&self) -> ExportStats {
+        self.stats.clone()
     }
 }
 
@@ -258,11 +262,11 @@ impl crate::exporter::Exporter for ParquetExporter {
     }
 
     fn name(&self) -> &str {
-        self.name()
+        Self::name()
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
-        self.stats_snapshot()
+        Some(self.stats_snapshot())
     }
 
     fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
@@ -278,7 +282,7 @@ impl crate::exporter::Exporter for ParquetExporter {
                 let ind = sqllog.parse_indicators();
                 (
                     sqllog.ts.to_string(),
-                    meta.ep as i32,
+                    i32::from(meta.ep),
                     meta.sess_id.to_string(),
                     meta.thrd_id.to_string(),
                     meta.username.to_string(),
@@ -287,8 +291,8 @@ impl crate::exporter::Exporter for ParquetExporter {
                     meta.appname.to_string(),
                     meta.client_ip.to_string(),
                     sqllog.body().to_string(),
-                    ind.as_ref().map_or(0, |i| i.execute_time as i64),
-                    ind.as_ref().map_or(0, |i| i.row_count as i64),
+                    ind.as_ref().map_or(0, |i| f32_ms_to_i64(i.execute_time)),
+                    ind.as_ref().map_or(0, |i| i64::from(i.row_count)),
                     ind.as_ref().map_or(0, |i| i.execute_id),
                 )
             })
@@ -341,7 +345,7 @@ impl Drop for ParquetExporter {
         if self.initialized
             && let Err(e) = self.finalize()
         {
-            log::warn!("Parquet exporter finalization on Drop failed: {}", e);
+            log::warn!("Parquet exporter finalization on Drop failed: {e}");
         }
     }
 }

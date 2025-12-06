@@ -23,11 +23,12 @@ impl std::fmt::Debug for DmExporter {
             .field("table_name", &self.table_name)
             .field("control_file", &self.control_file)
             .field("log_dir", &self.log_dir)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl DmExporter {
+    #[must_use]
     pub fn from_config(config: &crate::config::DmExporter) -> Self {
         // 从 control_file 路径生成临时 CSV 文件路径
         let data_file = if let Some(parent) = Path::new(&config.control_file).parent() {
@@ -52,16 +53,16 @@ impl DmExporter {
             .map_err(|e| {
                 Error::Export(ExportError::IoError {
                     path: self.data_file.clone().into(),
-                    reason: format!("Failed to get absolute path: {}", e),
+                    reason: format!("Failed to get absolute path: {e}"),
                 })
             })?
             .display()
             .to_string()
             .replace(r"\\?\", "")
-            .replace("\\", "/");
+            .replace('\\', "/");
 
         let content = format!(
-            r#"LOAD DATA
+            r"LOAD DATA
 INFILE '{}'
 INTO TABLE {}
 FIELDS ','
@@ -79,7 +80,7 @@ FIELDS ','
     exec_time_ms,
     row_count,
     exec_id
-)"#,
+)",
             data_file_abs, self.table_name
         );
 
@@ -90,7 +91,7 @@ FIELDS ','
             })
         })?;
 
-        write!(file, "{}", content).map_err(|e| {
+        write!(file, "{content}").map_err(|e| {
             Error::Export(ExportError::IoError {
                 path: self.control_file.clone().into(),
                 reason: e.to_string(),
@@ -105,7 +106,7 @@ FIELDS ','
 
         // 创建建表 SQL
         let create_table_sql = format!(
-            r#"
+            r"
 CREATE TABLE IF NOT EXISTS {} (
     id BIGINT IDENTITY(1,1) PRIMARY KEY,
     ts VARCHAR(64) NOT NULL,
@@ -122,7 +123,7 @@ CREATE TABLE IF NOT EXISTS {} (
     row_count BIGINT,
     exec_id BIGINT
 );
-"#,
+",
             self.table_name
         );
 
@@ -135,7 +136,7 @@ CREATE TABLE IF NOT EXISTS {} (
             })
         })?;
 
-        write!(file, "{}", create_table_sql).map_err(|e| {
+        write!(file, "{create_table_sql}").map_err(|e| {
             Error::Export(ExportError::IoError {
                 path: sql_file.clone(),
                 reason: e.to_string(),
@@ -162,7 +163,7 @@ CREATE TABLE IF NOT EXISTS {} (
                 let output = child.wait_with_output().map_err(|e| {
                     Error::Export(ExportError::ExternalToolError {
                         tool: "disql".to_string(),
-                        reason: format!("Failed to wait for disql: {}", e),
+                        reason: format!("Failed to wait for disql: {e}"),
                     })
                 })?;
 
@@ -170,8 +171,8 @@ CREATE TABLE IF NOT EXISTS {} (
                 let stderr = String::from_utf8_lossy(&output.stderr);
 
                 if !output.status.success() {
-                    info!("Table creation output: {}", stdout);
-                    info!("Table creation stderr: {}", stderr);
+                    info!("Table creation output: {stdout}");
+                    info!("Table creation stderr: {stderr}");
                     // 不返回错误，因为表可能已存在
                 }
 
@@ -181,8 +182,7 @@ CREATE TABLE IF NOT EXISTS {} (
             Err(e) => {
                 // disql 不可用时给出警告，但不中断流程
                 info!(
-                    "Warning: disql not available, please ensure table exists: {}",
-                    e
+                    "Warning: disql not available, please ensure table exists: {e}"
                 );
                 Ok(())
             }
@@ -260,16 +260,16 @@ impl Exporter for DmExporter {
             .display()
             .to_string()
             .replace(r"\\?\", "")
-            .replace("\\", "/");
+            .replace('\\', "/");
 
-        let log_file_str = log_file.display().to_string().replace("\\", "/");
+        let log_file_str = log_file.display().to_string().replace('\\', "/");
 
         // dmfldr USERID=SYSDBA/SYSDBA@localhost:5236 CONTROL='export/sqllog.ctl' LOG='export/log/dmfldr.log' SKIP=1
         // 注意：dmfldr 的第一个参数必须是 USERID，且字符串参数需要用引号
         let output = Command::new("dmfldr")
             .arg(self.userid.clone())
-            .arg(format!("CONTROL='{}'", control_file_abs))
-            .arg(format!("LOG='{}'", log_file_str))
+            .arg(format!("CONTROL='{control_file_abs}'"))
+            .arg(format!("LOG='{log_file_str}'"))
             .arg("SKIP=1")
             .output();
 
@@ -284,10 +284,8 @@ impl Exporter for DmExporter {
                     return Err(Error::Export(ExportError::ExternalToolError {
                         tool: "dmfldr".to_string(),
                         reason: format!(
-                            "Exit code: {:?}\nStdout: {}\nStderr: {}",
+                            "Exit code: {:?}\nStdout: {out_msg}\nStderr: {err_msg}",
                             o.status.code(),
-                            out_msg,
-                            err_msg
                         ),
                     }));
                 }
@@ -295,7 +293,7 @@ impl Exporter for DmExporter {
             Err(e) => {
                 return Err(Error::Export(ExportError::ExternalToolError {
                     tool: "dmfldr".to_string(),
-                    reason: format!("Failed to execute dmfldr: {}", e),
+                    reason: format!("Failed to execute dmfldr: {e}"),
                 }));
             }
         }
@@ -303,7 +301,7 @@ impl Exporter for DmExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DM (dmfldr)"
     }
 

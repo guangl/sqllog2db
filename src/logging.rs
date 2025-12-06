@@ -21,6 +21,16 @@ static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::n
     map
 });
 
+/// 日志模式：是否输出到控制台
+static LOG_TO_CONSOLE: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(true));
+
+/// 设置日志是否输出到控制台
+pub fn set_log_to_console(enabled: bool) {
+    if let Ok(mut console_enabled) = LOG_TO_CONSOLE.lock() {
+        *console_enabled = enabled;
+    }
+}
+
 /// 初始化日志系统
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     // 解析日志级别
@@ -106,8 +116,12 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
                 record.target(),
                 record.args()
             );
-            // 写到 stdout
-            let _ = std::io::stdout().write_all(msg.as_bytes());
+            // 如果启用控制台输出，则写到 stdout
+            if let Ok(console_enabled) = LOG_TO_CONSOLE.lock() {
+                if *console_enabled {
+                    let _ = std::io::stdout().write_all(msg.as_bytes());
+                }
+            }
             // 写到文件
             if let Ok(mut f) = self.file.lock() {
                 let _ = f.write_all(msg.as_bytes());

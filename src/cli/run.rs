@@ -113,7 +113,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     error_logger.finalize()?;
 
     // 计算总耗时
-    let total_elapsed = total_start.elapsed().as_secs_f64();
+    let total_elapsed = total_start.elapsed();
 
     // 展示统计信息
     exporter_manager.log_stats();
@@ -122,13 +122,17 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     eprintln!("✓ SQL Log Export Task Completed");
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     eprintln!("  Exporter:  {}", exporter_manager.name());
-    eprintln!("  Elapsed:   {total_elapsed:.3} seconds");
+    let elapsed_secs = total_elapsed.as_secs_f64();
+    eprintln!("  Elapsed:   {elapsed_secs:.3} seconds");
     if let Some(stats) = exporter_manager.stats() {
-        if total_elapsed > 0.0 {
-            let throughput = stats.exported as f64 / total_elapsed;
-            eprintln!("  Records:   {}", stats.exported);
-            eprintln!("  Throughput: {throughput:.0} records/sec");
-        }
+        let elapsed_millis = total_elapsed.as_millis();
+        let throughput = if elapsed_millis > 0 {
+            (stats.exported as u128 * 1_000) / elapsed_millis
+        } else {
+            0
+        };
+        eprintln!("  Records:   {}", stats.exported);
+        eprintln!("  Throughput: {throughput} records/sec");
     }
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
 

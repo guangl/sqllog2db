@@ -1,5 +1,5 @@
 use super::util::ensure_parent_dir;
-use super::{ExportStats, Exporter};
+use super::{ExportStats, Exporter, util::f32_ms_to_i64};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -27,7 +27,7 @@ impl std::fmt::Debug for CsvExporter {
             .field("overwrite", &self.overwrite)
             .field("append", &self.append)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -46,7 +46,7 @@ impl CsvExporter {
     }
 
     /// 从配置创建 CSV 导出器
-    #[must_use] 
+    #[must_use]
     pub fn from_config(config: &config::CsvExporter) -> Self {
         let mut exporter = Self::new(&config.file, config.overwrite);
 
@@ -104,7 +104,8 @@ impl CsvExporter {
 
         // 性能指标
         if let Some(indicators) = sqllog.parse_indicators() {
-            buf.extend_from_slice(itoa_buf.format(indicators.execute_time as i64).as_bytes());
+            let exec_time_ms = f32_ms_to_i64(indicators.execute_time);
+            buf.extend_from_slice(itoa_buf.format(exec_time_ms).as_bytes());
             buf.push(b',');
             buf.extend_from_slice(itoa_buf.format(i64::from(indicators.row_count)).as_bytes());
             buf.push(b',');
@@ -226,13 +227,14 @@ impl Exporter for CsvExporter {
 
         // 性能指标 - 使用 itoa
         if let Some(indicators) = sqllog.parse_indicators() {
+            let exec_time_ms = f32_ms_to_i64(indicators.execute_time);
+            buf.extend_from_slice(self.itoa_buf.format(exec_time_ms).as_bytes());
+            buf.push(b',');
             buf.extend_from_slice(
                 self.itoa_buf
-                    .format(indicators.execute_time as i64)
+                    .format(i64::from(indicators.row_count))
                     .as_bytes(),
             );
-            buf.push(b',');
-            buf.extend_from_slice(self.itoa_buf.format(i64::from(indicators.row_count)).as_bytes());
             buf.push(b',');
             buf.extend_from_slice(self.itoa_buf.format(indicators.execute_id).as_bytes());
             buf.push(b'\n');

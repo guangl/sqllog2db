@@ -29,7 +29,7 @@ fn process_log_file_with_tui(
             file_index + 1,
             file_path
                 .split(std::path::MAIN_SEPARATOR)
-                .last()
+                .next_back()
                 .unwrap_or(file_path)
                 .to_string(),
         );
@@ -99,7 +99,6 @@ pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
 
     let parser = SqllogParser::new(cfg.sqllog.directory());
     info!("SQL log input directory: {}", parser.path().display());
-
     let log_files = parser.log_files()?;
 
     if log_files.is_empty() {
@@ -133,7 +132,7 @@ pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
             Ok(l) => l,
             Err(e) => {
                 log::error!("Failed to create error logger: {e}");
-                return Err(Error::from(e));
+                return Err(e);
             }
         };
 
@@ -178,7 +177,7 @@ pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
 
         if let Err(e) = error_logger.finalize() {
             log::error!("Failed to finalize error logger: {e}");
-            return Err(Error::from(e));
+            return Err(e);
         }
 
         let total_elapsed = total_start.elapsed().as_secs_f64();
@@ -207,10 +206,9 @@ pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
         }
         Err(e) => {
             warn!("Export task panicked: {e}");
-            return Err(Error::Io(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Export task failed: {e}"),
-            )));
+            return Err(Error::Io(io::Error::other(format!(
+                "Export task failed: {e}",
+            ))));
         }
     }
 

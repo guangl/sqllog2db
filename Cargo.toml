@@ -96,9 +96,9 @@ unsafe_code = "warn"
 missing_debug_implementations = "warn"
 
 [lints.clippy]
-all = "warn"
-pedantic = "warn"
-cargo = "warn"
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
 missing_errors_doc = "allow"
 module_name_repetitions = "allow"
 type_complexity = "allow"

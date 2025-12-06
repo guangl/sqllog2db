@@ -135,9 +135,7 @@ append = false
 
     info!("Next steps:");
     info!("  1. Edit configuration file: {output_path}");
-    info!(
-        "  2. Validate configuration: sqllog2db validate -c {output_path}"
-    );
+    info!("  2. Validate configuration: sqllog2db validate -c {output_path}");
     info!("  3. Run export: sqllog2db run -c {output_path}");
 
     Ok(())

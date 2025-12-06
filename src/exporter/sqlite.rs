@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use rusqlite::{Connection, params};
 use std::path::Path;
 
-/// SQLite 导出器 - 直接插入版本 (高性能)
+/// `SQLite` 导出器 - 直接插入版本 (高性能)
 pub struct SqliteExporter {
     database_url: String,
     table_name: String,
@@ -24,12 +24,13 @@ impl std::fmt::Debug for SqliteExporter {
             .field("overwrite", &self.overwrite)
             .field("append", &self.append)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl SqliteExporter {
-    /// 创建新的 SQLite 导出器
+    /// 创建新的 `SQLite` 导出器
+    #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         Self {
             database_url,
@@ -41,7 +42,8 @@ impl SqliteExporter {
         }
     }
 
-    /// 从配置创建 SQLite 导出器
+    /// 从配置创建 `SQLite` 导出器
+    #[must_use]
     pub fn from_config(config: &crate::config::SqliteExporter) -> Self {
         Self::new(
             config.database_url.clone(),
@@ -60,7 +62,7 @@ impl SqliteExporter {
         })?;
 
         let sql = format!(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS {} (
                 ts TEXT NOT NULL,
                 ep INTEGER NOT NULL,
@@ -76,13 +78,13 @@ impl SqliteExporter {
                 row_count INTEGER,
                 exec_id INTEGER
             )
-            "#,
+            ",
             self.table_name
         );
 
         conn.execute(&sql, []).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create table: {}", e),
+                reason: format!("Failed to create table: {e}"),
             })
         })?;
 
@@ -100,7 +102,7 @@ impl Exporter for SqliteExporter {
         if let Some(parent) = path.parent().filter(|p| !p.exists()) {
             std::fs::create_dir_all(parent).map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to create directory: {}", e),
+                    reason: format!("Failed to create directory: {e}"),
                 })
             })?;
         }
@@ -108,7 +110,7 @@ impl Exporter for SqliteExporter {
         // 创建数据库连接
         let conn = Connection::open(&self.database_url).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to open database: {}", e),
+                reason: format!("Failed to open database: {e}"),
             })
         })?;
 
@@ -125,7 +127,7 @@ impl Exporter for SqliteExporter {
         )
         .map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to set PRAGMAs: {}", e),
+                reason: format!("Failed to set PRAGMAs: {e}"),
             })
         })?;
 
@@ -138,7 +140,7 @@ impl Exporter for SqliteExporter {
             if let Some(conn) = &self.conn {
                 conn.execute(&drop_sql, []).map_err(|e| {
                     Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to drop table: {}", e),
+                        reason: format!("Failed to drop table: {e}"),
                     })
                 })?;
                 info!("Dropped existing table: {}", self.table_name);
@@ -160,7 +162,7 @@ impl Exporter for SqliteExporter {
         if let Some(conn) = &self.conn {
             conn.execute_batch("BEGIN TRANSACTION;").map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to begin transaction: {}", e),
+                    reason: format!("Failed to begin transaction: {e}"),
                 })
             })?;
         }
@@ -185,7 +187,7 @@ impl Exporter for SqliteExporter {
 
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to prepare statement: {}", e),
+                reason: format!("Failed to prepare statement: {e}"),
             })
         })?;
 
@@ -219,7 +221,7 @@ impl Exporter for SqliteExporter {
         ])
         .map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to insert record: {}", e),
+                reason: format!("Failed to insert record: {e}"),
             })
         })?;
 
@@ -245,7 +247,7 @@ impl Exporter for SqliteExporter {
 
         let mut stmt = conn.prepare_cached(&sql).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to prepare statement: {}", e),
+                reason: format!("Failed to prepare statement: {e}"),
             })
         })?;
 
@@ -307,7 +309,7 @@ impl Exporter for SqliteExporter {
                 ])
                 .map_err(|e| {
                     Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to insert record: {}", e),
+                        reason: format!("Failed to insert record: {e}"),
                     })
                 })?;
 
@@ -323,7 +325,7 @@ impl Exporter for SqliteExporter {
         if let Some(conn) = &self.conn {
             conn.execute_batch("COMMIT;").map_err(|e| {
                 Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to commit transaction: {}", e),
+                    reason: format!("Failed to commit transaction: {e}"),
                 })
             })?;
         }
@@ -336,7 +338,7 @@ impl Exporter for SqliteExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SQLite"
     }
 

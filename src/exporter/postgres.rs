@@ -5,7 +5,7 @@ use log::{debug, info, warn};
 use postgres::{Client, NoTls};
 use tempfile::NamedTempFile;
 
-/// PostgreSQL 导出器 - 使用 CSV + psql COPY FROM
+/// `PostgreSQL` 导出器 - 使用 CSV + psql COPY FROM
 pub struct PostgresExporter {
     connection_string: String,
     host: String,
@@ -33,12 +33,13 @@ impl std::fmt::Debug for PostgresExporter {
             .field("schema", &self.schema)
             .field("table_name", &self.table_name)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl PostgresExporter {
-    /// 创建新的 PostgreSQL 导出器
+    /// 创建新的 `PostgreSQL` 导出器
+    #[must_use]
     pub fn new(
         connection_string: String,
         host: String,
@@ -69,7 +70,8 @@ impl PostgresExporter {
         }
     }
 
-    /// 从配置创建 PostgreSQL 导出器
+    /// 从配置创建 `PostgreSQL` 导出器
+    #[must_use]
     pub fn from_config(config: &crate::config::PostgresExporter) -> Self {
         Self::new(
             config.connection_string(),
@@ -100,8 +102,8 @@ impl PostgresExporter {
         })?;
 
         let sql = format!(
-            r#"
-                CREATE UNLOGGED TABLE IF NOT EXISTS {} (
+            r"
+                CREATE UNLOGGED TABLE IF NOT EXISTS {full_table_name} (
                     ts VARCHAR,
                     ep INTEGER,
                     sess_id VARCHAR,
@@ -116,13 +118,12 @@ impl PostgresExporter {
                     row_count INTEGER,
                     exec_id BIGINT
                 )
-                "#,
-            full_table_name
+                "
         );
 
         client.execute(&sql, &[]).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create table: {}", e),
+                reason: format!("Failed to create table: {e}"),
             })
         })?;
 
@@ -146,16 +147,12 @@ impl PostgresExporter {
         let full_table_name = self.full_table_name();
         let csv_path = temp_csv.path().to_string_lossy().replace('\\', "/");
 
-        info!(
-            "Starting CSV import into PostgreSQL via psql COPY for table: {}",
-            full_table_name
-        );
+        info!("Starting CSV import into PostgreSQL via psql COPY for table: {full_table_name}");
 
         // 使用 psql 命令行工具执行 COPY FROM，比客户端传输快得多
         let copy_sql = format!(
-            "\\COPY {} (ts, ep, sess_id, thrd_id, username, trx_id, statement, appname, client_ip, sql, exec_time_ms, row_count, exec_id) FROM '{}' WITH (FORMAT CSV, HEADER true)",
-            full_table_name,
-            csv_path.replace('\'', "''")
+            "\\COPY {full_table_name} (ts, ep, sess_id, thrd_id, username, trx_id, statement, appname, client_ip, sql, exec_time_ms, row_count, exec_id) FROM '{csv_path}' WITH (FORMAT CSV, HEADER true)",
+            csv_path = csv_path.replace('\'', "''")
         );
 
         let mut cmd = std::process::Command::new("psql");
@@ -177,14 +174,14 @@ impl PostgresExporter {
 
         let output = cmd.output().map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to execute psql: {}", e),
+                reason: format!("Failed to execute psql: {e}"),
             })
         })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(Error::Export(ExportError::DatabaseError {
-                reason: format!("PostgreSQL import failed: {}", stderr),
+                reason: format!("PostgreSQL import failed: {stderr}"),
             }));
         }
 
@@ -208,7 +205,7 @@ impl Exporter for PostgresExporter {
         // 创建连接
         let mut client = Client::connect(&self.connection_string, NoTls).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to connect to database: {}", e),
+                reason: format!("Failed to connect to database: {e}"),
             })
         })?;
 
@@ -227,22 +224,22 @@ impl Exporter for PostgresExporter {
             // 如果 overwrite=true，删除已存在的表
             let full_table_name = self.full_table_name();
             if let Some(client) = &mut self.client {
-                let drop_sql = format!("DROP TABLE IF EXISTS {}", full_table_name);
+                let drop_sql = format!("DROP TABLE IF EXISTS {full_table_name}");
                 client.execute(&drop_sql, &[]).map_err(|e| {
                     Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to drop table: {}", e),
+                        reason: format!("Failed to drop table: {e}"),
                     })
                 })?;
-                info!("Dropped existing table: {}", full_table_name);
+                info!("Dropped existing table: {full_table_name}");
             }
         } else if !self.append {
             // 如果 overwrite=false 且 append=false，清空表数据
             let full_table_name = self.full_table_name();
             if let Some(client) = &mut self.client {
-                let delete_sql = format!("DELETE FROM {}", full_table_name);
+                let delete_sql = format!("DELETE FROM {full_table_name}");
                 // 尝试清空，如果表不存在则忽略错误
                 let _ = client.execute(&delete_sql, &[]);
-                info!("Cleared existing data from table: {}", full_table_name);
+                info!("Cleared existing data from table: {full_table_name}");
             }
         }
 
@@ -255,14 +252,14 @@ impl Exporter for PostgresExporter {
                 // 如果 export 目录不存在，使用系统临时目录
                 NamedTempFile::new().map_err(|e2| {
                     Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to create temp CSV file: {} ({})", e, e2),
+                        reason: format!("Failed to create temp CSV file: {e} ({e2})"),
                     })
                 })
             })
             .or_else(|_| {
                 NamedTempFile::new().map_err(|e| {
                     Error::Export(ExportError::DatabaseError {
-                        reason: format!("Failed to create temp CSV file: {}", e),
+                        reason: format!("Failed to create temp CSV file: {e}"),
                     })
                 })
             })?;
@@ -319,7 +316,7 @@ impl Exporter for PostgresExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PostgreSQL"
     }
 
@@ -335,7 +332,7 @@ impl Drop for PostgresExporter {
             && self.temp_csv.is_some()
             && let Err(e) = self.finalize()
         {
-            warn!("PostgreSQL exporter finalization on Drop failed: {}", e);
+            warn!("PostgreSQL exporter finalization on Drop failed: {e}");
         }
     }
 }
