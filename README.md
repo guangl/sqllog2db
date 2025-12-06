@@ -5,12 +5,12 @@
 [![GitHub Release](https://img.shields.io/github/v/release/guangl/sqllog2db?logo=github)](https://github.com/guangl/sqllog2db/releases)
 [![Rust 1.78+](https://img.shields.io/badge/Rust-1.78%2B-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / Parquet / JSONL / SQLite / DuckDB / PostgreSQL / DM，并提供完善的错误追踪与统计。
+一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / Parquet / JSONL / SQLite / DuckDB / PostgreSQL / DM，并提供按行落盘的错误追踪。
 
 - **高性能**：单线程流式处理，~150万条/秒吞吐量（极致优化）
-- **稳健可靠**：批量导出 + 错误聚合与摘要（errors.summary.txt）
+- **稳健可靠**：批量导出 + 解析错误逐行落盘（便于追踪原始日志）
 - **易于使用**：清晰的 TOML 配置，三步完成导出任务
-- **体积优化**：默认仅 CSV 导出，可选启用数据库特性
+- **体积优化**：默认仅 CSV 导出，可选启用其它导出器特性
 
 > 适用场景：日志归档、数据分析预处理、基于日志的问责/审计、异构系统导出。
 
@@ -27,15 +27,13 @@
 
 ## 功能特性
 
-- **流式解析 SQL 日志**：单线程顺序处理，性能优秀且可预测（~150万条/秒）
+- **流式解析 SQL 日志**：单线程顺序处理，性能可预测（~150万条/秒）
 - **单导出目标（按优先级选择）**：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
   - CSV（默认特性，16MB 缓冲优化）
-  - Parquet（可选特性，行组/内存优化）
+  - Parquet（可选特性，行组/内存优化，支持 `row_group_size` 与 `use_dictionary`）
   - JSONL（可选特性，轻量流式）
   - SQLite / DuckDB / PostgreSQL / DM（可选特性）
-- **完善的错误追踪**：
-  - 解析失败逐条记录到 `errors.json`（JSON Lines 格式）
-  - 自动生成 `errors.summary.txt`，包含总数、分类与子类型统计
+- **错误追踪**：解析失败逐条写入配置的错误日志文件（纯文本行，`文件|错误|原始片段|行号`），便于后续 grep/统计
 - **日志管理**：每日滚动、保留天数可配（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
 
@@ -112,7 +110,7 @@ sqllog2db run -c config.toml
 
 ## 配置文件说明（config.toml）
 
-以下为 `sqllog2db init` 生成的默认模版（与仓库 `config.toml` 保持一致，可根据需要修改）：
+以下为 `sqllog2db init` 生成的默认模版，可根据需要修改：
 
 ```toml
 # SQL 日志导出工具默认配置文件 (请根据需要修改)
@@ -122,7 +120,7 @@ sqllog2db run -c config.toml
 directory = "sqllogs"
 
 [error]
-# 解析错误日志（JSON Lines 格式）输出路径
+# 解析错误日志输出路径（内容为纯文本行: file | error | raw | line）
 file = "export/errors.jsonl"
 
 [logging]
@@ -205,21 +203,15 @@ append = false
 ## 导出与错误日志
 
 - **导出统计**：导出器会输出成功/失败条数与批量 flush 次数
-- **错误日志**：
-  - `errors.json` 用于记录逐条解析失败的详细信息（JSON Lines 格式）
-  - `errors.json.summary.txt` 自动生成的摘要文件，包含：
-    - `total`: 错误总数
-    - `by_category`: 各错误大类计数（Config/File/Database/Parse/Export）
-    - `parse_variants`: 解析错误子类型分布
-
-> 如果没有错误发生，`errors.summary.txt` 依然会生成（空计数），便于自动化汇总。
+- **错误日志**：由 `[error].file` 指定的文件按行追加记录，格式为 `文件路径 | 错误原因 | 原始内容(换行被转义) | 行号`。当前版本不会额外生成 summary 文件，统计信息会在控制台日志中输出。
 
 ---
 
 ## 功能特性开关
 
-- **默认启用**：`csv`（CSV 文件导出）
-- **可选启用**：`sqlite`（SQLite 数据库导出）
+- **默认启用**：`csv`
+- **可选导出器**：`parquet`、`jsonl`、`sqlite`、`duckdb`、`postgres`、`dm`
+- **可选功能**：`replace_parameters`（SQL 参数占位符替换）
 
 编译示例：
 
@@ -227,11 +219,17 @@ append = false
 # 默认构建（仅 CSV）
 cargo build --release
 
-# 启用 SQLite 数据库导出
-cargo build --release --features sqlite
+# 按需启用导出器
+cargo build --release --features parquet
+cargo build --release --features "jsonl sqlite"
+cargo build --release --features "duckdb postgres"
+cargo build --release --features dm
+
+# 启用参数替换功能
+cargo build --release --features replace_parameters
 ```
 
-> 💡 **体积优化提示**：如果仅需 CSV 导出，使用默认构建可显著减小二进制体积。
+> 💡 **体积优化提示**：只启用必要的导出器特性，可以让二进制更小。
 
 ---
 
