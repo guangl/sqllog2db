@@ -67,6 +67,11 @@ rusqlite = { version = "0.35.0", features = [
 duckdb = { version = "1.4.2", features = ["bundled"], optional = true }
 postgres = { version = "0.19.12", optional = true }
 
+# TUI 依赖
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+tokio = { version = "1.41", features = ["full"], optional = true }
+
 [features]
 # 默认保持当前行为：启用 CSV 已实现的文件型数据库导出器
 default = ["csv"]
@@ -82,6 +87,9 @@ dm = ["dep:tempfile", "csv"]
 
 # 其他功能特性开关
 replace_parameters = ["dep:anyhow"]
+
+# TUI 支持
+tui = ["dep:ratatui", "dep:crossterm", "dep:tokio"]
 
 [lints.rust]
 unsafe_code = "warn"

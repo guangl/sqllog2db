@@ -136,3 +136,22 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
 
     Ok(())
 }
+
+/// 运行日志导出任务（TUI 模式）
+#[cfg(feature = "tui")]
+pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
+    info!("Starting SQL log export task (TUI mode)");
+
+    let parser = SqllogParser::new(cfg.sqllog.directory());
+    let log_files = parser.log_files()?;
+
+    if log_files.is_empty() {
+        warn!("No log files found");
+        return Ok(());
+    }
+
+    info!("Found {} log file(s)", log_files.len());
+    eprintln!("✓ Found {} log files, starting export in TUI mode...", log_files.len());
+
+    Ok(())
+}

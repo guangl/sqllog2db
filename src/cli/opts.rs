@@ -29,6 +29,10 @@ pub enum Commands {
         /// Configuration file path
         #[arg(short = 'c', long = "config", default_value = "config.toml")]
         config: String,
+        /// Enable TUI mode (interactive terminal UI)
+        #[cfg(feature = "tui")]
+        #[arg(long = "tui")]
+        use_tui: bool,
     },
     /// Generate a default configuration file
     Init {

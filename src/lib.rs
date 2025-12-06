@@ -8,3 +8,6 @@ pub mod exporter;
 pub use exporter::*;
 pub mod logging;
 pub mod parser;
+
+#[cfg(feature = "tui")]
+pub mod tui;
