@@ -2,7 +2,8 @@ use super::util::ensure_parent_dir;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
-use log::{debug, info, warn};
+use log::{info, warn};
+use rayon::prelude::*;
 use serde::Serialize;
 use std::fs;
 use std::fs::File;
@@ -165,10 +166,38 @@ impl Exporter for JsonlExporter {
     }
 
     fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
-        debug!("Exported {} records to JSONL in batch", sqllogs.len());
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
 
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: "JSONL exporter not initialized".to_string(),
+            })
+        })?;
+
+        // 内存优化：流式处理避免峰值
+        // 分块处理（每 500 条），避免存储大量 String
+        const CHUNK_SIZE: usize = 500;
+        for chunk in sqllogs.chunks(CHUNK_SIZE) {
+            let json_lines: Vec<String> = chunk
+                .par_iter()
+                .map(|sqllog| {
+                    let record = Self::sqllog_to_jsonl_record(sqllog);
+                    serde_json::to_string(&record).unwrap_or_default()
+                })
+                .collect();
+
+            for json_line in json_lines {
+                writeln!(writer, "{}", json_line).map_err(|e| {
+                    Error::Export(ExportError::CsvExportFailed {
+                        path: self.path.clone(),
+                        reason: format!("Failed to write JSONL line: {}", e),
+                    })
+                })?;
+                self.stats.record_success();
+            }
         }
 
         Ok(())

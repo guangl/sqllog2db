@@ -3,12 +3,16 @@ use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{debug, info, warn};
 use postgres::{Client, NoTls};
-use std::io::Write;
 use tempfile::NamedTempFile;
 
-/// PostgreSQL 导出器 - 使用 CSV + COPY FROM STDIN
+/// PostgreSQL 导出器 - 使用 CSV + psql COPY FROM
 pub struct PostgresExporter {
     connection_string: String,
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    database: String,
     schema: String,
     table_name: String,
     overwrite: bool,
@@ -23,6 +27,11 @@ impl PostgresExporter {
     /// 创建新的 PostgreSQL 导出器
     pub fn new(
         connection_string: String,
+        host: String,
+        port: u16,
+        username: String,
+        password: String,
+        database: String,
         schema: String,
         table_name: String,
         overwrite: bool,
@@ -30,6 +39,11 @@ impl PostgresExporter {
     ) -> Self {
         Self {
             connection_string,
+            host,
+            port,
+            username,
+            password,
+            database,
             schema,
             table_name,
             overwrite,
@@ -45,6 +59,11 @@ impl PostgresExporter {
     pub fn from_config(config: &crate::config::PostgresExporter) -> Self {
         Self::new(
             config.connection_string(),
+            config.host.clone(),
+            config.port,
+            config.username.clone(),
+            config.password.clone(),
+            config.database.clone(),
             config.schema.clone(),
             config.table_name.clone(),
             config.overwrite,
@@ -68,9 +87,9 @@ impl PostgresExporter {
 
         let sql = format!(
             r#"
-                CREATE TABLE IF NOT EXISTS {} (
-                    ts VARCHAR NOT NULL,
-                    ep INTEGER NOT NULL,
+                CREATE UNLOGGED TABLE IF NOT EXISTS {} (
+                    ts VARCHAR,
+                    ep INTEGER,
                     sess_id VARCHAR,
                     thrd_id VARCHAR,
                     username VARCHAR,
@@ -97,7 +116,7 @@ impl PostgresExporter {
         Ok(())
     }
 
-    /// 刷新待处理记录到数据库（使用 COPY FROM STDIN）
+    /// 刷新待处理记录到数据库（使用 psql COPY FROM）
     fn flush(&mut self) -> Result<()> {
         // 先刷新 CSV 导出器
         if let Some(csv_exporter) = &mut self.csv_exporter {
@@ -111,80 +130,55 @@ impl PostgresExporter {
         })?;
 
         let full_table_name = self.full_table_name();
-        let client = self.client.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::DatabaseError {
-                reason: "Connection not initialized".to_string(),
-            })
-        })?;
-
-        // 使用 COPY FROM STDIN 导入
-        let copy_sql = format!(
-            r#"COPY {} (ts, ep, sess_id, thrd_id, username, trx_id,
-                             statement, appname, client_ip, sql,
-                             exec_time_ms, row_count, exec_id)
-               FROM STDIN WITH (FORMAT CSV, HEADER true)"#,
-            full_table_name
-        );
+        let csv_path = temp_csv.path().to_string_lossy().replace('\\', "/");
 
         info!(
-            "Starting CSV import into PostgreSQL via COPY for table: {}",
+            "Starting CSV import into PostgreSQL via psql COPY for table: {}",
             full_table_name
         );
 
-        let mut writer = client.copy_in(&copy_sql).map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to start COPY: {}", e),
-            })
-        })?;
+        // 使用 psql 命令行工具执行 COPY FROM，比客户端传输快得多
+        let copy_sql = format!(
+            "\\COPY {} (ts, ep, sess_id, thrd_id, username, trx_id, statement, appname, client_ip, sql, exec_time_ms, row_count, exec_id) FROM '{}' WITH (FORMAT CSV, HEADER true)",
+            full_table_name,
+            csv_path.replace('\'', "''")
+        );
 
-        // 流式读取和写入 CSV 文件，分块处理避免内存占用过大
-        use std::io::{BufReader, Read};
-        let file = std::fs::File::open(temp_csv.path()).map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to open CSV file: {}", e),
-            })
-        })?;
+        let mut cmd = std::process::Command::new("psql");
+        cmd.arg("-h")
+            .arg(&self.host)
+            .arg("-p")
+            .arg(self.port.to_string())
+            .arg("-U")
+            .arg(&self.username)
+            .arg("-d")
+            .arg(&self.database)
+            .arg("-c")
+            .arg(&copy_sql);
 
-        let mut reader = BufReader::with_capacity(8 * 1024 * 1024, file); // 8MB buffer
-        let mut buffer = vec![0u8; 1024 * 1024]; // 1MB chunks
-        let mut total_bytes = 0usize;
-
-        loop {
-            let bytes_read = reader.read(&mut buffer).map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to read CSV file: {}", e),
-                })
-            })?;
-
-            if bytes_read == 0 {
-                break;
-            }
-
-            writer.write_all(&buffer[..bytes_read]).map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to write CSV data: {}", e),
-                })
-            })?;
-
-            total_bytes += bytes_read;
+        // 如果有密码，通过环境变量传递
+        if !self.password.is_empty() {
+            cmd.env("PGPASSWORD", &self.password);
         }
 
-        let count = writer.finish().map_err(|e| {
+        let output = cmd.output().map_err(|e| {
             Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to finish COPY: {}", e),
+                reason: format!("Failed to execute psql: {}", e),
             })
         })?;
 
-        info!(
-            "Finished CSV import into PostgreSQL: {} rows ({} bytes) committed",
-            count, total_bytes
-        );
-        debug!(
-            "Flushed {} records ({} bytes) to PostgreSQL from CSV",
-            count, total_bytes
-        );
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Export(ExportError::DatabaseError {
+                reason: format!("PostgreSQL import failed: {}", stderr),
+            }));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        info!("PostgreSQL import completed: {}", stdout.trim());
+
         self.stats.flush_operations += 1;
-        self.stats.last_flush_size = count as usize;
+        self.stats.last_flush_size = self.stats.exported;
 
         Ok(())
     }
@@ -198,11 +192,19 @@ impl Exporter for PostgresExporter {
         debug!("Connection string: {}", self.connection_string);
 
         // 创建连接
-        let client = Client::connect(&self.connection_string, NoTls).map_err(|e| {
+        let mut client = Client::connect(&self.connection_string, NoTls).map_err(|e| {
             Error::Export(ExportError::DatabaseError {
                 reason: format!("Failed to connect to database: {}", e),
             })
         })?;
+
+        // 优化性能设置
+        let _ = client.execute("SET synchronous_commit = OFF", &[]);
+        let _ = client.execute("SET maintenance_work_mem = '2GB'", &[]);
+        let _ = client.execute("SET work_mem = '512MB'", &[]);
+        let _ = client.execute("SET max_parallel_workers_per_gather = 8", &[]);
+        let _ = client.execute("SET max_parallel_workers = 16", &[]);
+        let _ = client.execute("SET shared_buffers = '2GB'", &[]);
 
         self.client = Some(client);
 
@@ -233,12 +235,23 @@ impl Exporter for PostgresExporter {
         // 创建表
         self.create_table()?;
 
-        // 创建临时 CSV 文件
-        let temp_csv = NamedTempFile::new().map_err(|e| {
-            Error::Export(ExportError::DatabaseError {
-                reason: format!("Failed to create temp CSV file: {}", e),
+        // 创建临时 CSV 文件（使用当前目录以避免跨磁盘操作）
+        let temp_csv = NamedTempFile::new_in("export")
+            .map_err(|e| {
+                // 如果 export 目录不存在，使用系统临时目录
+                NamedTempFile::new().map_err(|e2| {
+                    Error::Export(ExportError::DatabaseError {
+                        reason: format!("Failed to create temp CSV file: {} ({})", e, e2),
+                    })
+                })
             })
-        })?;
+            .or_else(|_| {
+                NamedTempFile::new().map_err(|e| {
+                    Error::Export(ExportError::DatabaseError {
+                        reason: format!("Failed to create temp CSV file: {}", e),
+                    })
+                })
+            })?;
 
         // 创建 CSV 导出器
         let csv_exporter = CsvExporter::new(temp_csv.path(), true);
@@ -261,6 +274,18 @@ impl Exporter for PostgresExporter {
         }
 
         self.stats.record_success();
+        Ok(())
+    }
+
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        debug!("Exporting {} records to PostgreSQL in batch", sqllogs.len());
+
+        // 直接使用 CSV 导出器的批量导出
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.export_batch(sqllogs)?;
+            self.stats.exported += sqllogs.len();
+        }
+
         Ok(())
     }
 

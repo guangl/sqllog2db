@@ -2,6 +2,7 @@ use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{info, warn};
+use rayon::prelude::*;
 use rusqlite::{Connection, params};
 use std::path::Path;
 
@@ -215,6 +216,10 @@ impl Exporter for SqliteExporter {
     }
 
     fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+
         let conn = self.conn.as_ref().ok_or_else(|| {
             Error::Export(ExportError::DatabaseError {
                 reason: "Connection not initialized".to_string(),
@@ -232,42 +237,70 @@ impl Exporter for SqliteExporter {
             })
         })?;
 
-        for sqllog in sqllogs {
-            let meta = sqllog.parse_meta();
-            let indicators = sqllog.parse_indicators();
+        // 内存优化：流式处理避免峰值
+        // 分块处理（每 500 条），避免存储大量中间记录
+        const CHUNK_SIZE: usize = 500;
+        for chunk in sqllogs.chunks(CHUNK_SIZE) {
+            let records: Vec<_> = chunk
+                .par_iter()
+                .map(|sqllog| {
+                    let meta = sqllog.parse_meta();
+                    let indicators = sqllog.parse_indicators();
+                    let (exec_time, row_count, exec_id) = if let Some(ind) = indicators {
+                        (
+                            Some(ind.execute_time),
+                            Some(ind.row_count),
+                            Some(ind.execute_id),
+                        )
+                    } else {
+                        (None, None, None)
+                    };
+                    (
+                        sqllog.ts.to_string(),
+                        meta.ep,
+                        meta.sess_id.to_string(),
+                        meta.thrd_id.to_string(),
+                        meta.username.to_string(),
+                        meta.trxid.to_string(),
+                        meta.statement.to_string(),
+                        meta.appname.to_string(),
+                        meta.client_ip.to_string(),
+                        sqllog.body().to_string(),
+                        exec_time,
+                        row_count,
+                        exec_id,
+                    )
+                })
+                .collect();
 
-            let (exec_time, row_count, exec_id) = if let Some(ind) = indicators {
-                (
-                    Some(ind.execute_time),
-                    Some(ind.row_count),
-                    Some(ind.execute_id),
-                )
-            } else {
-                (None, None, None)
-            };
-
-            stmt.execute(params![
-                sqllog.ts,
-                meta.ep,
-                meta.sess_id,
-                meta.thrd_id,
-                meta.username,
-                meta.trxid,
-                meta.statement,
-                meta.appname,
-                meta.client_ip,
-                sqllog.body().as_ref(),
+            for (
+                ts,
+                ep,
+                sess_id,
+                thrd_id,
+                username,
+                trxid,
+                statement,
+                appname,
+                client_ip,
+                sql_body,
                 exec_time,
                 row_count,
-                exec_id
-            ])
-            .map_err(|e| {
-                Error::Export(ExportError::DatabaseError {
-                    reason: format!("Failed to insert record: {}", e),
-                })
-            })?;
+                exec_id,
+            ) in records
+            {
+                stmt.execute(params![
+                    ts, ep, sess_id, thrd_id, username, trxid, statement, appname, client_ip,
+                    sql_body, exec_time, row_count, exec_id
+                ])
+                .map_err(|e| {
+                    Error::Export(ExportError::DatabaseError {
+                        reason: format!("Failed to insert record: {}", e),
+                    })
+                })?;
 
-            self.stats.record_success();
+                self.stats.record_success();
+            }
         }
 
         Ok(())

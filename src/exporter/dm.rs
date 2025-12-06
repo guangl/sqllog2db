@@ -211,6 +211,19 @@ impl Exporter for DmExporter {
         Ok(())
     }
 
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        let csv_exporter = self.csv_exporter.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::IoError {
+                path: self.data_file.clone().into(),
+                reason: "CSV exporter not initialized".to_string(),
+            })
+        })?;
+
+        // 使用 CSV 导出器的并行批量处理
+        csv_exporter.export_batch(sqllogs)?;
+        Ok(())
+    }
+
     fn finalize(&mut self) -> Result<()> {
         // 完成 CSV 导出
         if let Some(mut csv_exporter) = self.csv_exporter.take() {

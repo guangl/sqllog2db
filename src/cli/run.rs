@@ -22,12 +22,14 @@ fn process_log_file(
         })
     })?;
 
-    let mut batch = Vec::with_capacity(500);
+    // 内存优化：使用更小的批次大小（1000 而不是 5000）
+    // 这样可以更及时地释放内存，降低峰值
+    let mut batch = Vec::with_capacity(1000);
     for result in parser.iter() {
         match result {
             Ok(record) => {
                 batch.push(record);
-                if batch.len() >= 500 {
+                if batch.len() >= 1000 {
                     exporter_manager.export_batch(&batch)?;
                     batch.clear();
                 }

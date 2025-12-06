@@ -31,33 +31,79 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 directory = "sqllogs"
 
 [error]
-# 解析错误日志(JSON Lines 格式)输出路径
-file = "errors.jsonl"
+# 解析错误日志（JSON Lines 格式）输出路径
+file = "export/errors.jsonl"
 
 [logging]
-# 应用日志输出文件路径 (如 logs/sqllog2db.log)
+# 应用日志输出目录或文件路径 (当前版本要求为"文件路径"，例如 logs/sqllog2db.log)
+# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
 file = "logs/sqllog2db.log"
 # 日志级别: trace | debug | info | warn | error
 level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
-# ===================== 导出器配置 =====================
-# 只能配置一个导出器 (CSV / Parquet 二选一)
-# 同时配置多个时, 按优先级使用: CSV > Parquet
+[features.replace_parameters]
+enable = false
+symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
-# 方案 1: CSV 导出(默认)
+# ===================== 导出器配置 =====================
+# 只能配置一个导出器
+# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres
+
+# 方案 1: csv 导出（默认）
 [exporter.csv]
 file = "export/sqllog2db.csv"
 overwrite = true
 append = false
 
-# 方案 2: Parquet 导出(使用时注释掉上面的导出器, 启用下面的 Parquet)
-[exporter.parquet]
-file = "export/sqllog2db.parquet"
-overwrite = true
-row_group_size = 100000 # rows per row group
-use_dictionary = true   # enable dictionary encoding
+# 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
+# [exporter.parquet]
+# file = "export/sqllog2db.parquet"
+# overwrite = true
+# row_group_size = 1500000          # 每个 row group 的行数 (优化后推荐值)
+# use_dictionary = false            # 是否启用字典编码
+
+# 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
+# [exporter.jsonl]
+# file = "export/sqllog2db.jsonl"
+# overwrite = true
+# append = false
+
+# 方案 4: SQLite 数据库导出
+# [exporter.sqlite]
+# database_url = "export/sqllog2db.db"
+# table_name = "sqllog_records"
+# overwrite = true
+# append = false
+
+# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
+# [exporter.duckdb]
+# database_url = "export/sqllog2db.duckdb"
+# table_name = "sqllog"
+# overwrite = true
+# append = false
+
+# 方案 6: PostgreSQL 数据库导出
+# [exporter.postgres]
+# host = "localhost"
+# port = 5432
+# username = "postgres"
+# password = ""
+# database = "postgres"
+# schema = "public"
+# table_name = "sqllog"
+# overwrite = true
+# append = false
+
+# 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
+# [exporter.dm]
+# userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
+# table_name = "sqllog_records"
+# control_file = "export/sqllog.ctl"
+# log_dir = "export/log"
+# overwrite = true
+# charset = "UTF-8"
 
 "#;
 

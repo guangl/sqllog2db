@@ -160,8 +160,10 @@ impl Exporter for DuckdbExporter {
     fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
         debug!("Exporting {} records to DuckDB in batch", sqllogs.len());
 
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
+        // 直接使用 CSV 导出器的批量导出
+        if let Some(csv_exporter) = &mut self.csv_exporter {
+            csv_exporter.export_batch(sqllogs)?;
+            self.stats.exported += sqllogs.len();
         }
 
         Ok(())
@@ -191,7 +193,7 @@ impl Exporter for DuckdbExporter {
         // 使用 DuckDB CLI 执行导入（使用 std::process::Command）
         let csv_path_str = csv_path.to_string_lossy().replace('\\', "/");
         let sql = format!(
-            "PRAGMA threads=8; PRAGMA memory_limit='8GB'; COPY {} FROM '{}' (HEADER true, DELIMITER ',')",
+            "PRAGMA threads=16; PRAGMA memory_limit='8GB'; SET preserve_insertion_order=false; COPY {} FROM '{}' (HEADER true, DELIMITER ',', PARALLEL true)",
             self.table_name,
             csv_path_str.replace('\'', "''")
         );

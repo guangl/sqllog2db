@@ -26,10 +26,10 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres
 
 # 方案 1: csv 导出（默认）
-# [exporter.csv]
-# file = "export/sqllog2db.csv"
-# overwrite = true
-# append = false
+[exporter.csv]
+file = "export/sqllog2db.csv"
+overwrite = true
+append = false
 
 # 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
 # [exporter.parquet]
@@ -71,10 +71,10 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # append = false
 
 # 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
-[exporter.dm]
-userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
-table_name = "sqllog_records"
-control_file = "export/sqllog.ctl"
-log_dir = "export/log"
-overwrite = true
-charset = "UTF-8"
+# [exporter.dm]
+# userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
+# table_name = "sqllog_records"
+# control_file = "export/sqllog.ctl"
+# log_dir = "export/log"
+# overwrite = true
+# charset = "UTF-8"

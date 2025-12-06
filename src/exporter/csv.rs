@@ -3,6 +3,7 @@ use super::{ExportStats, Exporter};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
+use rayon::prelude::*;
 // 移除模块内日志记录以降低开销
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
@@ -43,6 +44,65 @@ impl CsvExporter {
             exporter.append = true;
         }
         exporter
+    }
+
+    /// 并行格式化单条 CSV 行（静态方法，用于并行处理）
+    #[inline]
+    fn format_csv_line(sqllog: &Sqllog<'_>) -> Vec<u8> {
+        let meta = sqllog.parse_meta();
+        let mut buf = Vec::with_capacity(512);
+        let mut itoa_buf = itoa::Buffer::new();
+
+        // 时间戳
+        buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
+        buf.push(b',');
+
+        // ep
+        buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
+        buf.push(b',');
+
+        // 字符串字段
+        buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.username.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.statement.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.appname.as_ref().as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(meta.client_ip.as_ref().as_bytes());
+        buf.push(b',');
+
+        // SQL body - 转义引号
+        buf.push(b'"');
+        for &byte in sqllog.body().as_ref().as_bytes() {
+            if byte == b'"' {
+                buf.push(b'"');
+                buf.push(b'"');
+            } else {
+                buf.push(byte);
+            }
+        }
+        buf.push(b'"');
+        buf.push(b',');
+
+        // 性能指标
+        if let Some(indicators) = sqllog.parse_indicators() {
+            buf.extend_from_slice(itoa_buf.format(indicators.execute_time as i64).as_bytes());
+            buf.push(b',');
+            buf.extend_from_slice(itoa_buf.format(indicators.row_count as i64).as_bytes());
+            buf.push(b',');
+            buf.extend_from_slice(itoa_buf.format(indicators.execute_id).as_bytes());
+            buf.push(b'\n');
+        } else {
+            buf.extend_from_slice(b",,\n");
+        }
+
+        buf
     }
 }
 
@@ -193,6 +253,41 @@ impl Exporter for CsvExporter {
             // 完成，无日志
         } else {
             // 未初始化或已完成
+        }
+
+        Ok(())
+    }
+
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::CsvExportFailed {
+                path: self.path.clone(),
+                reason: "CSV exporter not initialized".to_string(),
+            })
+        })?;
+
+        // 内存优化：流式处理避免峰值
+        // 将大批次分成小块（500 条），避免 Vec<Vec<u8>> 的内存峰值
+        const CHUNK_SIZE: usize = 500;
+        for chunk in sqllogs.chunks(CHUNK_SIZE) {
+            let lines: Vec<Vec<u8>> = chunk
+                .par_iter()
+                .map(|sqllog| Self::format_csv_line(sqllog))
+                .collect();
+
+            for line in lines {
+                writer.write_all(&line).map_err(|e| {
+                    Error::Export(ExportError::CsvExportFailed {
+                        path: self.path.clone(),
+                        reason: format!("Failed to write CSV line: {}", e),
+                    })
+                })?;
+                self.stats.record_success();
+            }
         }
 
         Ok(())

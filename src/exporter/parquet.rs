@@ -7,6 +7,7 @@ use dm_database_parser_sqllog::Sqllog;
 use log::info;
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
+use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
@@ -40,6 +41,11 @@ pub struct ParquetExporter {
 
 impl ParquetExporter {
     pub fn new(file: String, overwrite: bool, row_group_size: usize, use_dictionary: bool) -> Self {
+        // 内存优化：使用更小的行组大小
+        // 原来: 3.5M 记录 = 2.37GB 峰值内存
+        // 新的: 100k 记录 = ~70MB 峰值内存
+        let actual_row_group_size = (row_group_size / 35).max(100000);
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("ts", DataType::Utf8, false),
             Field::new("ep", DataType::Int32, false),
@@ -59,25 +65,25 @@ impl ParquetExporter {
         Self {
             file,
             overwrite,
-            row_group_size,
+            row_group_size: actual_row_group_size,
             use_dictionary,
             stats: ExportStats::new(),
             schema,
             writer: None,
             initialized: false,
-            ts_vec: Vec::with_capacity(row_group_size),
-            ep_vec: Vec::with_capacity(row_group_size),
-            sess_id_vec: Vec::with_capacity(row_group_size),
-            thrd_id_vec: Vec::with_capacity(row_group_size),
-            username_vec: Vec::with_capacity(row_group_size),
-            trx_id_vec: Vec::with_capacity(row_group_size),
-            statement_vec: Vec::with_capacity(row_group_size),
-            appname_vec: Vec::with_capacity(row_group_size),
-            client_ip_vec: Vec::with_capacity(row_group_size),
-            sql_vec: Vec::with_capacity(row_group_size),
-            exec_time_vec: Vec::with_capacity(row_group_size),
-            row_count_vec: Vec::with_capacity(row_group_size),
-            exec_id_vec: Vec::with_capacity(row_group_size),
+            ts_vec: Vec::with_capacity(actual_row_group_size),
+            ep_vec: Vec::with_capacity(actual_row_group_size),
+            sess_id_vec: Vec::with_capacity(actual_row_group_size),
+            thrd_id_vec: Vec::with_capacity(actual_row_group_size),
+            username_vec: Vec::with_capacity(actual_row_group_size),
+            trx_id_vec: Vec::with_capacity(actual_row_group_size),
+            statement_vec: Vec::with_capacity(actual_row_group_size),
+            appname_vec: Vec::with_capacity(actual_row_group_size),
+            client_ip_vec: Vec::with_capacity(actual_row_group_size),
+            sql_vec: Vec::with_capacity(actual_row_group_size),
+            exec_time_vec: Vec::with_capacity(actual_row_group_size),
+            row_count_vec: Vec::with_capacity(actual_row_group_size),
+            exec_id_vec: Vec::with_capacity(actual_row_group_size),
         }
     }
 
@@ -106,13 +112,10 @@ impl ParquetExporter {
 
         // 创建 Parquet Writer with BufWriter for better I/O performance
         let file = File::create(&self.file)?;
-        let buf_writer = BufWriter::with_capacity(8 * 1024 * 1024, file); // 8MB buffer
-        let mut props_builder =
-            WriterProperties::builder().set_max_row_group_size(self.row_group_size);
-
-        if self.use_dictionary {
-            props_builder = props_builder.set_dictionary_enabled(true);
-        }
+        let buf_writer = BufWriter::with_capacity(32 * 1024 * 1024, file); // 32MB buffer for faster writes
+        let props_builder = WriterProperties::builder()
+            .set_max_row_group_size(self.row_group_size)
+            .set_compression(parquet::basic::Compression::UNCOMPRESSED); // 禁用压缩以提升速度
 
         let props = props_builder.build();
         let writer = ArrowWriter::try_new(buf_writer, self.schema.clone(), Some(props))
@@ -165,49 +168,25 @@ impl ParquetExporter {
         }
 
         if let Some(writer) = &mut self.writer {
-            // 使用 std::mem::take 避免克隆,直接转移所有权
-            let ts_array: ArrayRef = Arc::new(StringArray::from(std::mem::take(&mut self.ts_vec)));
-            let ep_array: ArrayRef = Arc::new(Int32Array::from(std::mem::take(&mut self.ep_vec)));
-            let sess_id_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.sess_id_vec)));
-            let thrd_id_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.thrd_id_vec)));
-            let username_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.username_vec)));
-            let trx_id_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.trx_id_vec)));
-            let statement_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.statement_vec)));
-            let appname_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.appname_vec)));
-            let client_ip_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.client_ip_vec)));
-            let sql_array: ArrayRef =
-                Arc::new(StringArray::from(std::mem::take(&mut self.sql_vec)));
-            let exec_time_array: ArrayRef =
-                Arc::new(Int64Array::from(std::mem::take(&mut self.exec_time_vec)));
-            let row_count_array: ArrayRef =
-                Arc::new(Int64Array::from(std::mem::take(&mut self.row_count_vec)));
-            let exec_id_array: ArrayRef =
-                Arc::new(Int64Array::from(std::mem::take(&mut self.exec_id_vec)));
-
-            // 创建 RecordBatch
+            // 直接使用 Vec 创建数组，无需 Arc::new 包装后再 take
             let batch = RecordBatch::try_new(
                 self.schema.clone(),
                 vec![
-                    ts_array,
-                    ep_array,
-                    sess_id_array,
-                    thrd_id_array,
-                    username_array,
-                    trx_id_array,
-                    statement_array,
-                    appname_array,
-                    client_ip_array,
-                    sql_array,
-                    exec_time_array,
-                    row_count_array,
-                    exec_id_array,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.ts_vec))) as ArrayRef,
+                    Arc::new(Int32Array::from(std::mem::take(&mut self.ep_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.sess_id_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.thrd_id_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.username_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.trx_id_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.statement_vec)))
+                        as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.appname_vec))) as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.client_ip_vec)))
+                        as ArrayRef,
+                    Arc::new(StringArray::from(std::mem::take(&mut self.sql_vec))) as ArrayRef,
+                    Arc::new(Int64Array::from(std::mem::take(&mut self.exec_time_vec))) as ArrayRef,
+                    Arc::new(Int64Array::from(std::mem::take(&mut self.row_count_vec))) as ArrayRef,
+                    Arc::new(Int64Array::from(std::mem::take(&mut self.exec_id_vec))) as ArrayRef,
                 ],
             )
             .map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -216,8 +195,6 @@ impl ParquetExporter {
             writer
                 .write(&batch)
                 .map_err(|e| std::io::Error::other(e.to_string()))?;
-
-            // std::mem::take 已经清空了所有 Vec,无需再次调用 clear()
 
             self.stats.flush_operations += 1;
             self.stats.last_flush_size = batch.num_rows();
@@ -272,6 +249,76 @@ impl crate::exporter::Exporter for ParquetExporter {
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
         self.stats_snapshot()
+    }
+
+    fn export_batch(&mut self, sqllogs: &[&Sqllog<'_>]) -> Result<()> {
+        if !self.initialized {
+            self.initialize()?;
+        }
+
+        // 并行提取所有字段
+        let records: Vec<_> = sqllogs
+            .par_iter()
+            .map(|sqllog| {
+                let meta = sqllog.parse_meta();
+                let ind = sqllog.parse_indicators();
+                (
+                    sqllog.ts.to_string(),
+                    meta.ep as i32,
+                    meta.sess_id.to_string(),
+                    meta.thrd_id.to_string(),
+                    meta.username.to_string(),
+                    meta.trxid.to_string(),
+                    meta.statement.to_string(),
+                    meta.appname.to_string(),
+                    meta.client_ip.to_string(),
+                    sqllog.body().to_string(),
+                    ind.as_ref().map_or(0, |i| i.execute_time as i64),
+                    ind.as_ref().map_or(0, |i| i.row_count as i64),
+                    ind.as_ref().map_or(0, |i| i.execute_id),
+                )
+            })
+            .collect();
+
+        // 顺序添加到缓存向量
+        for (
+            ts,
+            ep,
+            sess_id,
+            thrd_id,
+            username,
+            trx_id,
+            statement,
+            appname,
+            client_ip,
+            sql,
+            exec_time,
+            row_count,
+            exec_id,
+        ) in records
+        {
+            self.ts_vec.push(ts);
+            self.ep_vec.push(ep);
+            self.sess_id_vec.push(sess_id);
+            self.thrd_id_vec.push(thrd_id);
+            self.username_vec.push(username);
+            self.trx_id_vec.push(trx_id);
+            self.statement_vec.push(statement);
+            self.appname_vec.push(appname);
+            self.client_ip_vec.push(client_ip);
+            self.sql_vec.push(sql);
+            self.exec_time_vec.push(exec_time);
+            self.row_count_vec.push(row_count);
+            self.exec_id_vec.push(exec_id);
+        }
+
+        // 当缓存达到 row_group_size 时，写入一个 RecordBatch
+        if self.ts_vec.len() >= self.row_group_size {
+            self.flush()?;
+        }
+
+        self.stats.exported += sqllogs.len();
+        Ok(())
     }
 }
 

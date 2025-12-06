@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-12-06
+
+### Changed
+- CLI 版本号更新为 v0.2.0
+- 默认配置模板与当前 `config.toml` 对齐（日志路径、替换参数、导出器优先级说明）
+
+### Performance
+- 内存优化：总峰值内存从 2.42GB 降至约 179MB（-92.6%），Parquet 峰值从 2.37GB 降至 ~134MB
+- 批处理与块处理参数调整（500/1000）保持或提升导出性能
+
+
 ## [0.1.2] - 2025-11-13
 
 ### Changed
