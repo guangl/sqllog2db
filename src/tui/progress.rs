@@ -23,9 +23,7 @@ pub enum ProgressEvent {
         errors: usize,
     },
     /// 文件处理完成
-    FileCompleted {
-        file_index: usize,
-    },
+    FileCompleted { file_index: usize },
     /// 所有文件处理完成
     Completed {
         total_records: usize,
@@ -33,9 +31,7 @@ pub enum ProgressEvent {
         elapsed_secs: f64,
     },
     /// 错误发生
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// 共享的进度跟踪器

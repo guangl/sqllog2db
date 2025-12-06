@@ -35,5 +35,4 @@ pub fn handle_validate(cfg: &Config) {
             if csv.overwrite { "yes" } else { "no" }
         );
     }
-
 }

@@ -181,9 +181,7 @@ CREATE TABLE IF NOT EXISTS {} (
             }
             Err(e) => {
                 // disql 不可用时给出警告，但不中断流程
-                info!(
-                    "Warning: disql not available, please ensure table exists: {e}"
-                );
+                info!("Warning: disql not available, please ensure table exists: {e}");
                 Ok(())
             }
         }
