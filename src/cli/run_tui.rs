@@ -5,9 +5,9 @@ use crate::parser::SqllogParser;
 use crate::{config::Config, error::ParserError};
 use dm_database_parser_sqllog::LogParser;
 use log::{info, warn};
-use std::time::Instant;
-use std::sync::{Arc, Mutex};
 use std::io;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[cfg(feature = "tui")]
 use dm_database_sqllog2db::tui::TuiApp;
@@ -94,7 +94,7 @@ fn process_log_file_with_tui(
 #[cfg(feature = "tui")]
 pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
     use dm_database_sqllog2db::tui::{TuiApp, run_tui};
-    
+
     info!("Starting SQL log export task (TUI mode)");
 
     let parser = SqllogParser::new(cfg.sqllog.directory());
@@ -188,9 +188,7 @@ pub async fn handle_run_tui(cfg: &Config) -> Result<()> {
             app.finish();
         }
 
-        info!(
-            "✓ SQL log export task completed in {total_elapsed:.3}s!",
-        );
+        info!("✓ SQL log export task completed in {total_elapsed:.3}s!",);
 
         Ok(())
     });

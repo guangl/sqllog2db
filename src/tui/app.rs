@@ -1,6 +1,4 @@
 #[cfg(feature = "tui")]
-use std::sync::Arc;
-#[cfg(feature = "tui")]
 use super::progress::ProgressTracker;
 #[cfg(feature = "tui")]
 use std::time::Instant;

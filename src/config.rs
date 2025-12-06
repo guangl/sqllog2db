@@ -123,7 +123,7 @@ impl Default for SqllogConfig {
 
 impl SqllogConfig {
     /// 获取 SQL 日志输入目录
-    #[must_use] 
+    #[must_use]
     pub fn directory(&self) -> &str {
         &self.directory
     }
@@ -149,7 +149,7 @@ pub struct ErrorConfig {
 
 impl ErrorConfig {
     /// 获取错误日志输出文件路径
-    #[must_use] 
+    #[must_use]
     pub fn file(&self) -> &str {
         &self.file
     }
@@ -178,19 +178,19 @@ fn default_retention_days() -> usize {
 
 impl LoggingConfig {
     /// 获取日志输出文件路径
-    #[must_use] 
+    #[must_use]
     pub fn file(&self) -> &str {
         &self.file
     }
 
     /// 获取日志级别
-    #[must_use] 
+    #[must_use]
     pub fn level(&self) -> &str {
         &self.level
     }
 
     /// 获取日志保留天数
-    #[must_use] 
+    #[must_use]
     pub fn retention_days(&self) -> usize {
         self.retention_days
     }
@@ -246,11 +246,9 @@ pub struct FeaturesConfig {
 
 impl FeaturesConfig {
     /// 是否启用 SQL 参数替换
-    #[must_use] 
+    #[must_use]
     pub fn should_replace_sql_parameters(&self) -> bool {
-        self.replace_parameters
-            .as_ref()
-            .is_some_and(|f| f.enable)
+        self.replace_parameters.as_ref().is_some_and(|f| f.enable)
     }
 }
 
@@ -275,7 +273,7 @@ pub struct ExporterConfig {
 impl ExporterConfig {
     /// 获取 CSV 导出器配置
     #[cfg(feature = "csv")]
-    #[must_use] 
+    #[must_use]
     pub fn csv(&self) -> Option<&CsvExporter> {
         self.csv.as_ref()
     }
@@ -317,7 +315,7 @@ impl ExporterConfig {
     }
 
     /// 检查是否有任何导出器配置
-    #[must_use] 
+    #[must_use]
     pub fn has_exporters(&self) -> bool {
         let mut found = false;
         #[cfg(feature = "csv")]
@@ -352,7 +350,7 @@ impl ExporterConfig {
     }
 
     /// 统计配置的导出器总数
-    #[must_use] 
+    #[must_use]
     pub fn total_exporters(&self) -> usize {
         let mut count = 0;
         #[cfg(feature = "csv")]
@@ -408,9 +406,7 @@ impl ExporterConfig {
 
         let total = self.total_exporters();
         if total > 1 {
-            eprintln!(
-                "Warning: {total} exporters configured, but only one is supported."
-            );
+            eprintln!("Warning: {total} exporters configured, but only one is supported.");
             eprintln!(
                 "Will use the first exporter by priority: CSV > Parquet > JSONL > SQLite > DuckDB > PostgreSQL > DM"
             );
