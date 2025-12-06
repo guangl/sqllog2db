@@ -20,12 +20,13 @@ impl SqllogParser {
     }
 
     /// 获取日志路径
+    #[must_use] 
     pub fn path(&self) -> &Path {
         &self.path
     }
 
     /// 返回所有日志文件的路径列表
-    /// 这样用户可以遍历文件，然后对每个文件使用 iter_sqllogs_from_file
+    /// 这样用户可以遍历文件，然后对每个文件使用 `iter_sqllogs_from_file`
     pub fn log_files(&self) -> Result<Vec<PathBuf>> {
         self.scan_log_files()
     }

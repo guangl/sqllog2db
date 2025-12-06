@@ -48,20 +48,19 @@ fn main() -> Result<()> {
             cli::opts::Cli::generate_completions(*shell);
             Ok(())
         }
-        Some(cli::opts::Commands::Run { config })
-        | Some(cli::opts::Commands::Validate { config }) => {
+        Some(cli::opts::Commands::Run { config } | cli::opts::Commands::Validate {
+config }) => {
             // 加载配置,如果文件不存在则使用默认配置
             let path = Path::new(config);
             let mut cfg = match Config::from_file(path) {
                 Ok(c) => {
-                    eprintln!("Loaded configuration file: {}", config);
+                    eprintln!("Loaded configuration file: {config}");
                     c
                 }
                 Err(e) => {
                     if let error::Error::Config(error::ConfigError::NotFound(_)) = &e {
                         eprintln!(
-                            "Configuration file not found: {}, using default configuration",
-                            config
+                            "Configuration file not found: {config}, using default configuration"
                         );
                         eprintln!("Tip: run 'sqllog2db init' to generate a configuration file");
                         Config::default()

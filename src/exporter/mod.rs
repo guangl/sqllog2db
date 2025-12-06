@@ -2,7 +2,7 @@
 ///
 /// 支持的导出目标:
 /// - CSV 文件
-/// - SQLite 数据库
+/// - `SQLite` 数据库
 use crate::config::Config;
 use crate::error::{ConfigError, Error, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -85,6 +85,7 @@ pub struct ExportStats {
 }
 
 impl ExportStats {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
@@ -93,6 +94,7 @@ impl ExportStats {
         self.exported += 1;
     }
 
+    #[must_use] 
     pub fn total(&self) -> usize {
         self.exported + self.skipped + self.failed
     }
@@ -218,11 +220,13 @@ impl ExporterManager {
     }
 
     /// 获取导出器名称
+    #[must_use] 
     pub fn name(&self) -> &str {
         self.exporter.name()
     }
 
     /// 获取导出统计信息
+    #[must_use] 
     pub fn stats(&self) -> Option<ExportStats> {
         self.exporter.stats_snapshot()
     }

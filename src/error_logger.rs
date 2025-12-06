@@ -77,7 +77,7 @@ impl ErrorLogger {
                 })
             })?;
 
-        info!("Error logger initialized: {}", path_str);
+        info!("Error logger initialized: {path_str}");
 
         Ok(Self {
             writer: BufWriter::new(file),
@@ -103,7 +103,7 @@ impl ErrorLogger {
             line_no
         );
 
-        writeln!(self.writer, "{}", line).map_err(|e| {
+        writeln!(self.writer, "{line}").map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
                 path: PathBuf::from(&self.path),
                 reason: e.to_string(),
@@ -124,12 +124,12 @@ impl ErrorLogger {
     ) -> Result<()> {
         let record = ParseErrorRecord {
             file_path: file_path.to_string(),
-            error_message: format!("{:?}", error),
+            error_message: format!("{error:?}"),
             raw_content: None, // dm-database-parser-sqllog 的 ParseError 不包含原始内容
             line_number: None,
         };
         // 粗略使用 Debug 字符串作为 variant 标识
-        let variant = format!("{:?}", error);
+        let variant = format!("{error:?}");
         self.metrics.incr_parse_variant(&variant);
         self.log_error(record)
     }
@@ -140,7 +140,7 @@ impl ErrorLogger {
         self.writer.flush().map_err(|e| {
             Error::Export(ExportError::FileWriteFailed {
                 path: PathBuf::from(&self.path),
-                reason: format!("Flush failed: {}", e),
+                reason: format!("Flush failed: {e}"),
             })
         })?;
         Ok(())

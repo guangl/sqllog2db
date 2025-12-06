@@ -7,11 +7,11 @@ use std::path::Path;
 pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
     let path = Path::new(output_path);
 
-    info!("Preparing to generate configuration file: {}", output_path);
+    info!("Preparing to generate configuration file: {output_path}");
 
     // 检查文件是否已存在
     if path.exists() && !force {
-        error!("Configuration file already exists: {}", output_path);
+        error!("Configuration file already exists: {output_path}");
         info!("Tip: use --force to overwrite");
         return Err(Error::File(FileError::AlreadyExists {
             path: path.to_path_buf(),
@@ -128,18 +128,17 @@ append = false
     })?;
 
     if force && path.exists() {
-        info!("Configuration file overwritten: {}", output_path);
+        info!("Configuration file overwritten: {output_path}");
     } else {
-        info!("Configuration file generated: {}", output_path);
+        info!("Configuration file generated: {output_path}");
     }
 
     info!("Next steps:");
-    info!("  1. Edit configuration file: {}", output_path);
+    info!("  1. Edit configuration file: {output_path}");
     info!(
-        "  2. Validate configuration: sqllog2db validate -c {}",
-        output_path
+        "  2. Validate configuration: sqllog2db validate -c {output_path}"
     );
-    info!("  3. Run export: sqllog2db run -c {}", output_path);
+    info!("  3. Run export: sqllog2db run -c {output_path}");
 
     Ok(())
 }

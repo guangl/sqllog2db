@@ -46,6 +46,7 @@ impl CsvExporter {
     }
 
     /// 从配置创建 CSV 导出器
+    #[must_use] 
     pub fn from_config(config: &config::CsvExporter) -> Self {
         let mut exporter = Self::new(&config.file, config.overwrite);
 
@@ -105,7 +106,7 @@ impl CsvExporter {
         if let Some(indicators) = sqllog.parse_indicators() {
             buf.extend_from_slice(itoa_buf.format(indicators.execute_time as i64).as_bytes());
             buf.push(b',');
-            buf.extend_from_slice(itoa_buf.format(indicators.row_count as i64).as_bytes());
+            buf.extend_from_slice(itoa_buf.format(i64::from(indicators.row_count)).as_bytes());
             buf.push(b',');
             buf.extend_from_slice(itoa_buf.format(indicators.execute_id).as_bytes());
             buf.push(b'\n');
@@ -124,7 +125,7 @@ impl Exporter for CsvExporter {
         ensure_parent_dir(&self.path).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to create directory: {}", e),
+                reason: format!("Failed to create directory: {e}"),
             })
         })?;
 
@@ -147,7 +148,7 @@ impl Exporter for CsvExporter {
         let file = file.map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to open file: {}", e),
+                reason: format!("Failed to open file: {e}"),
             })
         })?;
 
@@ -160,7 +161,7 @@ impl Exporter for CsvExporter {
                 .map_err(|e| {
                     Error::Export(ExportError::CsvExportFailed {
                         path: self.path.clone(),
-                        reason: format!("Failed to write CSV header: {}", e),
+                        reason: format!("Failed to write CSV header: {e}"),
                     })
                 })?;
         }
@@ -231,7 +232,7 @@ impl Exporter for CsvExporter {
                     .as_bytes(),
             );
             buf.push(b',');
-            buf.extend_from_slice(self.itoa_buf.format(indicators.row_count as i64).as_bytes());
+            buf.extend_from_slice(self.itoa_buf.format(i64::from(indicators.row_count)).as_bytes());
             buf.push(b',');
             buf.extend_from_slice(self.itoa_buf.format(indicators.execute_id).as_bytes());
             buf.push(b'\n');
@@ -243,7 +244,7 @@ impl Exporter for CsvExporter {
         writer.write_all(buf).map_err(|e| {
             Error::Export(ExportError::CsvExportFailed {
                 path: self.path.clone(),
-                reason: format!("Failed to write CSV line: {}", e),
+                reason: format!("Failed to write CSV line: {e}"),
             })
         })?;
 
@@ -258,7 +259,7 @@ impl Exporter for CsvExporter {
             writer.flush().map_err(|e| {
                 Error::Export(ExportError::CsvExportFailed {
                     path: self.path.clone(),
-                    reason: format!("Failed to flush buffer: {}", e),
+                    reason: format!("Failed to flush buffer: {e}"),
                 })
             })?;
             // 完成，无日志
@@ -294,7 +295,7 @@ impl Exporter for CsvExporter {
                 writer.write_all(&line).map_err(|e| {
                     Error::Export(ExportError::CsvExportFailed {
                         path: self.path.clone(),
-                        reason: format!("Failed to write CSV line: {}", e),
+                        reason: format!("Failed to write CSV line: {e}"),
                     })
                 })?;
                 self.stats.record_success();
@@ -304,7 +305,7 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CSV"
     }
 

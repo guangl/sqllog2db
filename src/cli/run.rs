@@ -13,12 +13,12 @@ fn process_log_file(
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
 ) -> Result<()> {
-    info!("Processing file: {}", file_path);
+    info!("Processing file: {file_path}");
 
     let parser = LogParser::from_path(file_path).map_err(|e| {
         Error::Parser(ParserError::InvalidPath {
             path: file_path.into(),
-            reason: format!("{}", e),
+            reason: format!("{e}"),
         })
     })?;
 
@@ -42,7 +42,7 @@ fn process_log_file(
                 }
                 // 记录解析错误
                 if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                    warn!("Failed to record parse error: {}", log_err);
+                    warn!("Failed to record parse error: {log_err}");
                 }
             }
         }
@@ -122,12 +122,12 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     eprintln!("✓ SQL Log Export Task Completed");
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     eprintln!("  Exporter:  {}", exporter_manager.name());
-    eprintln!("  Elapsed:   {:.3} seconds", total_elapsed);
+    eprintln!("  Elapsed:   {total_elapsed:.3} seconds");
     if let Some(stats) = exporter_manager.stats() {
         if total_elapsed > 0.0 {
             let throughput = stats.exported as f64 / total_elapsed;
             eprintln!("  Records:   {}", stats.exported);
-            eprintln!("  Throughput: {:.0} records/sec", throughput);
+            eprintln!("  Throughput: {throughput:.0} records/sec");
         }
     }
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");

@@ -22,23 +22,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `.github/dependabot.yml`：自动依赖更新
 - **代码规范**：`rustfmt.toml` 和 `.editorconfig` 统一代码风格
 - **README 徽章**：CI status 和 downloads 徽章
+- **进度报告**：CLI 运行时展示文件处理进度（X/Y）
+- **性能统计**：导出完成后显示总耗时、记录数、吞吐量（条/秒）
 
 ### Changed
 - **Cargo.toml**：添加 `authors` 字段，增加 `clap_complete` 依赖
-- **CLI 描述优化**：更详细的 `about` 和 `long_about` 说明
+- **CLI 描述优化**：更详细的 `about` 和 `long_about` 说明，含完整命令示例
 - 默认配置模板与代码默认值对齐：`sqllog.directory = "sqllogs"`、错误日志默认输出到 `export/errors.log`（按行文本）
 - README 配置示例与导出器优先级、默认路径保持一致
 - 导出器优先级警告信息更详细（包含完整优先级列表）
+- **代码质量**：
+  - 移除所有 `unsafe` 代码，改用 Rust safe 抽象
+  - 移除所有 `#[allow]` 属性，修复底层代码问题
+  - 所有导出器实现 `Debug` trait（无 `#[derive]` 辅助）
+  - 用 `std::sync::LazyLock`（Rust 1.80+）替换 `once_cell::sync::Lazy`，减少依赖
+- **内存优化**：减少不必要的 `clone()` 调用
 
 ### Removed
 - 移除未使用的 `dashmap` 依赖
+- 移除所有 `#[allow]` 属性：`dead_code`、`unused_fields`、`missing_debug_implementations` 等
+- 移除 `once_cell` 依赖（采用 Rust 1.80+ 原生 `LazyLock`）
 
 ### Fixed
 - `oracle.rs` 中用 `ok_or_else` 替换 `unwrap()`，提高错误处理健壮性
+- 移除 DmExporter 中未使用的 `overwrite` 和 `charset` 字段
+- 移除 `DatabaseError::Charset` 变量（未使用）
+- 移除 `default_charset()` 函数（未使用）
 
 ### Performance
 - 内存优化：总峰值内存从 2.42GB 降至约 179MB（-92.6%），Parquet 峰值从 2.37GB 降至 ~134MB
 - 批处理与块处理参数调整（500/1000）保持或提升导出性能
+- 二进制体积：2.8MB（Windows，已启用 LTO、strip、panic=abort）
+- **零编译警告**：所有 clippy 警告已消除，代码质量达到生产级
 
 
 ## [0.1.2] - 2025-11-13

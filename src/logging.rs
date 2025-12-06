@@ -12,7 +12,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 // 使用 LazyLock 缓存日志级别映射表，避免每次查找时重新构建
 static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
+    let mut map = HashMap::with_capacity(5);
     map.insert("trace", LevelFilter::Trace);
     map.insert("debug", LevelFilter::Debug);
     map.insert("info", LevelFilter::Info);
@@ -62,7 +62,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         .unwrap_or("log");
 
     // 创建简单的追加日志文件（不做滚动），更轻量：使用 Arc<Mutex<File>> 作为共享 writer
-    let log_file_path = parent_dir.join(format!("{}.{}", file_stem, extension));
+    let log_file_path = parent_dir.join(format!("{file_stem}.{extension}"));
     let file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -126,8 +126,8 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     log::set_max_level(level);
     log::set_boxed_logger(Box::new(logger)).map_err(|e: SetLoggerError| {
         Error::File(FileError::CreateDirectoryFailed {
-            path: log_file_path.clone(),
-            reason: format!("Failed to set logger: {}", e),
+            path: log_file_path,
+            reason: format!("Failed to set logger: {e}"),
         })
     })?;
 
@@ -147,7 +147,7 @@ fn parse_log_level(level_str: &str) -> Result<LevelFilter> {
     LOG_LEVEL_MAP.get(lower.as_str()).copied().ok_or_else(|| {
         Error::Config(crate::error::ConfigError::InvalidLogLevel {
             level: level_str.to_string(),
-            valid_levels: LOG_LEVELS.iter().map(|s| s.to_string()).collect(),
+            valid_levels: LOG_LEVELS.iter().map(|s| (*s).to_string()).collect(),
         })
     })
 }

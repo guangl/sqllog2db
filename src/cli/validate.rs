@@ -25,7 +25,7 @@ pub fn handle_validate(cfg: &Config) -> Result<()> {
     if let Some(rp) = &cfg.features.replace_parameters
         && let Some(symbols) = &rp.symbols
     {
-        info!("SQL参数占位符样式: {:?}", symbols);
+        info!("SQL参数占位符样式: {symbols:?}");
     }
 
     // 导出配置（只支持单个导出器）
