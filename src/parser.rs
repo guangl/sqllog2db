@@ -5,6 +5,7 @@ use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 
 /// SQL 日志解析器
+#[derive(Debug)]
 pub struct SqllogParser {
     /// 日志路径（文件或目录）
     path: PathBuf,

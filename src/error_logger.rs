@@ -41,6 +41,7 @@ impl ErrorMetrics {
     }
 }
 
+#[derive(Debug)]
 pub struct ErrorLogger {
     writer: BufWriter<File>,
     path: String,

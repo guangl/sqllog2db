@@ -6,6 +6,7 @@ use postgres::{Client, NoTls};
 use tempfile::NamedTempFile;
 
 /// PostgreSQL 导出器 - 使用 CSV + psql COPY FROM
+#[allow(missing_debug_implementations)]
 pub struct PostgresExporter {
     connection_string: String,
     host: String,

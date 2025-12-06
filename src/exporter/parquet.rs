@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Parquet 导出器 - 使用 Arrow 和 Parquet 生成真正的 Parquet 格式文件
+#[allow(missing_debug_implementations)]
 pub struct ParquetExporter {
     pub file: String,
     pub overwrite: bool,

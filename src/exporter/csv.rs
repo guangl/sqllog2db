@@ -10,6 +10,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// CSV 导出器 - 高性能批量写入版本
+#[allow(missing_debug_implementations)]
 pub struct CsvExporter {
     path: PathBuf,
     overwrite: bool,

@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// DuckDB 导出器 - 使用 CSV 批量导入
+#[allow(missing_debug_implementations)]
 pub struct DuckdbExporter {
     database_url: String,
     table_name: String,

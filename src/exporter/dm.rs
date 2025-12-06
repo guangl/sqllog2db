@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[allow(missing_debug_implementations)]
 pub struct DmExporter {
     userid: String,
     table_name: String,

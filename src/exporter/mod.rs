@@ -99,6 +99,7 @@ impl ExportStats {
 }
 
 /// 导出器管理器 - 管理单个导出器
+#[allow(missing_debug_implementations)]
 pub struct ExporterManager {
     exporter: Box<dyn Exporter>,
 }

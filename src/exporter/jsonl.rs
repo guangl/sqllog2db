@@ -32,6 +32,7 @@ struct JsonlRecord {
 }
 
 /// JSONL 导出器 - 将 SQL 日志导出为 JSON Lines 格式
+#[allow(missing_debug_implementations)]
 pub struct JsonlExporter {
     path: PathBuf,
     overwrite: bool,

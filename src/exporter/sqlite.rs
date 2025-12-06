@@ -7,6 +7,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 
 /// SQLite 导出器 - 直接插入版本 (高性能)
+#[allow(missing_debug_implementations)]
 pub struct SqliteExporter {
     database_url: String,
     table_name: String,

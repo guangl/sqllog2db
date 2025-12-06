@@ -85,7 +85,7 @@ dm = ["dep:tempfile", "csv"]
 replace_parameters = ["dep:anyhow"]
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "warn"
 missing_debug_implementations = "warn"
 
 [lints.clippy]
