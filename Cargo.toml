@@ -1,8 +1,8 @@
 [package]
 name = "dm-database-sqllog2db"
 version = "0.2.0"
-edition = "2021"
-rust-version = "1.78"
+edition = "2024"
+rust-version = "1.80"
 authors = ["guangl <guangl@example.com>"]
 description = "高性能 CLI 工具：流式解析达梦数据库 SQL 日志并导出到 CSV/Parquet/JSONL/SQLite/DuckDB/PostgreSQL/DM"
 homepage = "https://github.com/guangl/sqllog2db"
