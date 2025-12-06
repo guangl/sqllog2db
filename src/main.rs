@@ -94,7 +94,31 @@ fn main() -> Result<()> {
             }
         }
         None => {
-            eprintln!("Please specify a subcommand. Use --help to see available commands.");
+            eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            eprintln!("sqllog2db - SQL Log Exporter for DM Database");
+            eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            eprintln!("\nUsage: sqllog2db <COMMAND> [OPTIONS]");
+            eprintln!("\nCommands:");
+            eprintln!("  run        Run the log export task");
+            eprintln!("  init       Generate a default configuration file");
+            eprintln!("  validate   Validate a configuration file");
+            eprintln!("  complete   Generate shell completion scripts");
+            eprintln!("\nOptions:");
+            eprintln!("  -v, --verbose   Enable verbose output (debug level)");
+            eprintln!("  -q, --quiet     Suppress non-error output");
+            eprintln!("  -h, --help      Print help information");
+            eprintln!("  -V, --version   Print version information");
+            eprintln!("\nExamples:");
+            eprintln!("  # Initialize configuration");
+            eprintln!("  sqllog2db init");
+            eprintln!("\n  # Run with default config");
+            eprintln!("  sqllog2db run");
+            eprintln!("\n  # Run with custom config and verbose logging");
+            eprintln!("  sqllog2db -v run -c custom.toml");
+            eprintln!("\n  # Validate configuration");
+            eprintln!("  sqllog2db validate -c config.toml");
+            eprintln!("\nFor more help: sqllog2db --help");
+            eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
             std::process::exit(1);
         }
     }

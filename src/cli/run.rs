@@ -91,11 +91,17 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
         return Ok(());
     }
 
-    info!("Found {} log files", log_files.len());
+    info!("Found {} log file(s)", log_files.len());
 
     // 处理所有日志文件
-    for log_file in log_files {
+    for (idx, log_file) in log_files.iter().enumerate() {
         let file_path_str = log_file.to_string_lossy().to_string();
+        info!(
+            "Processing file {}/{}: {}",
+            idx + 1,
+            log_files.len(),
+            log_file.display()
+        );
         process_log_file(&file_path_str, &mut exporter_manager, &mut error_logger)?;
     }
 
@@ -112,9 +118,21 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     // 展示统计信息
     exporter_manager.log_stats();
 
+    eprintln!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    eprintln!("✓ SQL Log Export Task Completed");
+    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    eprintln!("  Exporter:  {}", exporter_manager.name());
+    eprintln!("  Elapsed:   {:.3} seconds", total_elapsed);
+    if let Some(stats) = exporter_manager.stats() {
+        if total_elapsed > 0.0 {
+            let throughput = stats.exported as f64 / total_elapsed;
+            eprintln!("  Records:   {}", stats.exported);
+            eprintln!("  Throughput: {:.0} records/sec", throughput);
+        }
+    }
+    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
     info!("✓ SQL log export task completed!");
-    info!("  - 导出器: {}", exporter_manager.name());
-    info!("  - 总耗时: {:.3} 秒", total_elapsed);
 
     Ok(())
 }
