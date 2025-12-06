@@ -73,7 +73,6 @@ mod parser_deep_tests {
 
         #[cfg(unix)]
         {
-            use std::os::unix::fs::FileTypeExt;
             let parser = SqllogParser::new("/dev/null");
             let result = parser.log_files();
             // On Unix, /dev/null is a special file, not a regular file or directory
