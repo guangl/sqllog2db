@@ -94,8 +94,6 @@ cargo build --release --features "parquet jsonl sqlite"
 
 ## 快速开始
 
-### 本地运行
-
 1) 生成默认配置（如已存在可加 `--force` 覆盖）：
 
 ```powershell
@@ -112,21 +110,6 @@ sqllog2db validate -c config.toml
 
 ```powershell
 sqllog2db run -c config.toml
-```
-
-### Docker 运行
-
-```bash
-# 构建镜像
-docker build -t sqllog2db:latest .
-
-# 运行（挂载配置和数据目录）
-docker run --rm \
-  -v $(pwd)/config.toml:/app/config/config.toml \
-  -v $(pwd)/sqllogs:/app/sqllogs \
-  -v $(pwd)/export:/app/export \
-  -v $(pwd)/logs:/app/logs \
-  sqllog2db:latest
 ```
 
 ### Shell 补全

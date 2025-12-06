@@ -35,23 +35,6 @@
    sqllog2db run -c config.toml
    ```
 
-## Docker 使用
-
-使用示例配置运行容器：
-
-```bash
-# 构建镜像
-docker build -t sqllog2db:latest .
-
-# 运行（挂载配置和数据目录）
-docker run --rm \
-  -v $(pwd)/examples/config-csv.toml:/app/config/config.toml \
-  -v $(pwd)/sqllogs:/app/sqllogs \
-  -v $(pwd)/export:/app/export \
-  -v $(pwd)/logs:/app/logs \
-  sqllog2db:latest
-```
-
 ## 测试配置
 
 验证配置文件是否正确：

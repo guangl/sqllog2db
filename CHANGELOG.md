@@ -10,7 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Shell 自动补全**：新增 `completions` 子命令，支持生成 Bash/Zsh/Fish 补全脚本
 - **全局日志级别选项**：`-v/--verbose` 和 `-q/--quiet` 覆盖配置文件日志级别
-- **容器化支持**：添加 `Dockerfile` 和 `.dockerignore`，支持 Docker 部署
 - **示例配置**：`examples/` 目录包含 CSV/Parquet/SQLite/PostgreSQL 示例配置
 - **开发者文档**：
   - `CONTRIBUTING.md`：贡献指南
