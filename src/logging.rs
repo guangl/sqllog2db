@@ -25,6 +25,7 @@ static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::n
 static LOG_TO_CONSOLE: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(true));
 
 /// 设置日志是否输出到控制台
+#[allow(dead_code)]
 pub fn set_log_to_console(enabled: bool) {
     if let Ok(mut console_enabled) = LOG_TO_CONSOLE.lock() {
         *console_enabled = enabled;

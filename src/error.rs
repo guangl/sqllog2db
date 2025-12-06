@@ -107,6 +107,7 @@ pub enum ParserError {
 
 /// 导出错误
 #[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum ExportError {
     /// CSV export failed
     #[error("CSV export failed {path}: {reason}")]
