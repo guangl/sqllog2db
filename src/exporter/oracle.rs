@@ -238,7 +238,11 @@ impl Exporter for OracleExporter {
 
         // 处理 overwrite/append 逻辑
         {
-            let conn = self.conn.as_mut().unwrap();
+            let conn = self.conn.as_mut().ok_or_else(|| {
+                Error::Export(ExportError::DatabaseError {
+                    reason: "Connection not initialized".to_string(),
+                })
+            })?;
             if self.overwrite {
                 let drop_block = format!(
                     "BEGIN

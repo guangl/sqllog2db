@@ -1,6 +1,8 @@
 # sqllog2db
 
 [![Crates.io](https://img.shields.io/crates/v/dm-database-sqllog2db.svg?logo=rust&logoColor=white)](https://crates.io/crates/dm-database-sqllog2db)
+[![Downloads](https://img.shields.io/crates/d/dm-database-sqllog2db.svg)](https://crates.io/crates/dm-database-sqllog2db)
+[![CI](https://github.com/guangl/sqllog2db/workflows/CI/badge.svg)](https://github.com/guangl/sqllog2db/actions/workflows/ci.yaml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg?logo=apache&logoColor=white)](https://opensource.org/licenses/Apache-2.0)
 [![GitHub Release](https://img.shields.io/github/v/release/guangl/sqllog2db?logo=github)](https://github.com/guangl/sqllog2db/releases)
 [![Rust 1.78+](https://img.shields.io/badge/Rust-1.78%2B-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)

@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **安全策略**：`SECURITY.md` 安全漏洞报告流程
 - **CI/CD 增强**：
   - `.github/workflows/ci.yaml`：自动化测试、Clippy、格式检查、文档检查
+  - `.github/workflows/publish.yaml`：自动发布到 crates.io
   - `.github/dependabot.yml`：自动依赖更新
+- **代码规范**：`rustfmt.toml` 和 `.editorconfig` 统一代码风格
+- **README 徽章**：CI status 和 downloads 徽章
 
 ### Changed
 - **Cargo.toml**：添加 `authors` 字段，增加 `clap_complete` 依赖
@@ -27,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 默认配置模板与代码默认值对齐：`sqllog.directory = "sqllogs"`、错误日志默认输出到 `export/errors.log`（按行文本）
 - README 配置示例与导出器优先级、默认路径保持一致
 - 导出器优先级警告信息更详细（包含完整优先级列表）
+
+### Removed
+- 移除未使用的 `dashmap` 依赖
+
+### Fixed
+- `oracle.rs` 中用 `ok_or_else` 替换 `unwrap()`，提高错误处理健壮性
 
 ### Performance
 - 内存优化：总峰值内存从 2.42GB 降至约 179MB（-92.6%），Parquet 峰值从 2.37GB 降至 ~134MB

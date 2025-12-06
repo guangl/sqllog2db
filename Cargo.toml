@@ -37,7 +37,6 @@ log = "0.4.28"
 thiserror = "2.0.17"
 itoa = "1.0"                        # 快速整数转字符串
 rayon = "1.10"                      # 并行迭代
-dashmap = "6.1"                     # 并发哈希表
 
 clap = { version = "4.5.51", features = ["derive"] }
 clap_complete = "4.5"
