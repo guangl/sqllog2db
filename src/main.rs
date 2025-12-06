@@ -21,10 +21,13 @@ fn init_simple_logging(verbose: bool, quiet: bool) {
     } else {
         "info"
     };
-    unsafe {
-        std::env::set_var("RUST_LOG", level);
-    }
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .filter_level(match level {
+            "debug" => log::LevelFilter::Debug,
+            "error" => log::LevelFilter::Error,
+            _ => log::LevelFilter::Info,
+        })
+        .init();
 }
 
 fn main() -> Result<()> {
