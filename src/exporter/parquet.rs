@@ -14,7 +14,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Parquet 导出器 - 使用 Arrow 和 Parquet 生成真正的 Parquet 格式文件
-#[allow(missing_debug_implementations)]
 pub struct ParquetExporter {
     pub file: String,
     pub overwrite: bool,
@@ -38,6 +37,19 @@ pub struct ParquetExporter {
     pub exec_time_vec: Vec<i64>,
     pub row_count_vec: Vec<i64>,
     pub exec_id_vec: Vec<i64>,
+}
+
+impl std::fmt::Debug for ParquetExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParquetExporter")
+            .field("file", &self.file)
+            .field("overwrite", &self.overwrite)
+            .field("row_group_size", &self.row_group_size)
+            .field("use_dictionary", &self.use_dictionary)
+            .field("stats", &self.stats)
+            .field("initialized", &self.initialized)
+            .finish()
+    }
 }
 
 impl ParquetExporter {

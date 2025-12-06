@@ -99,9 +99,16 @@ impl ExportStats {
 }
 
 /// 导出器管理器 - 管理单个导出器
-#[allow(missing_debug_implementations)]
 pub struct ExporterManager {
     exporter: Box<dyn Exporter>,
+}
+
+impl std::fmt::Debug for ExporterManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExporterManager")
+            .field("exporter_name", &self.exporter.name())
+            .finish()
+    }
 }
 
 impl ExporterManager {

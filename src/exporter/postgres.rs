@@ -6,7 +6,6 @@ use postgres::{Client, NoTls};
 use tempfile::NamedTempFile;
 
 /// PostgreSQL 导出器 - 使用 CSV + psql COPY FROM
-#[allow(missing_debug_implementations)]
 pub struct PostgresExporter {
     connection_string: String,
     host: String,
@@ -22,6 +21,20 @@ pub struct PostgresExporter {
     stats: ExportStats,
     csv_exporter: Option<CsvExporter>,
     temp_csv: Option<NamedTempFile>,
+}
+
+impl std::fmt::Debug for PostgresExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresExporter")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("database", &self.database)
+            .field("schema", &self.schema)
+            .field("table_name", &self.table_name)
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 impl PostgresExporter {

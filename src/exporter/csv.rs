@@ -10,7 +10,6 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// CSV 导出器 - 高性能批量写入版本
-#[allow(missing_debug_implementations)]
 pub struct CsvExporter {
     path: PathBuf,
     overwrite: bool,
@@ -19,6 +18,17 @@ pub struct CsvExporter {
     stats: ExportStats,
     itoa_buf: itoa::Buffer, // itoa 复用缓冲区
     line_buf: Vec<u8>,      // 行缓冲区复用
+}
+
+impl std::fmt::Debug for CsvExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CsvExporter")
+            .field("path", &self.path)
+            .field("overwrite", &self.overwrite)
+            .field("append", &self.append)
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 impl CsvExporter {

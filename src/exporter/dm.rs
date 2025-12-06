@@ -7,7 +7,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-#[allow(missing_debug_implementations)]
 pub struct DmExporter {
     userid: String,
     table_name: String,
@@ -19,6 +18,17 @@ pub struct DmExporter {
     #[allow(dead_code)]
     charset: String,
     csv_exporter: Option<CsvExporter>,
+}
+
+impl std::fmt::Debug for DmExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DmExporter")
+            .field("userid", &self.userid)
+            .field("table_name", &self.table_name)
+            .field("control_file", &self.control_file)
+            .field("log_dir", &self.log_dir)
+            .finish()
+    }
 }
 
 impl DmExporter {

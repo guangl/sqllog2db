@@ -8,7 +8,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// DuckDB 导出器 - 使用 CSV 批量导入
-#[allow(missing_debug_implementations)]
 pub struct DuckdbExporter {
     database_url: String,
     table_name: String,
@@ -18,6 +17,18 @@ pub struct DuckdbExporter {
     stats: ExportStats,
     csv_exporter: Option<CsvExporter>,
     temp_csv_path: Option<PathBuf>,
+}
+
+impl std::fmt::Debug for DuckdbExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DuckdbExporter")
+            .field("database_url", &self.database_url)
+            .field("table_name", &self.table_name)
+            .field("overwrite", &self.overwrite)
+            .field("append", &self.append)
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 impl DuckdbExporter {

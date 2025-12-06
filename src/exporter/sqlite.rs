@@ -7,7 +7,6 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 
 /// SQLite 导出器 - 直接插入版本 (高性能)
-#[allow(missing_debug_implementations)]
 pub struct SqliteExporter {
     database_url: String,
     table_name: String,
@@ -15,6 +14,18 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
+}
+
+impl std::fmt::Debug for SqliteExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SqliteExporter")
+            .field("database_url", &self.database_url)
+            .field("table_name", &self.table_name)
+            .field("overwrite", &self.overwrite)
+            .field("append", &self.append)
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 impl SqliteExporter {

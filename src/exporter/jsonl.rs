@@ -32,13 +32,23 @@ struct JsonlRecord {
 }
 
 /// JSONL 导出器 - 将 SQL 日志导出为 JSON Lines 格式
-#[allow(missing_debug_implementations)]
 pub struct JsonlExporter {
     path: PathBuf,
     overwrite: bool,
     append: bool,
     writer: Option<BufWriter<File>>,
     stats: ExportStats,
+}
+
+impl std::fmt::Debug for JsonlExporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JsonlExporter")
+            .field("path", &self.path)
+            .field("overwrite", &self.overwrite)
+            .field("append", &self.append)
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 impl JsonlExporter {
