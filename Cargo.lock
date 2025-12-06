@@ -441,7 +441,7 @@ checksum = "b3aa9e59c611ebc291c28582077ef25c97f1975383f1479b12f3b9ffee2ffabe"
 dependencies = [
  "bitflags",
 ]
-version = "0.2.0"
+
 [[package]]
 name = "arrow-schema"
 version = "57.1.0"
