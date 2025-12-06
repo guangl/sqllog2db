@@ -13,10 +13,6 @@ pub struct DmExporter {
     control_file: String,
     data_file: String, // 临时 CSV 文件路径，自动生成
     log_dir: String,
-    #[allow(dead_code)]
-    overwrite: bool,
-    #[allow(dead_code)]
-    charset: String,
     csv_exporter: Option<CsvExporter>,
 }
 
@@ -46,8 +42,6 @@ impl DmExporter {
             control_file: config.control_file.clone(),
             data_file,
             log_dir: config.log_dir.clone(),
-            overwrite: config.overwrite,
-            charset: config.charset.clone(),
             csv_exporter: None,
         }
     }

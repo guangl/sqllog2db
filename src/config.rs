@@ -626,11 +626,6 @@ impl PostgresExporter {
 }
 
 #[cfg(feature = "dm")]
-fn default_charset() -> String {
-    "UTF-8".to_string()
-}
-
-#[cfg(feature = "dm")]
 #[derive(Debug, Deserialize)]
 pub struct DmExporter {
     /// DM 数据库连接字符串 (例如: SYSDBA/SYSDBA@localhost:5236)
@@ -642,12 +637,6 @@ pub struct DmExporter {
     pub control_file: String,
     /// 日志目录
     pub log_dir: String,
-    /// 是否覆盖已存在的表数据 (mode='REPLACE')
-    #[serde(default = "default_true")]
-    pub overwrite: bool,
-    /// 字符集 (例如: UTF-8)
-    #[serde(default = "default_charset")]
-    pub charset: String,
 }
 
 #[cfg(feature = "dm")]
@@ -658,8 +647,6 @@ impl Default for DmExporter {
             table_name: "sqllog_records".to_string(),
             control_file: "export/sqllog.ctl".to_string(),
             log_dir: "export/log".to_string(),
-            overwrite: true,
-            charset: "UTF-8".to_string(),
         }
     }
 }

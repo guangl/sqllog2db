@@ -83,12 +83,7 @@ pub enum FileError {
 
 /// 数据库错误
 #[derive(Debug, Error)]
-pub enum DatabaseError {
-    /// Database export failed
-    #[error("Database export failed ({table_name}): {reason}")]
-    #[allow(dead_code)]
-    DatabaseExportFailed { table_name: String, reason: String },
-}
+pub enum DatabaseError {}
 
 /// 解析错误
 #[derive(Debug, Error)]

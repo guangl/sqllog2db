@@ -39,7 +39,6 @@ impl std::fmt::Debug for PostgresExporter {
 
 impl PostgresExporter {
     /// 创建新的 PostgreSQL 导出器
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         connection_string: String,
         host: String,
