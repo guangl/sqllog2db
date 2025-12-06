@@ -116,7 +116,7 @@ pub struct SqllogConfig {
 impl Default for SqllogConfig {
     fn default() -> Self {
         Self {
-            directory: "sqllog".to_string(),
+            directory: "sqllogs".to_string(),
         }
     }
 }
@@ -156,7 +156,7 @@ impl ErrorConfig {
 impl Default for ErrorConfig {
     fn default() -> Self {
         Self {
-            file: "errors.json".to_string(),
+            file: "export/errors.log".to_string(),
         }
     }
 }
@@ -404,7 +404,9 @@ impl ExporterConfig {
                 "Warning: {} exporters configured, but only one is supported.",
                 total
             );
-            eprintln!("Will use the first exporter by priority: CSV > Parquet > JSONL");
+            eprintln!(
+                "Will use the first exporter by priority: CSV > Parquet > JSONL > SQLite > DuckDB > PostgreSQL > DM"
+            );
         }
 
         Ok(())

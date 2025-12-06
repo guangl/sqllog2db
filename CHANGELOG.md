@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2025-12-06
 
+### Added
+- 新增 `docs/quickstart.md`，提供最小用例与特性开关示例
+
 ### Changed
 - CLI 版本号更新为 v0.2.0
-- 默认配置模板与当前 `config.toml` 对齐（日志路径、替换参数、导出器优先级说明）
+- 默认配置模板与代码默认值对齐：`sqllog.directory = "sqllogs"`、错误日志默认输出到 `export/errors.log`（按行文本）
+- README 配置示例与导出器优先级、默认路径保持一致
 
 ### Performance
 - 内存优化：总峰值内存从 2.42GB 降至约 179MB（-92.6%），Parquet 峰值从 2.37GB 降至 ~134MB

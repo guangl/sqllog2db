@@ -31,8 +31,8 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 directory = "sqllogs"
 
 [error]
-# 解析错误日志（JSON Lines 格式）输出路径
-file = "export/errors.jsonl"
+# 解析错误日志输出路径（纯文本行: file | error | raw | line）
+file = "export/errors.log"
 
 [logging]
 # 应用日志输出目录或文件路径 (当前版本要求为"文件路径"，例如 logs/sqllog2db.log)
@@ -49,11 +49,11 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres
+# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
 
 # 方案 1: csv 导出（默认）
 [exporter.csv]
-file = "export/sqllog2db.csv"
+file = "outputs/sqllog.csv"
 overwrite = true
 append = false
 
@@ -61,8 +61,8 @@ append = false
 # [exporter.parquet]
 # file = "export/sqllog2db.parquet"
 # overwrite = true
-# row_group_size = 1500000          # 每个 row group 的行数 (优化后推荐值)
-# use_dictionary = false            # 是否启用字典编码
+# row_group_size = 100000           # 每个 row group 的行数 (默认)
+# use_dictionary = true             # 是否启用字典编码
 
 # 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
@@ -80,7 +80,7 @@ append = false
 # 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
 # [exporter.duckdb]
 # database_url = "export/sqllog2db.duckdb"
-# table_name = "sqllog"
+# table_name = "sqllog_records"
 # overwrite = true
 # append = false
 
@@ -89,16 +89,16 @@ append = false
 # host = "localhost"
 # port = 5432
 # username = "postgres"
-# password = ""
-# database = "postgres"
+# password = "postgres"
+# database = "sqllog"
 # schema = "public"
-# table_name = "sqllog"
+# table_name = "sqllog_records"
 # overwrite = true
 # append = false
 
 # 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
 # [exporter.dm]
-# userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
+# userid = "SYSDBA/SYSDBA@localhost:5236"
 # table_name = "sqllog_records"
 # control_file = "export/sqllog.ctl"
 # log_dir = "export/log"
