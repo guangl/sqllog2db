@@ -106,6 +106,7 @@ pub enum ParserError {
 }
 
 /// 导出错误
+/// 所有变体都以 `...Failed` 结尾，以清楚表示各种导出失败情形
 #[derive(Debug, Error)]
 #[allow(clippy::enum_variant_names)]
 pub enum ExportError {
