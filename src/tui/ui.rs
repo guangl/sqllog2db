@@ -115,18 +115,19 @@ pub async fn run_tui(app_state: Arc<Mutex<TuiApp>>) -> io::Result<()> {
     let mut terminal = init_terminal()?;
     terminal.clear()?;
 
-    let result = loop {
+    loop {
         let app = app_state.lock().unwrap().clone();
 
         terminal.draw(|f| draw_ui(f, &app))?;
 
         if !handle_input()? || app.is_finished {
-            break Ok(());
+            break;
         }
-    };
 
-    let mut terminal = init_terminal()?;
+        // 小休眠以避免 CPU 过高
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
     restore_terminal(&mut terminal)?;
-
-    result
+    Ok(())
 }

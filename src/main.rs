@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
             #[cfg(feature = "tui")]
             if let Some(cli::opts::Commands::Run { use_tui: true, .. }) = &cli.command {
-                return cli::run::handle_run_tui(&cfg).await;
+                return cli::run_tui::handle_run_tui(&cfg).await;
             }
 
             cli::run::handle_run(&cfg)

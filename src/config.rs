@@ -56,7 +56,7 @@ fn default_postgres_schema() -> String {
 }
 
 #[cfg_attr(feature = "csv", derive(Default))]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     /// 新增：SQL 日志输入相关配置
     #[serde(default)]
@@ -141,7 +141,7 @@ impl SqllogConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ErrorConfig {
     /// 错误日志输出文件路径
     pub file: String,
@@ -163,7 +163,7 @@ impl Default for ErrorConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct LoggingConfig {
     /// 应用日志输出文件路径
     pub file: String,
@@ -254,7 +254,7 @@ impl FeaturesConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ExporterConfig {
     #[cfg(feature = "csv")]
     pub csv: Option<CsvExporter>,
@@ -442,7 +442,7 @@ impl Default for ExporterConfig {
 }
 
 #[cfg(feature = "parquet")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ParquetExporter {
     /// Parquet 输出文件路径
     pub file: String,
@@ -467,7 +467,7 @@ impl Default for ParquetExporter {
 }
 
 #[cfg(feature = "csv")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CsvExporter {
     /// CSV 输出文件路径
     pub file: String,
@@ -489,7 +489,7 @@ impl Default for CsvExporter {
 }
 
 #[cfg(feature = "jsonl")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct JsonlExporter {
     /// JSONL 输出文件路径
     pub file: String,
@@ -511,7 +511,7 @@ impl Default for JsonlExporter {
 }
 
 #[cfg(feature = "sqlite")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SqliteExporter {
     /// SQLite 数据库文件路径
     pub database_url: String,
@@ -539,7 +539,7 @@ impl Default for SqliteExporter {
 }
 
 #[cfg(feature = "duckdb")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct DuckdbExporter {
     /// DuckDB 数据库文件路径
     pub database_url: String,
@@ -567,7 +567,7 @@ impl Default for DuckdbExporter {
 }
 
 #[cfg(feature = "postgres")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PostgresExporter {
     /// PostgreSQL 主机地址
     #[serde(default = "default_postgres_host")]
@@ -633,7 +633,7 @@ impl PostgresExporter {
 }
 
 #[cfg(feature = "dm")]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct DmExporter {
     /// DM 数据库连接字符串 (例如: SYSDBA/SYSDBA@localhost:5236)
     pub userid: String,
