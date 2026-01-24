@@ -41,7 +41,7 @@ thiserror = "2.0.17"
 itoa = "1.0"                        # 快速整数转字符串
 rayon = "1.10"                      # 并行迭代
 
-clap = { version = "4.5.51", features = ["derive"] }
+clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = "4.5"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = { version = "0.9.8", features = ["serde"] }
