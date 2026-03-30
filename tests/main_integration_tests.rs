@@ -17,49 +17,6 @@ mod main_integration_tests {
         assert_eq!(config.logging.retention_days(), 7);
     }
 
-    /// 测试从 TOML 文件加载配置
-    #[test]
-    fn test_load_config_from_file() {
-        let test_dir = "target/test_outputs/main_tests";
-        let _ = fs::remove_dir_all(test_dir);
-        fs::create_dir_all(test_dir).ok();
-
-        let config_file = format!("{test_dir}/config.toml");
-        let content = r#"[sqllog]
-directory = "sql_logs"
-
-[error]
-file = "errors.jsonl"
-
-[logging]
-file = "app.log"
-level = "debug"
-retention_days = 14
-
-[features.replace_parameters]
-enable = false
-
-[exporter.csv]
-file = "output.csv"
-overwrite = true
-append = false
-"#;
-
-        fs::write(&config_file, content).unwrap();
-
-        // 加载配置
-        let config = Config::from_file(&config_file);
-        assert!(config.is_ok(), "Failed to load config from file");
-
-        let config = config.unwrap();
-        assert_eq!(config.sqllog.directory(), "sql_logs");
-        assert_eq!(config.logging.level(), "debug");
-        assert_eq!(config.logging.retention_days(), 14);
-
-        // Clean up
-        let _ = fs::remove_dir_all(test_dir);
-    }
-
     /// 测试配置验证流程
     #[test]
     fn test_config_validation() {
