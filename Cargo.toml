@@ -34,7 +34,7 @@ name = "sqllog2db"
 path = "src/main.rs"
 
 [dependencies]
-dm-database-parser-sqllog = "0.6.0"
+dm-database-parser-sqllog = "0.6.1"
 env_logger = "0.11.8"
 log = "0.4.29"
 thiserror = "2.0.17"
