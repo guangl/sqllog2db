@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod integration_tests {
     use dm_database_sqllog2db::config::{
-        ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig, ReplaceParametersFeature,
-        SqllogConfig,
+        ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
+        ReplaceParametersFeature, SqllogConfig,
     };
     use dm_database_sqllog2db::parser::SqllogParser;
 
@@ -192,7 +192,7 @@ mod integration_tests {
         // 测试 FeaturesConfig 创建
         let config = FeaturesConfig {
             replace_parameters: None,
-            filters: None,
+            filters: Some(FiltersFeature::default()),
         };
 
         assert!(!config.should_replace_sql_parameters());
@@ -206,7 +206,7 @@ mod integration_tests {
                 enable: false,
                 symbols: None,
             }),
-            filters: None,
+            filters: Some(FiltersFeature::default()),
         };
 
         assert!(!config.should_replace_sql_parameters());
@@ -220,7 +220,7 @@ mod integration_tests {
                 enable: true,
                 symbols: None,
             }),
-            filters: None,
+            filters: Some(FiltersFeature::default()),
         };
 
         assert!(config.should_replace_sql_parameters());
@@ -234,7 +234,7 @@ mod integration_tests {
                 enable: true,
                 symbols: Some(vec!["?".to_string(), ":".to_string()]),
             }),
-            filters: None,
+            filters: Some(FiltersFeature::default()),
         };
 
         assert!(config.should_replace_sql_parameters());

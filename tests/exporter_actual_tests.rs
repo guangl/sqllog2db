@@ -203,7 +203,10 @@ mod exporter_integration_tests {
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: csv_file.clone(),

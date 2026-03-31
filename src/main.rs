@@ -4,6 +4,7 @@ mod constants;
 mod error;
 mod error_logger;
 mod exporter;
+mod features;
 mod logging;
 mod parser;
 

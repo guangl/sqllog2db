@@ -201,7 +201,7 @@ fn test_features_config_replace_parameters_disabled() {
             enable: false,
             symbols: None,
         }),
-        filters: None,
+        filters: Some(FiltersFeature::default()),
     };
     assert!(!config.should_replace_sql_parameters());
 }

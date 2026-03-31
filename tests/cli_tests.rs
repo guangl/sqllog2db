@@ -20,7 +20,10 @@ mod cli_integration_tests {
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: output_file.to_string(),
@@ -102,7 +105,10 @@ append = false
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: format!("{test_dir}/export.csv"),
@@ -140,7 +146,10 @@ append = false
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: "output.csv".to_string(),
@@ -172,7 +181,10 @@ append = false
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: "output.csv".to_string(),
@@ -296,7 +308,10 @@ append = false
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: "output.csv".to_string(),
@@ -327,7 +342,10 @@ append = false
                 level: "debug".to_string(),
                 retention_days: 14,
             },
-            features: dm_database_sqllog2db::config::FeaturesConfig::default(),
+            features: dm_database_sqllog2db::config::FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+            },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
                     file: "/path/to/output.csv".to_string(),

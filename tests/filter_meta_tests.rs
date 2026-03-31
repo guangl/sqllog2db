@@ -51,6 +51,8 @@ directory = "{}"
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 sess_ids = ["SESSION1"]
 
 [exporter.csv]
@@ -95,6 +97,8 @@ directory = "{}"
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 thrd_ids = ["THREAD2"]
 
 [exporter.csv]
@@ -139,6 +143,8 @@ directory = "{}"
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 usernames = ["USER3"]
 
 [exporter.csv]
@@ -183,6 +189,8 @@ directory = "{}"
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 statements = ["UPD", "SEL"]
 
 [exporter.csv]
@@ -228,6 +236,8 @@ directory = "{}"
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 appnames = ["APP1"]
 
 [exporter.csv]

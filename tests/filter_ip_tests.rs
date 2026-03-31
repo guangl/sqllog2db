@@ -59,6 +59,8 @@ retention_days = 7
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 client_ips = ["192.168.1.10"]
 
 [exporter.csv]
@@ -120,6 +122,8 @@ retention_days = 7
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 client_ips = ["192.168"]
 
 [exporter.csv]
@@ -182,6 +186,8 @@ retention_days = 7
 
 [features.filters]
 enable = true
+
+[features.filters.meta]
 trxids = ["3001"]
 client_ips = ["10.0.0.5"]
 

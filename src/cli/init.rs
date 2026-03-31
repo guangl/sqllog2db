@@ -46,22 +46,41 @@ retention_days = 7
 [features.filters]
 # 是否启用过滤器
 enable = false
-# 过滤指定的事务 ID (可选，默认为空表示不过滤)
+
+# --- 元数据过滤器 (Record-level: 满足任一条件即保留该条记录) ---
+# 过滤指定的事务 ID
 # trxids = ["257809109", "257809110"]
-# 过滤指定的执行 ID (可选，关联事务过滤，即保留包含该执行 ID 的整个事务)
-# exec_ids = [257809109, 257809110]
-# 过滤指定的客户端 IP (可选，支持模糊匹配)
+# 过滤指定的客户端 IP (支持模糊匹配)
 # client_ips = ["127.0.0.1", "192.168"]
-# 过滤指定的会话 ID (可选，支持模糊匹配)
-# sess_ids = ["0x7f41435437a8"]
-# 过滤指定的线程 ID (可选，支持模糊匹配)
-# thrd_ids = ["2188515"]
-# 过滤指定的用户名 (可选，支持模糊匹配)
+# 过滤指定的用户名 (支持模糊匹配)
 # usernames = ["SYSDBA"]
-# 过滤指定的语句类型 (可选，支持模糊匹配)
+# 过滤时间范围 (格式：2023-01-01 00:00:00)
+# start_ts = "2023-01-01 00:00:00"
+# end_ts = "2023-01-01 23:59:59"
+# 过滤指定的会话 ID (支持模糊匹配)
+# sess_ids = ["0x7f41435437a8"]
+# 过滤指定的线程 ID (支持模糊匹配)
+# thrd_ids = ["2188515"]
+# 过滤指定的语句类型 (支持模糊匹配)
 # statements = ["INS", "UPD", "DEL"]
-# 过滤指定的应用名称 (可选，支持模糊匹配)
+# 过滤指定的应用名称 (支持模糊匹配)
 # appnames = ["DMSQL"]
+
+# --- 指标过滤器 (Transaction-level: 满足条件则保留包含该语句的整个事务 - 需要预扫描) ---
+[features.filters.indicators]
+# 过滤指定的执行 ID (保留整个事务)
+# exec_ids = [257809109, 257809110]
+# 过滤最小执行时长 (毫秒)
+# min_runtime_ms = 1000
+# 过滤最小影响行数
+# min_row_count = 100
+
+# --- SQL 过滤器 (Transaction-level: 满足模式则保留整个事务 - 需要预扫描) ---
+[features.filters.sql]
+# 包含模式列表 (SQL 包含任一模式则匹配)
+# include_patterns = ["FROM USER_TABLES", "DELETE FROM"]
+# 排除模式列表 (SQL 包含任一模式则剔除)
+# exclude_patterns = ["SELECT 1", "DUAL"]
 
 [features.replace_parameters]
 enable = false

@@ -21,6 +21,7 @@ impl SqllogParser {
 
     /// 获取日志路径
     #[must_use]
+    #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path
     }

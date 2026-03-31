@@ -30,7 +30,8 @@ mod main_integration_tests {
     #[test]
     fn test_invalid_config_no_exporters() {
         use dm_database_sqllog2db::config::{
-            ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig, SqllogConfig,
+            ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
+            SqllogConfig,
         };
 
         let config = Config {
@@ -45,7 +46,10 @@ mod main_integration_tests {
                 level: "info".to_string(),
                 retention_days: 7,
             },
-            features: FeaturesConfig::default(),
+            features: FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(FiltersFeature::default()),
+            },
 
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]

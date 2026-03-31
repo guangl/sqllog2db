@@ -194,7 +194,7 @@ fn test_features_config_replace_parameters_disabled() {
             enable: false,
             symbols: None,
         }),
-        filters: None,
+        filters: Some(FiltersFeature::default()),
     };
     assert!(!config.should_replace_sql_parameters());
 }
@@ -206,7 +206,7 @@ fn test_features_config_replace_parameters_enabled() {
             enable: true,
             symbols: None,
         }),
-        filters: None,
+        filters: Some(FiltersFeature::default()),
     };
     assert!(config.should_replace_sql_parameters());
 }
@@ -218,7 +218,7 @@ fn test_features_config_replace_parameters_enabled_with_symbols() {
             enable: true,
             symbols: Some(vec!["?".to_string(), "$".to_string()]),
         }),
-        filters: None,
+        filters: Some(FiltersFeature::default()),
     };
     assert!(config.should_replace_sql_parameters());
 }

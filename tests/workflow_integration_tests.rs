@@ -2,8 +2,8 @@
 #[cfg(test)]
 mod full_workflow_tests {
     use dm_database_sqllog2db::config::{
-        Config, CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig,
-        SqllogConfig,
+        Config, CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature,
+        LoggingConfig, SqllogConfig,
     };
     use dm_database_sqllog2db::exporter::{Exporter, ExporterManager};
     use dm_database_sqllog2db::parser::SqllogParser;
@@ -49,7 +49,7 @@ mod full_workflow_tests {
             },
             features: FeaturesConfig {
                 replace_parameters: None,
-                filters: None,
+                filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
@@ -115,7 +115,7 @@ mod full_workflow_tests {
             },
             features: FeaturesConfig {
                 replace_parameters: None,
-                filters: None,
+                filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
@@ -283,7 +283,7 @@ mod full_workflow_tests {
             },
             features: FeaturesConfig {
                 replace_parameters: None,
-                filters: None,
+                filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]

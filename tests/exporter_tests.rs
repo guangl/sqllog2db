@@ -2,7 +2,8 @@
 #[cfg(test)]
 mod exporter_and_logging_tests {
     use dm_database_sqllog2db::config::{
-        CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig, SqllogConfig,
+        CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
+        SqllogConfig,
     };
     use dm_database_sqllog2db::constants::LOG_LEVELS;
 
@@ -86,7 +87,7 @@ mod exporter_and_logging_tests {
 
         let features = FeaturesConfig {
             replace_parameters: None,
-            filters: None,
+            filters: Some(FiltersFeature::default()),
         };
 
         let exporter = ExporterConfig {

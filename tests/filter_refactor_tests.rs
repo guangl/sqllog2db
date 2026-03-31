@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn setup_test_dir(name: &str) -> PathBuf {
-    let test_dir = PathBuf::from("target/test_filter_execid_outputs").join(name);
+    let test_dir = PathBuf::from("target/test_filter_refactor_outputs").join(name);
     let _ = fs::remove_dir_all(&test_dir);
     fs::create_dir_all(&test_dir).expect("Failed to create test dir");
     test_dir
@@ -22,16 +22,16 @@ fn get_binary_path() -> PathBuf {
 }
 
 fn create_sample_logs(sqllog_dir: &Path) {
-    // Transaction 2001: Has EXEC_ID 1001 in the second record
-    let log1 = r"2025-10-20 15:10:28.614 (EP[0] sess:0x1 user:U1 trxid:2001 stmt:0x1 appname: ip:1.1.1.1) [INS] INSERT START 2001.
-2025-10-20 15:10:28.615 (EP[0] sess:0x1 user:U1 trxid:2001 stmt:0x2 appname: ip:1.1.1.1) [INS] INSERT DATA 2001. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1001.
+    // Transaction 5001: Slow query (1500ms)
+    let log1 = r"2025-10-20 15:10:28.614 (EP[0] sess:0x1 user:U1 trxid:5001 stmt:0x1 appname: ip:1.1.1.1) [INS] INSERT START 5001.
+2025-10-20 15:10:28.615 (EP[0] sess:0x1 user:U1 trxid:5001 stmt:0x2 appname: ip:1.1.1.1) [INS] INSERT DATA 5001. EXECTIME: 1500(ms) ROWCOUNT: 1(rows) EXEC_ID: 5001.
 ";
-    // Transaction 2002: Has EXEC_ID 1002 in the first record
-    let log2 = r"2025-10-20 15:10:28.616 (EP[0] sess:0x2 user:U1 trxid:2002 stmt:0x3 appname: ip:1.1.1.1) [INS] INSERT DATA 2002. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1002.
-2025-10-20 15:10:28.617 (EP[0] sess:0x2 user:U1 trxid:2002 stmt:0x4 appname: ip:1.1.1.1) [INS] COMMIT 2002.
+    // Transaction 5002: Fast query (10ms) but many rows (500)
+    let log2 = r"2025-10-20 15:10:28.616 (EP[0] sess:0x2 user:U1 trxid:5002 stmt:0x3 appname: ip:1.1.1.1) [INS] INSERT DATA 5002. EXECTIME: 10(ms) ROWCOUNT: 500(rows) EXEC_ID: 5002.
+2025-10-20 15:10:28.617 (EP[0] sess:0x2 user:U1 trxid:5002 stmt:0x4 appname: ip:1.1.1.1) [INS] COMMIT 5002.
 ";
-    // Transaction 2003: No matching EXEC_ID
-    let log3 = r"2025-10-20 15:10:28.618 (EP[0] sess:0x3 user:U1 trxid:2003 stmt:0x5 appname: ip:1.1.1.1) [INS] INSERT 2003. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1003.
+    // Transaction 5003: Fast query (10ms) and few rows (1)
+    let log3 = r"2025-10-20 15:10:28.618 (EP[0] sess:0x3 user:U1 trxid:5003 stmt:0x5 appname: ip:1.1.1.1) [INS] INSERT 5003. EXECTIME: 10(ms) ROWCOUNT: 1(rows) EXEC_ID: 5003.
 ";
     fs::write(sqllog_dir.join("log1.log"), log1).expect("Failed to write log1");
     fs::write(sqllog_dir.join("log2.log"), log2).expect("Failed to write log2");
@@ -39,8 +39,8 @@ fn create_sample_logs(sqllog_dir: &Path) {
 }
 
 #[test]
-fn test_exec_id_filtering() {
-    let test_dir = setup_test_dir("exec_id_filter");
+fn test_min_runtime_filtering() {
+    let test_dir = setup_test_dir("min_runtime");
     let config_path = test_dir.join("config.toml");
     let sqllog_dir = test_dir.join("sqllogs");
     let output_csv = test_dir.join("output.csv");
@@ -50,8 +50,6 @@ fn test_exec_id_filtering() {
 
     let binary = get_binary_path();
 
-    // Create config with exec_id filter for 1001
-    // This should keep both records of trxid 2001, even though only one has EXEC_ID 1001
     let config_content = format!(
         r#"[sqllog]
 directory = "{}"
@@ -68,7 +66,7 @@ retention_days = 7
 enable = true
 
 [features.filters.indicators]
-exec_ids = [1001]
+min_runtime_ms = 1000
 
 [exporter.csv]
 file = "{}"
@@ -88,7 +86,6 @@ append = false
     );
     fs::write(&config_path, config_content).expect("Failed to write config");
 
-    // Run export
     let run_output = Command::new(&binary)
         .arg("run")
         .arg("--config")
@@ -96,28 +93,18 @@ append = false
         .output()
         .expect("Failed to execute run");
 
-    if !run_output.status.success() {
-        eprintln!("STDOUT: {}", String::from_utf8_lossy(&run_output.stdout));
-        eprintln!("STDERR: {}", String::from_utf8_lossy(&run_output.stderr));
-    }
     assert!(run_output.status.success());
 
-    // Verify output
     let output_content = fs::read_to_string(&output_csv).expect("Failed to read output csv");
-
-    // Should contain both records of trxid 2001
-    assert!(output_content.contains("2001"));
-    assert!(output_content.contains("INSERT START 2001"));
-    assert!(output_content.contains("INSERT DATA 2001"));
-
-    // Should NOT contain 2002 or 2003
-    assert!(!output_content.contains("2002"));
-    assert!(!output_content.contains("2003"));
+    assert!(output_content.contains("5001"));
+    assert!(output_content.contains("INSERT START 5001"));
+    assert!(!output_content.contains("5002"));
+    assert!(!output_content.contains("5003"));
 }
 
 #[test]
-fn test_exec_id_and_trxid_filtering_combined() {
-    let test_dir = setup_test_dir("combined_filter");
+fn test_min_row_count_filtering() {
+    let test_dir = setup_test_dir("min_row_count");
     let config_path = test_dir.join("config.toml");
     let sqllog_dir = test_dir.join("sqllogs");
     let output_csv = test_dir.join("output.csv");
@@ -127,8 +114,6 @@ fn test_exec_id_and_trxid_filtering_combined() {
 
     let binary = get_binary_path();
 
-    // Filter by trxid 2002 AND exec_id 1001
-    // Result should be records of 2001 (from exec_id 1001) AND records of 2002 (from trxid 2002)
     let config_content = format!(
         r#"[sqllog]
 directory = "{}"
@@ -144,11 +129,8 @@ retention_days = 7
 [features.filters]
 enable = true
 
-[features.filters.meta]
-trxids = ["2002"]
-
 [features.filters.indicators]
-exec_ids = [1001]
+min_row_count = 100
 
 [exporter.csv]
 file = "{}"
@@ -168,7 +150,6 @@ append = false
     );
     fs::write(&config_path, config_content).expect("Failed to write config");
 
-    // Run export
     let run_output = Command::new(&binary)
         .arg("run")
         .arg("--config")
@@ -179,8 +160,8 @@ append = false
     assert!(run_output.status.success());
 
     let output_content = fs::read_to_string(&output_csv).expect("Failed to read output csv");
-
-    assert!(output_content.contains("2001"));
-    assert!(output_content.contains("2002"));
-    assert!(!output_content.contains("2003"));
+    assert!(!output_content.contains("5001"));
+    assert!(output_content.contains("5002"));
+    assert!(output_content.contains("COMMIT 5002"));
+    assert!(!output_content.contains("5003"));
 }
