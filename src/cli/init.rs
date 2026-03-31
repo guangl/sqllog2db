@@ -52,6 +52,16 @@ enable = false
 # exec_ids = [257809109, 257809110]
 # 过滤指定的客户端 IP (可选，支持模糊匹配)
 # client_ips = ["127.0.0.1", "192.168"]
+# 过滤指定的会话 ID (可选，支持模糊匹配)
+# sess_ids = ["0x7f41435437a8"]
+# 过滤指定的线程 ID (可选，支持模糊匹配)
+# thrd_ids = ["2188515"]
+# 过滤指定的用户名 (可选，支持模糊匹配)
+# usernames = ["SYSDBA"]
+# 过滤指定的语句类型 (可选，支持模糊匹配)
+# statements = ["INS", "UPD", "DEL"]
+# 过滤指定的应用名称 (可选，支持模糊匹配)
+# appnames = ["DMSQL"]
 
 [features.replace_parameters]
 enable = false

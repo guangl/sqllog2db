@@ -159,6 +159,16 @@ pub struct FiltersFeature {
     pub exec_ids: Option<Vec<i64>>,
     /// 过滤客户端 IP 列表
     pub client_ips: Option<Vec<String>>,
+    /// 过滤会话 ID 列表
+    pub sess_ids: Option<Vec<String>>,
+    /// 过滤线程 ID 列表
+    pub thrd_ids: Option<Vec<String>>,
+    /// 过滤用户名列表
+    pub usernames: Option<Vec<String>>,
+    /// 过滤语句类型列表 (如 INS, UPD, SEL)
+    pub statements: Option<Vec<String>>,
+    /// 过滤应用名称列表
+    pub appnames: Option<Vec<String>>,
 }
 
 impl FiltersFeature {
@@ -171,25 +181,44 @@ impl FiltersFeature {
         self.enable && self.exec_ids.as_ref().is_some_and(|ids| !ids.is_empty())
     }
 
-    /// 检查是否应该根据元数据保留该记录
+    /// 检查是否应该根据元数据保留该记录 (满足任意一个配置的过滤器即可 - OR 逻辑)
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn should_keep_meta(&self, trxid: &str, ip: &str) -> bool {
+    pub fn should_keep_meta(
+        &self,
+        trxid: &str,
+        ip: &str,
+        sess: &str,
+        thrd: &str,
+        user: &str,
+        stmt: &str,
+        app: &str,
+    ) -> bool {
         if !self.enable {
             return true;
         }
 
-        let has_trxid_filter = self.trxids.as_ref().is_some_and(|v| !v.is_empty());
-        let has_ip_filter = self.client_ips.as_ref().is_some_and(|v| !v.is_empty());
+        let has_trxid = self.trxids.as_ref().is_some_and(|v| !v.is_empty());
+        let has_ip = self.client_ips.as_ref().is_some_and(|v| !v.is_empty());
+        let has_sess = self.sess_ids.as_ref().is_some_and(|v| !v.is_empty());
+        let has_thrd = self.thrd_ids.as_ref().is_some_and(|v| !v.is_empty());
+        let has_user = self.usernames.as_ref().is_some_and(|v| !v.is_empty());
+        let has_stmt = self.statements.as_ref().is_some_and(|v| !v.is_empty());
+        let has_app = self.appnames.as_ref().is_some_and(|v| !v.is_empty());
 
-        if !has_trxid_filter && !has_ip_filter {
+        // 如果没有配置任何过滤器，则保留所有记录
+        if !has_trxid && !has_ip && !has_sess && !has_thrd && !has_user && !has_stmt && !has_app {
             return true;
         }
 
-        // 如果同时存在，满足其中一个即可 (OR 逻辑)
-        let trxid_match = has_trxid_filter && self.should_keep_trxid(trxid);
-        let ip_match = has_ip_filter && self.should_keep_ip(ip);
-
-        trxid_match || ip_match
+        // OR 逻辑：只要命中一个过滤器就保留
+        (has_trxid && self.should_keep_trxid(trxid))
+            || (has_ip && self.should_keep_ip(ip))
+            || (has_sess && self.should_keep_sess(sess))
+            || (has_thrd && self.should_keep_thrd(thrd))
+            || (has_user && self.should_keep_user(user))
+            || (has_stmt && self.should_keep_stmt(stmt))
+            || (has_app && self.should_keep_app(app))
     }
 
     /// 检查是否应该保留该事务 ID
@@ -212,6 +241,66 @@ impl FiltersFeature {
                 return true;
             }
             return ips.iter().any(|filter_ip| ip.contains(filter_ip));
+        }
+        true
+    }
+
+    /// 检查是否应该保留该会话 ID
+    #[must_use]
+    pub fn should_keep_sess(&self, sess: &str) -> bool {
+        if let Some(ids) = &self.sess_ids {
+            if ids.is_empty() {
+                return true;
+            }
+            return ids.iter().any(|id| sess.contains(id));
+        }
+        true
+    }
+
+    /// 检查是否应该保留该线程 ID
+    #[must_use]
+    pub fn should_keep_thrd(&self, thrd: &str) -> bool {
+        if let Some(ids) = &self.thrd_ids {
+            if ids.is_empty() {
+                return true;
+            }
+            return ids.iter().any(|id| thrd.contains(id));
+        }
+        true
+    }
+
+    /// 检查是否应该保留该用户名
+    #[must_use]
+    pub fn should_keep_user(&self, user: &str) -> bool {
+        if let Some(users) = &self.usernames {
+            if users.is_empty() {
+                return true;
+            }
+            return users.iter().any(|u| user.contains(u));
+        }
+        true
+    }
+
+    /// 检查是否应该保留该语句类型
+    #[must_use]
+    pub fn should_keep_stmt(&self, stmt: &str) -> bool {
+        if let Some(stmts) = &self.statements {
+            if stmts.is_empty() {
+                return true;
+            }
+            return stmts.iter().any(|s| stmt.contains(s));
+        }
+        true
+    }
+
+    /// 检查是否应该保留该应用名称
+    #[must_use]
+    pub fn should_keep_app(&self, app: &str) -> bool {
+        if let Some(apps) = &self.appnames {
+            if apps.is_empty() {
+                return true;
+            }
+            return apps.iter().any(|a| app.contains(a));
         }
         true
     }
