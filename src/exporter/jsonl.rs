@@ -22,6 +22,8 @@ struct JsonlRecord {
     statement: String,
     appname: String,
     client_ip: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
     sql: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     exec_time_ms: Option<f32>,
@@ -90,6 +92,7 @@ impl JsonlExporter {
             statement: meta.statement.to_string(),
             appname: meta.appname.to_string(),
             client_ip: meta.client_ip.to_string(),
+            tag: sqllog.tag.as_ref().map(|t| t.to_string()),
             sql: sqllog.body().to_string(),
             exec_time_ms: ind.as_ref().map(|i| i.execute_time),
             row_count: ind.as_ref().map(|i| i.row_count),

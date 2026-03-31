@@ -53,6 +53,7 @@ fn process_log_file(
                             &meta.username,
                             &meta.statement,
                             &meta.appname,
+                            record.tag.as_deref(),
                         )
                     })
                 {

@@ -89,6 +89,12 @@ impl CsvExporter {
         buf.extend_from_slice(meta.client_ip.as_ref().as_bytes());
         buf.push(b',');
 
+        // tag
+        if let Some(tag) = &sqllog.tag {
+            buf.extend_from_slice(tag.as_ref().as_bytes());
+        }
+        buf.push(b',');
+
         // SQL body - 转义引号
         buf.push(b'"');
         for &byte in sqllog.body().as_ref().as_bytes() {
@@ -158,7 +164,7 @@ impl Exporter for CsvExporter {
 
         // 写入表头（如果需要）
         if !append_mode || !file_exists {
-            writer.write_all(b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,sql,exec_time_ms,row_count,exec_id\n")
+            writer.write_all(b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n")
                 .map_err(|e| {
                     Error::Export(ExportError::CsvExportFailed {
                         path: self.path.clone(),
@@ -209,6 +215,12 @@ impl Exporter for CsvExporter {
         buf.extend_from_slice(meta.appname.as_ref().as_bytes());
         buf.push(b',');
         buf.extend_from_slice(meta.client_ip.as_ref().as_bytes());
+        buf.push(b',');
+
+        // tag
+        if let Some(tag) = &sqllog.tag {
+            buf.extend_from_slice(tag.as_ref().as_bytes());
+        }
         buf.push(b',');
 
         // SQL body - 仅为 SQL 字段进行转义（其余字段直接写入）

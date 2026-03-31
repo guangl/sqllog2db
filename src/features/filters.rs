@@ -27,6 +27,7 @@ pub struct MetaFilters {
     pub statements: Option<Vec<String>>,
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
     /// 开始时间 (格式：2023-01-01 00:00:00)
     pub start_ts: Option<String>,
     /// 结束时间 (格式：2023-01-01 23:59:59)
@@ -74,6 +75,7 @@ impl FiltersFeature {
         user: &str,
         stmt: &str,
         app: &str,
+        tag: Option<&str>,
     ) -> bool {
         if !self.enable {
             return true;
@@ -86,7 +88,7 @@ impl FiltersFeature {
 
         // Meta 过滤 (Record-level)
         self.meta
-            .should_keep(ts, trxid, ip, sess, thrd, user, stmt, app)
+            .should_keep(ts, trxid, ip, sess, thrd, user, stmt, app, tag)
     }
 
     /// 合并预扫描发现的事务 ID 到 `MetaFilters` 中，以便在正式扫描时直接通过 trxid 匹配保留整笔事务
@@ -113,6 +115,7 @@ impl MetaFilters {
             || self.usernames.as_ref().is_some_and(|v| !v.is_empty())
             || self.statements.as_ref().is_some_and(|v| !v.is_empty())
             || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
+            || self.tags.as_ref().is_some_and(|v| !v.is_empty())
             || self.start_ts.is_some()
             || self.end_ts.is_some()
     }
@@ -129,6 +132,7 @@ impl MetaFilters {
         user: &str,
         stmt: &str,
         app: &str,
+        tag: Option<&str>,
     ) -> bool {
         // 时间范围过滤
         if let Some(start) = &self.start_ts {
@@ -149,7 +153,8 @@ impl MetaFilters {
             || self.thrd_ids.as_ref().is_some_and(|v| !v.is_empty())
             || self.usernames.as_ref().is_some_and(|v| !v.is_empty())
             || self.statements.as_ref().is_some_and(|v| !v.is_empty())
-            || self.appnames.as_ref().is_some_and(|v| !v.is_empty());
+            || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
+            || self.tags.as_ref().is_some_and(|v| !v.is_empty());
 
         if !has_other_filters {
             return true;
@@ -163,6 +168,7 @@ impl MetaFilters {
             || Self::match_list(self.usernames.as_ref(), user, false)
             || Self::match_list(self.statements.as_ref(), stmt, false)
             || Self::match_list(self.appnames.as_ref(), app, false)
+            || tag.is_some_and(|t| Self::match_list(self.tags.as_ref(), t, false))
     }
 
     fn match_list(list: Option<&Vec<String>>, val: &str, exact: bool) -> bool {

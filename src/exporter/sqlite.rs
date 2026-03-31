@@ -73,6 +73,7 @@ impl SqliteExporter {
                 statement TEXT NOT NULL,
                 appname TEXT,
                 client_ip TEXT,
+                tag TEXT,
                 sql TEXT NOT NULL,
                 exec_time_ms REAL,
                 row_count INTEGER,
@@ -181,7 +182,7 @@ impl Exporter for SqliteExporter {
         // 使用 prepare_cached 缓存预编译语句
         // 注意：这里每次都 format 字符串，但由于 table_name 不变，字符串内容不变，prepare_cached 会命中缓存
         let sql = format!(
-            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.table_name
         );
 
@@ -214,6 +215,7 @@ impl Exporter for SqliteExporter {
             meta.statement,
             meta.appname,
             meta.client_ip,
+            sqllog.tag,
             sqllog.body().as_ref(),
             exec_time,
             row_count,
@@ -241,7 +243,7 @@ impl Exporter for SqliteExporter {
         })?;
 
         let sql = format!(
-            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             self.table_name
         );
 
@@ -279,6 +281,7 @@ impl Exporter for SqliteExporter {
                         meta.statement.to_string(),
                         meta.appname.to_string(),
                         meta.client_ip.to_string(),
+                        sqllog.tag.as_ref().map(|t| t.to_string()),
                         sqllog.body().to_string(),
                         exec_time,
                         row_count,
@@ -297,6 +300,7 @@ impl Exporter for SqliteExporter {
                 statement,
                 appname,
                 client_ip,
+                tag,
                 sql_body,
                 exec_time,
                 row_count,
@@ -304,7 +308,7 @@ impl Exporter for SqliteExporter {
             ) in records
             {
                 stmt.execute(params![
-                    ts, ep, sess_id, thrd_id, username, trxid, statement, appname, client_ip,
+                    ts, ep, sess_id, thrd_id, username, trxid, statement, appname, client_ip, tag,
                     sql_body, exec_time, row_count, exec_id
                 ])
                 .map_err(|e| {
