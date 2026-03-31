@@ -37,13 +37,13 @@ fn process_log_file(
     for result in parser.iter() {
         match result {
             Ok(record) => {
-                // 应用事务 ID 过滤
+                // 应用过滤器 (trxid, client_ip)
                 let meta = record.parse_meta();
                 let should_keep = cfg
                     .features
                     .filters
                     .as_ref()
-                    .is_none_or(|f| f.should_keep_trxid(&meta.trxid));
+                    .is_none_or(|f| f.should_keep_meta(&meta.trxid, &meta.client_ip));
 
                 if !should_keep {
                     continue;

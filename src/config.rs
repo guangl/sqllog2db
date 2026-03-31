@@ -157,6 +157,8 @@ pub struct FiltersFeature {
     pub trxids: Option<Vec<String>>,
     /// 过滤执行 ID 列表 (关联事务过滤)
     pub exec_ids: Option<Vec<i64>>,
+    /// 过滤客户端 IP 列表
+    pub client_ips: Option<Vec<String>>,
 }
 
 impl FiltersFeature {
@@ -169,17 +171,47 @@ impl FiltersFeature {
         self.enable && self.exec_ids.as_ref().is_some_and(|ids| !ids.is_empty())
     }
 
-    /// 检查是否应该保留该事务 ID
+    /// 检查是否应该根据元数据保留该记录
     #[must_use]
-    pub fn should_keep_trxid(&self, trxid: &str) -> bool {
+    pub fn should_keep_meta(&self, trxid: &str, ip: &str) -> bool {
         if !self.enable {
             return true;
         }
+
+        let has_trxid_filter = self.trxids.as_ref().is_some_and(|v| !v.is_empty());
+        let has_ip_filter = self.client_ips.as_ref().is_some_and(|v| !v.is_empty());
+
+        if !has_trxid_filter && !has_ip_filter {
+            return true;
+        }
+
+        // 如果同时存在，满足其中一个即可 (OR 逻辑)
+        let trxid_match = has_trxid_filter && self.should_keep_trxid(trxid);
+        let ip_match = has_ip_filter && self.should_keep_ip(ip);
+
+        trxid_match || ip_match
+    }
+
+    /// 检查是否应该保留该事务 ID
+    #[must_use]
+    pub fn should_keep_trxid(&self, trxid: &str) -> bool {
         if let Some(trxids) = &self.trxids {
             if trxids.is_empty() {
                 return true;
             }
             return trxids.iter().any(|id| id == trxid);
+        }
+        true
+    }
+
+    /// 检查是否应该保留该 IP
+    #[must_use]
+    pub fn should_keep_ip(&self, ip: &str) -> bool {
+        if let Some(ips) = &self.client_ips {
+            if ips.is_empty() {
+                return true;
+            }
+            return ips.iter().any(|filter_ip| ip.contains(filter_ip));
         }
         true
     }

@@ -50,6 +50,8 @@ enable = false
 # trxids = ["257809109", "257809110"]
 # 过滤指定的执行 ID (可选，关联事务过滤，即保留包含该执行 ID 的整个事务)
 # exec_ids = [257809109, 257809110]
+# 过滤指定的客户端 IP (可选，支持模糊匹配)
+# client_ips = ["127.0.0.1", "192.168"]
 
 [features.replace_parameters]
 enable = false
