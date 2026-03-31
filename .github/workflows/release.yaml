@@ -53,7 +53,7 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -66,6 +66,7 @@ jobs:
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+            export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
             cargo build --release --all-features --target ${{ matrix.target }}
           elif [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
