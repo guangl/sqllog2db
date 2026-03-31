@@ -43,6 +43,12 @@ level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
+[features.filters]
+# 是否启用过滤器
+enable = false
+# 过滤指定的事务 ID (可选，默认为空表示不过滤)
+# trxids = ["257809109", "257809110"]
+
 [features.replace_parameters]
 enable = false
 symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表

@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "dm-database-sqllog2db"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "arrow 57.1.0",

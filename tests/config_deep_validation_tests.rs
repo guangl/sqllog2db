@@ -325,6 +325,7 @@ fn test_replace_parameters_feature_enabled() {
 
     let config = FeaturesConfig {
         replace_parameters: Some(feature),
+        filters: None,
     };
 
     assert!(config.should_replace_sql_parameters());
@@ -339,6 +340,7 @@ fn test_replace_parameters_feature_disabled() {
 
     let config = FeaturesConfig {
         replace_parameters: Some(feature),
+        filters: None,
     };
 
     assert!(!config.should_replace_sql_parameters());
@@ -348,6 +350,7 @@ fn test_replace_parameters_feature_disabled() {
 fn test_replace_parameters_feature_none() {
     let config = FeaturesConfig {
         replace_parameters: None,
+        filters: None,
     };
 
     assert!(!config.should_replace_sql_parameters());

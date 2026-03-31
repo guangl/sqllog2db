@@ -86,6 +86,7 @@ mod exporter_and_logging_tests {
 
         let features = FeaturesConfig {
             replace_parameters: None,
+            filters: None,
         };
 
         let exporter = ExporterConfig {

@@ -192,6 +192,7 @@ mod integration_tests {
         // 测试 FeaturesConfig 创建
         let config = FeaturesConfig {
             replace_parameters: None,
+            filters: None,
         };
 
         assert!(!config.should_replace_sql_parameters());
@@ -205,6 +206,7 @@ mod integration_tests {
                 enable: false,
                 symbols: None,
             }),
+            filters: None,
         };
 
         assert!(!config.should_replace_sql_parameters());
@@ -218,6 +220,7 @@ mod integration_tests {
                 enable: true,
                 symbols: None,
             }),
+            filters: None,
         };
 
         assert!(config.should_replace_sql_parameters());
@@ -231,6 +234,7 @@ mod integration_tests {
                 enable: true,
                 symbols: Some(vec!["?".to_string(), ":".to_string()]),
             }),
+            filters: None,
         };
 
         assert!(config.should_replace_sql_parameters());

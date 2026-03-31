@@ -61,9 +61,13 @@ pub struct Config {
     /// 新增：SQL 日志输入相关配置
     #[serde(default)]
     pub sqllog: SqllogConfig,
+    #[serde(default)]
     pub error: ErrorConfig,
+    #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
     pub features: FeaturesConfig,
+    #[serde(default)]
     pub exporter: ExporterConfig,
 }
 
@@ -102,6 +106,9 @@ impl Config {
         // 验证 sqllog 配置
         self.sqllog.validate()?;
 
+        // 验证功能配置
+        FeaturesConfig::validate();
+
         Ok(())
     }
 }
@@ -138,6 +145,35 @@ impl SqllogConfig {
             }));
         }
         Ok(())
+    }
+}
+
+/// 过滤器配置
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct FiltersFeature {
+    /// 是否启用过滤器
+    pub enable: bool,
+    /// 过滤事务 ID 列表
+    pub trxids: Option<Vec<String>>,
+}
+
+impl FiltersFeature {
+    /// 验证过滤器配置
+    pub fn validate() {}
+
+    /// 检查是否应该保留该事务 ID
+    #[must_use]
+    pub fn should_keep_trxid(&self, trxid: &str) -> bool {
+        if !self.enable {
+            return true;
+        }
+        if let Some(trxids) = &self.trxids {
+            if trxids.is_empty() {
+                return true;
+            }
+            return trxids.iter().any(|id| id == trxid);
+        }
+        true
     }
 }
 
@@ -242,6 +278,9 @@ pub struct FeaturesConfig {
     /// 对应配置文件中的 `[features.replace_parameters]`
     #[serde(default)]
     pub replace_parameters: Option<ReplaceParametersFeature>,
+    /// 对应配置文件中的 `[features.filters]`
+    #[serde(default)]
+    pub filters: Option<FiltersFeature>,
 }
 
 impl FeaturesConfig {
@@ -249,6 +288,11 @@ impl FeaturesConfig {
     #[must_use]
     pub fn should_replace_sql_parameters(&self) -> bool {
         self.replace_parameters.as_ref().is_some_and(|f| f.enable)
+    }
+
+    /// 验证配置
+    pub fn validate() {
+        FiltersFeature::validate();
     }
 }
 

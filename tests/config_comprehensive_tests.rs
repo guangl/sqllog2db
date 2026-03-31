@@ -201,6 +201,7 @@ fn test_features_config_replace_parameters_disabled() {
             enable: false,
             symbols: None,
         }),
+        filters: None,
     };
     assert!(!config.should_replace_sql_parameters());
 }
@@ -212,6 +213,7 @@ fn test_features_config_replace_parameters_enabled() {
             enable: true,
             symbols: None,
         }),
+        filters: None,
     };
     assert!(config.should_replace_sql_parameters());
 }

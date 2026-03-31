@@ -14,6 +14,7 @@ fn process_log_file(
     total_files: usize,
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
+    cfg: &Config,
 ) -> Result<()> {
     let file_start = Instant::now();
     eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
@@ -35,6 +36,18 @@ fn process_log_file(
     for result in parser.iter() {
         match result {
             Ok(record) => {
+                // 应用事务 ID 过滤
+                let meta = record.parse_meta();
+                let should_keep = cfg
+                    .features
+                    .filters
+                    .as_ref()
+                    .is_none_or(|f| f.should_keep_trxid(&meta.trxid));
+
+                if !should_keep {
+                    continue;
+                }
+
                 batch.push(record);
                 records_in_file += 1;
                 if batch.len() >= 1000 {
@@ -133,6 +146,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
             log_files.len(),
             &mut exporter_manager,
             &mut error_logger,
+            cfg,
         )?;
     }
 

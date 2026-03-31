@@ -46,6 +46,7 @@ mod main_integration_tests {
                 retention_days: 7,
             },
             features: FeaturesConfig::default(),
+
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
                 csv: None,
