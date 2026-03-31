@@ -67,11 +67,11 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
             export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --all-features --target ${{ matrix.target }}
           elif [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-            cross build --release --target ${{ matrix.target }}
+            cross build --release --all-features --target ${{ matrix.target }}
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --all-features --target ${{ matrix.target }}
           fi
         shell: bash
 
