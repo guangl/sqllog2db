@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "dm-database-sqllog2db"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "arrow 57.1.0",
