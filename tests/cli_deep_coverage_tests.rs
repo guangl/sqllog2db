@@ -115,7 +115,6 @@ exit_on_error = false
         let config = r"
 [features]
 replace_parameters = true
-tui_enabled = false
 ";
         fs::write(&config_path, config).expect("Failed to write");
 

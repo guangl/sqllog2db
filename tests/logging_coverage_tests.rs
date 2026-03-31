@@ -187,26 +187,4 @@ mod logging_coverage_tests {
 
         let _ = logging::init_logging(&config);
     }
-
-    #[test]
-    #[cfg(feature = "tui")]
-    fn test_set_log_to_console_enabled() {
-        logging::set_log_to_console(true);
-        // No return value to check, just verify it doesn't panic
-    }
-
-    #[test]
-    #[cfg(feature = "tui")]
-    fn test_set_log_to_console_disabled() {
-        logging::set_log_to_console(false);
-        // No return value to check, just verify it doesn't panic
-    }
-
-    #[test]
-    #[cfg(feature = "tui")]
-    fn test_set_log_to_console_toggle() {
-        logging::set_log_to_console(true);
-        logging::set_log_to_console(false);
-        logging::set_log_to_console(true);
-    }
 }

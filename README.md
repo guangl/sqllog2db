@@ -39,7 +39,6 @@
   - Parquet（可选特性，行组/内存优化，支持 `row_group_size` 与 `use_dictionary`）
   - JSONL（可选特性，轻量流式）
   - SQLite / DuckDB / PostgreSQL / DM（可选特性）
-- **交互式 TUI 模式**（可选）：使用 `--tui` 标志启用实时进度条和统计界面
 - **错误追踪**：解析失败逐条写入配置的错误日志文件（纯文本行，`文件|错误|原始片段|行号`），便于后续 grep/统计
 - **日志管理**：每日滚动、保留天数可配（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
@@ -48,7 +47,7 @@
 
 ## 安装与构建
 
-你可以选择多种方式安装或构建。
+你可以选择多种方式安装 or 构建。
 
 ### 从 crates.io 安装（推荐）
 
@@ -63,18 +62,12 @@ cargo install dm-database-sqllog2db
 ```powershell
 # 在仓库根目录
 cargo build --release
-
-# 启用 TUI 模式
-cargo build --release --features tui
 ```
 
 **本地安装（把可执行安装到 Cargo bin 目录）**
 
 ```powershell
 cargo install --path .
-
-# 或安装带 TUI 支持
-cargo install --path . --features tui
 ```
 
 ### 构建可选导出器（特性开关）
@@ -93,12 +86,9 @@ cargo build --release --features dm
 
 # 启用多个
 cargo build --release --features "parquet jsonl sqlite"
-
-# 组合多个特性（包含 TUI）
-cargo build --release --features "csv,tui,parquet,jsonl"
 ```
 
-> 💡 提示：默认仅包含 CSV 导出，如需其他导出器请按需启用对应 feature。TUI 模式通过 `tui` feature 启用，不影响默认 CLI 模式。
+> 💡 提示：默认仅包含 CSV 导出，如需其他导出器请按需启用对应 feature。
 
 ---
 
@@ -121,20 +111,6 @@ sqllog2db validate -c config.toml
 ```powershell
 sqllog2db run -c config.toml
 ```
-
-### TUI 模式（可选）
-
-使用交互式终端 UI 运行导出（需要编译时启用 `tui` feature）：
-
-```bash
-# 构建时启用 TUI
-cargo build --release --features "csv,tui"
-
-# 运行 TUI 模式
-sqllog2db run -c config.toml --tui
-```
-
-TUI 模式提供实时进度条、统计信息和交互式界面，按 `q` 或 `Esc` 退出。
 
 ### Shell 补全
 
@@ -398,7 +374,7 @@ A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）；3) 对于 
 核心依赖：
 - 日志解析：[dm-database-parser-sqllog](https://crates.io/crates/dm-database-parser-sqllog)
 - CLI 框架：[clap](https://crates.io/crates/clap)
-- 日志系统：[tracing](https://crates.io/crates/tracing) + [tracing-subscriber](https://crates.io/crates/tracing-subscriber)
+- 日志系统：[log](https://crates.io/crates/log)
 - 序列化：[serde](https://crates.io/crates/serde) + [serde_json](https://crates.io/crates/serde_json)
 - 数据库（可选）：[rusqlite](https://crates.io/crates/rusqlite)
 

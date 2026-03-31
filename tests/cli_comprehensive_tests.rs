@@ -241,28 +241,6 @@ fn test_cli_required_arguments() {
     assert!(validate_config.is_some());
 }
 
-// ==================== CLI TUI Mode Tests ====================
-
-#[cfg(feature = "tui")]
-#[test]
-fn test_cli_run_with_tui_flag() {
-    let use_tui = true;
-    let config = "config.toml";
-
-    assert!(use_tui);
-    assert_eq!(config, "config.toml");
-}
-
-#[cfg(feature = "tui")]
-#[test]
-fn test_cli_run_without_tui_flag() {
-    let use_tui = false;
-    let config = "config.toml";
-
-    assert!(!use_tui);
-    assert_eq!(config, "config.toml");
-}
-
 // ==================== CLI Shell Completion Tests ====================
 
 #[test]
