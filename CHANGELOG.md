@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-01
+
+### Removed
+- **架构精简**：大幅精简导出器逻辑，移除了以下支持以降低维护成本：
+  - Parquet 导出器
+  - DuckDB 导出器
+  - PostgreSQL 导出器
+  - DM 导出器
+  - Oracle 导出器
+- **特性开关**：移除对应的 `parquet`、`duckdb`、`postgres` 特性开关。
+- **文档与示例**：清理了所有已废弃导出器的示例配置和文档。
+
+### Fixed
+- **Clippy**：修复 `src/config.rs` 中的 `non-minimal-cfg` 警告。
+
 ## [0.2.1] - 2025-12-07
 
 ### Fixed

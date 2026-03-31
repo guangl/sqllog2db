@@ -6,55 +6,15 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// 默认表名
-#[cfg(any(
-    feature = "sqlite",
-    feature = "duckdb",
-    feature = "postgres",
-    feature = "dm"
-))]
+#[cfg(feature = "sqlite")]
 fn default_table_name() -> String {
     "sqllog_records".to_string()
 }
 
 /// 默认 true 值
-#[cfg(any(
-    feature = "sqlite",
-    feature = "duckdb",
-    feature = "postgres",
-    feature = "dm"
-))]
+#[cfg(feature = "sqlite")]
 fn default_true() -> bool {
     true
-}
-
-/// `PostgreSQL` 默认主机
-#[cfg(feature = "postgres")]
-fn default_postgres_host() -> String {
-    "localhost".to_string()
-}
-
-/// `PostgreSQL` 默认端口
-#[cfg(feature = "postgres")]
-fn default_postgres_port() -> u16 {
-    5432
-}
-
-/// `PostgreSQL` 默认用户名
-#[cfg(feature = "postgres")]
-fn default_postgres_username() -> String {
-    "postgres".to_string()
-}
-
-/// `PostgreSQL` 默认数据库
-#[cfg(feature = "postgres")]
-fn default_postgres_database() -> String {
-    "sqllog".to_string()
-}
-
-/// `PostgreSQL` 默认 schema
-#[cfg(feature = "postgres")]
-fn default_postgres_schema() -> String {
-    "public".to_string()
 }
 
 #[cfg_attr(feature = "csv", derive(Default))]
@@ -243,18 +203,10 @@ impl Default for LoggingConfig {
 pub struct ExporterConfig {
     #[cfg(feature = "csv")]
     pub csv: Option<CsvExporter>,
-    #[cfg(feature = "parquet")]
-    pub parquet: Option<ParquetExporter>,
     #[cfg(feature = "jsonl")]
     pub jsonl: Option<JsonlExporter>,
     #[cfg(feature = "sqlite")]
     pub sqlite: Option<SqliteExporter>,
-    #[cfg(feature = "duckdb")]
-    pub duckdb: Option<DuckdbExporter>,
-    #[cfg(feature = "postgres")]
-    pub postgres: Option<PostgresExporter>,
-    #[cfg(feature = "dm")]
-    pub dm: Option<DmExporter>,
 }
 
 impl ExporterConfig {
@@ -263,13 +215,6 @@ impl ExporterConfig {
     #[must_use]
     pub fn csv(&self) -> Option<&CsvExporter> {
         self.csv.as_ref()
-    }
-
-    #[cfg(feature = "parquet")]
-    /// 获取 Parquet 导出器配置
-    #[must_use]
-    pub fn parquet(&self) -> Option<&ParquetExporter> {
-        self.parquet.as_ref()
     }
 
     #[cfg(feature = "jsonl")]
@@ -286,27 +231,6 @@ impl ExporterConfig {
         self.sqlite.as_ref()
     }
 
-    #[cfg(feature = "duckdb")]
-    /// 获取 `DuckDB` 导出器配置
-    #[must_use]
-    pub fn duckdb(&self) -> Option<&DuckdbExporter> {
-        self.duckdb.as_ref()
-    }
-
-    #[cfg(feature = "postgres")]
-    /// 获取 `PostgreSQL` 导出器配置
-    #[must_use]
-    pub fn postgres(&self) -> Option<&PostgresExporter> {
-        self.postgres.as_ref()
-    }
-
-    #[cfg(feature = "dm")]
-    /// 获取 DM 导出器配置
-    #[must_use]
-    pub fn dm(&self) -> Option<&DmExporter> {
-        self.dm.as_ref()
-    }
-
     /// 检查是否有任何导出器配置
     #[must_use]
     pub fn has_exporters(&self) -> bool {
@@ -315,10 +239,6 @@ impl ExporterConfig {
         {
             found = found || self.csv.is_some();
         }
-        #[cfg(feature = "parquet")]
-        {
-            found = found || self.parquet.is_some();
-        }
         #[cfg(feature = "jsonl")]
         {
             found = found || self.jsonl.is_some();
@@ -326,18 +246,6 @@ impl ExporterConfig {
         #[cfg(feature = "sqlite")]
         {
             found = found || self.sqlite.is_some();
-        }
-        #[cfg(feature = "duckdb")]
-        {
-            found = found || self.duckdb.is_some();
-        }
-        #[cfg(feature = "postgres")]
-        {
-            found = found || self.postgres.is_some();
-        }
-        #[cfg(feature = "dm")]
-        {
-            found = found || self.dm.is_some();
         }
         found
     }
@@ -349,12 +257,6 @@ impl ExporterConfig {
         #[cfg(feature = "csv")]
         {
             if self.csv.is_some() {
-                count += 1;
-            }
-        }
-        #[cfg(feature = "parquet")]
-        {
-            if self.parquet.is_some() {
                 count += 1;
             }
         }
@@ -370,24 +272,6 @@ impl ExporterConfig {
                 count += 1;
             }
         }
-        #[cfg(feature = "duckdb")]
-        {
-            if self.duckdb.is_some() {
-                count += 1;
-            }
-        }
-        #[cfg(feature = "postgres")]
-        {
-            if self.postgres.is_some() {
-                count += 1;
-            }
-        }
-        #[cfg(feature = "dm")]
-        {
-            if self.dm.is_some() {
-                count += 1;
-            }
-        }
         count
     }
 
@@ -400,9 +284,7 @@ impl ExporterConfig {
         let total = self.total_exporters();
         if total > 1 {
             eprintln!("Warning: {total} exporters configured, but only one is supported.");
-            eprintln!(
-                "Will use the first exporter by priority: CSV > Parquet > JSONL > SQLite > DuckDB > PostgreSQL > DM"
-            );
+            eprintln!("Will use the first exporter by priority: CSV > JSONL > SQLite");
         }
 
         Ok(())
@@ -414,65 +296,10 @@ impl Default for ExporterConfig {
         Self {
             #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
-            #[cfg(feature = "parquet")]
-            parquet: Some(ParquetExporter::default()),
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
-        }
-    }
-}
-
-#[cfg(feature = "parquet")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct ParquetExporter {
-    /// Parquet 输出文件路径
-    pub file: String,
-    /// 是否覆盖已存在的文件
-    pub overwrite: bool,
-    /// 每个 row group 的行数
-    pub row_group_size: Option<usize>,
-    /// 是否启用字典编码
-    pub use_dictionary: Option<bool>,
-}
-
-#[cfg(feature = "parquet")]
-impl Default for ParquetExporter {
-    fn default() -> Self {
-        Self {
-            file: "export/sqllog2db.parquet".to_string(),
-            overwrite: true,
-            row_group_size: Some(100_000),
-            use_dictionary: Some(true),
-        }
-    }
-}
-
-#[cfg(feature = "csv")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct CsvExporter {
-    /// CSV 输出文件路径
-    pub file: String,
-    /// 是否覆盖已存在的文件
-    pub overwrite: bool,
-    /// 是否追加模式（暂未实现）
-    pub append: bool,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvExporter {
-    fn default() -> Self {
-        Self {
-            file: "outputs/sqllog.csv".to_string(),
-            overwrite: true,
-            append: false,
         }
     }
 }
@@ -527,123 +354,24 @@ impl Default for SqliteExporter {
     }
 }
 
-#[cfg(feature = "duckdb")]
+#[cfg(feature = "csv")]
 #[derive(Debug, Deserialize, Clone)]
-pub struct DuckdbExporter {
-    /// `DuckDB` 数据库文件路径
-    pub database_url: String,
-    /// 表名
-    #[serde(default = "default_table_name")]
-    pub table_name: String,
-    /// 是否覆盖已存在的表
-    #[serde(default = "default_true")]
+pub struct CsvExporter {
+    /// CSV 输出文件路径
+    pub file: String,
+    /// 是否覆盖已存在的文件
     pub overwrite: bool,
-    /// 是否追加模式
-    #[serde(default)]
+    /// 是否追加模式（暂未实现）
     pub append: bool,
 }
 
-#[cfg(feature = "duckdb")]
-impl Default for DuckdbExporter {
+#[cfg(feature = "csv")]
+impl Default for CsvExporter {
     fn default() -> Self {
         Self {
-            database_url: "export/sqllog2db.duckdb".to_string(),
-            table_name: "sqllog_records".to_string(),
+            file: "outputs/sqllog.csv".to_string(),
             overwrite: true,
             append: false,
-        }
-    }
-}
-
-#[cfg(feature = "postgres")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct PostgresExporter {
-    /// `PostgreSQL` 主机地址
-    #[serde(default = "default_postgres_host")]
-    pub host: String,
-    /// `PostgreSQL` 端口
-    #[serde(default = "default_postgres_port")]
-    pub port: u16,
-    /// 用户名
-    #[serde(default = "default_postgres_username")]
-    pub username: String,
-    /// 密码
-    pub password: String,
-    /// 数据库名
-    #[serde(default = "default_postgres_database")]
-    pub database: String,
-    /// Schema 名称
-    #[serde(default = "default_postgres_schema")]
-    pub schema: String,
-    /// 表名
-    #[serde(default = "default_table_name")]
-    pub table_name: String,
-    /// 是否覆盖已存在的表
-    #[serde(default = "default_true")]
-    pub overwrite: bool,
-    /// 是否追加模式
-    #[serde(default)]
-    pub append: bool,
-}
-
-#[cfg(feature = "postgres")]
-impl Default for PostgresExporter {
-    fn default() -> Self {
-        Self {
-            host: "localhost".to_string(),
-            port: 5432,
-            username: "postgres".to_string(),
-            password: "postgres".to_string(),
-            database: "sqllog".to_string(),
-            schema: "public".to_string(),
-            table_name: "sqllog_records".to_string(),
-            overwrite: true,
-            append: false,
-        }
-    }
-}
-
-#[cfg(feature = "postgres")]
-impl PostgresExporter {
-    /// 获取连接字符串
-    #[must_use]
-    pub fn connection_string(&self) -> String {
-        if self.password.is_empty() {
-            format!(
-                "host={} port={} user={} dbname={}",
-                self.host, self.port, self.username, self.database
-            )
-        } else {
-            format!(
-                "host={} port={} user={} password={} dbname={}",
-                self.host, self.port, self.username, self.password, self.database
-            )
-        }
-    }
-}
-
-#[cfg(feature = "dm")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct DmExporter {
-    /// DM 数据库连接字符串 (例如: SYSDBA/SYSDBA@localhost:5236)
-    pub userid: String,
-    /// 表名
-    #[serde(default = "default_table_name")]
-    pub table_name: String,
-    /// 控制文件路径
-    pub control_file: String,
-    /// 日志目录
-    pub log_dir: String,
-}
-
-#[cfg(feature = "dm")]
-impl Default for DmExporter {
-    fn default() -> Self {
-        Self {
-            userid: "SYSDBA/SYSDBA@localhost:5236".to_string(),
-            table_name: "sqllog_records".to_string(),
-            control_file: "export/sqllog.ctl".to_string(),
-            log_dir: "export/log".to_string(),
         }
     }
 }

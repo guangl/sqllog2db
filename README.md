@@ -7,7 +7,7 @@
 [![Release](https://img.shields.io/github/v/release/guangl/sqllog2db?style=flat-square&logo=github&logoColor=white&label=release)](https://github.com/guangl/sqllog2db/releases)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / Parquet / JSONL / SQLite / DuckDB / PostgreSQL / DM，并提供按行落盘的错误追踪。
+一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / JSONL / SQLite，并提供按行落盘的错误追踪。
 
 - **高性能**：单线程流式处理，~150万条/秒吞吐量（极致优化）
 - **稳健可靠**：批量导出 + 解析错误逐行落盘（便于追踪原始日志）
@@ -34,11 +34,10 @@
 ## 功能特性
 
 - **流式解析 SQL 日志**：单线程顺序处理，性能可预测（~150万条/秒）
-- **单导出目标（按优先级选择）**：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
+- **单导出目标（按优先级选择）**：csv > jsonl > sqlite
   - CSV（默认特性，16MB 缓冲优化）
-  - Parquet（可选特性，行组/内存优化，支持 `row_group_size` 与 `use_dictionary`）
   - JSONL（可选特性，轻量流式）
-  - SQLite / DuckDB / PostgreSQL / DM（可选特性）
+  - SQLite（可选特性）
 - **错误追踪**：解析失败逐条写入配置的错误日志文件（纯文本行，`文件|错误|原始片段|行号`），便于后续 grep/统计
 - **日志管理**：每日滚动、保留天数可配（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
@@ -77,15 +76,11 @@ cargo install --path .
 cargo build --release
 
 # 选择性启用
-cargo build --release --features parquet
 cargo build --release --features jsonl
 cargo build --release --features sqlite
-cargo build --release --features duckdb
-cargo build --release --features postgres
-cargo build --release --features dm
 
 # 启用多个
-cargo build --release --features "parquet jsonl sqlite"
+cargo build --release --features "jsonl sqlite"
 ```
 
 > 💡 提示：默认仅包含 CSV 导出，如需其他导出器请按需启用对应 feature。
@@ -159,7 +154,7 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
+# 同时配置多个时，按优先级使用：csv > jsonl > sqlite
 
 # 方案 1: csv 导出（默认）
 [exporter.csv]
@@ -167,53 +162,18 @@ file = "outputs/sqllog.csv"
 overwrite = true
 append = false
 
-# 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
-# [exporter.parquet]
-# file = "export/sqllog2db.parquet"
-# overwrite = true
-# row_group_size = 100000           # 每个 row group 的行数 (默认值)
-# use_dictionary = true             # 是否启用字典编码
-
-# 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
+# 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
 # file = "export/sqllog2db.jsonl"
 # overwrite = true
 # append = false
 
-# 方案 4: SQLite 数据库导出
+# 方案 3: SQLite 数据库导出
 # [exporter.sqlite]
 # database_url = "export/sqllog2db.db"
 # table_name = "sqllog_records"
 # overwrite = true
 # append = false
-
-# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
-# [exporter.duckdb]
-# database_url = "export/sqllog2db.duckdb"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 6: PostgreSQL 数据库导出
-# [exporter.postgres]
-# host = "localhost"
-# port = 5432
-# username = "postgres"
-# password = "postgres"
-# database = "sqllog"
-# schema = "public"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
-# [exporter.dm]
-# userid = "SYSDBA/DMDBA_hust4400@localhost:5236"
-# table_name = "sqllog_records"
-# control_file = "export/sqllog.ctl"
-# log_dir = "export/log"
-# overwrite = true
-# charset = "UTF-8"
 ```
 
 **配置说明：**
@@ -231,7 +191,7 @@ append = false
 ## 功能特性开关
 
 - **默认启用**：`csv`
-- **可选导出器**：`parquet`、`jsonl`、`sqlite`、`duckdb`、`postgres`、`dm`
+- **可选导出器**：`jsonl`、`sqlite`
 - **可选功能**：`replace_parameters`（SQL 参数占位符替换）
 
 编译示例：
@@ -241,10 +201,7 @@ append = false
 cargo build --release
 
 # 按需启用导出器
-cargo build --release --features parquet
 cargo build --release --features "jsonl sqlite"
-cargo build --release --features "duckdb postgres"
-cargo build --release --features dm
 
 # 启用参数替换功能
 cargo build --release --features replace_parameters
@@ -321,7 +278,7 @@ cargo bench --bench performance
 ## 常见问题 (FAQ)
 
 **Q: 支持哪些数据库导出格式？**
-A: CSV（默认）、Parquet、JSONL、SQLite、DuckDB、PostgreSQL、DM。除 CSV 外其他需编译时启用对应 feature。
+A: CSV（默认）、JSONL、SQLite。除 CSV 外其他需编译时启用对应 feature。
 
 **Q: 为什么只支持单个导出器？**
 A: 单导出器架构更简单、性能可预测、内存占用低。如需多格式可分多次运行。
@@ -339,7 +296,7 @@ A: 纯文本，每行格式为 `文件路径 | 错误原因 | 原始内容 | 行
 A: 当前版本不支持，需要自行管理已处理文件。未来版本可能添加。
 
 **Q: 如何提高导出速度？**
-A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）；3) 对于 Parquet 调整 `row_group_size`。
+A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）。
 
 ---
 
@@ -352,9 +309,8 @@ A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）；3) 对于 
 - **未生成导出文件**：
   - 确认 `sqllog.directory` 下是否存在 `.log` 文件
   - 查看应用日志与 `errors.json` 定位问题
-  - 检查是否配置了导出器（至少配置一个：CSV 或 Database）
+  - 检查是否配置了导出器（至少配置一个：CSV 或 SQLite）
 - **数据库导出失败**：
-  - 检查 `database_type` 是否为 `sqlite`
   - 确保编译时已启用 `sqlite` 特性
   - 验证数据库文件路径及父目录可写
 - **配置迁移问题**：
@@ -375,7 +331,7 @@ A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）；3) 对于 
 - 日志解析：[dm-database-parser-sqllog](https://crates.io/crates/dm-database-parser-sqllog)
 - CLI 框架：[clap](https://crates.io/crates/clap)
 - 日志系统：[log](https://crates.io/crates/log)
-- 序列化：[serde](https://crates.io/crates/serde) + [serde_json](https://crates.io/crates/serde_json)
+- 序列化：[serde](https://crates.io/crates/serde)
 - 数据库（可选）：[rusqlite](https://crates.io/crates/rusqlite)
 
 感谢 Rust 社区提供的优秀生态系统。

@@ -185,7 +185,7 @@ fn test_file_write_failed() {
     assert!(error_msg.contains("write") || error_msg.contains("Write"));
 }
 
-#[cfg(any(feature = "sqlite", feature = "duckdb", feature = "postgres"))]
+#[cfg(feature = "sqlite")]
 #[test]
 fn test_database_error() {
     let error = ExportError::DatabaseError {
@@ -193,27 +193,4 @@ fn test_database_error() {
     };
     let error_msg = format!("{error}");
     assert!(error_msg.contains("Database") || error_msg.contains("database"));
-}
-
-#[cfg(feature = "dm")]
-#[test]
-fn test_io_error() {
-    let error = ExportError::IoError {
-        path: PathBuf::from("data.log"),
-        reason: "read failed".to_string(),
-    };
-    let error_msg = format!("{error}");
-    assert!(error_msg.contains("IO") || error_msg.contains("io"));
-}
-
-#[cfg(feature = "dm")]
-#[test]
-fn test_external_tool_error() {
-    let error = ExportError::ExternalToolError {
-        tool: "sqlloader".to_string(),
-        reason: "not found".to_string(),
-    };
-    let error_msg = format!("{error}");
-    assert!(error_msg.contains("External") || error_msg.contains("external"));
-    assert!(error_msg.contains("sqlloader"));
 }

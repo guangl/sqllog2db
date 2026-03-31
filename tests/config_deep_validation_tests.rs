@@ -161,18 +161,10 @@ fn test_exporter_config_validate_no_exporters() {
     let config = ExporterConfig {
         #[cfg(feature = "csv")]
         csv: None,
-        #[cfg(feature = "parquet")]
-        parquet: None,
         #[cfg(feature = "jsonl")]
         jsonl: None,
         #[cfg(feature = "sqlite")]
         sqlite: None,
-        #[cfg(feature = "duckdb")]
-        duckdb: None,
-        #[cfg(feature = "postgres")]
-        postgres: None,
-        #[cfg(feature = "dm")]
-        dm: None,
     };
     assert!(config.validate().is_err());
 }
@@ -298,18 +290,10 @@ fn test_config_validation_fails_on_no_exporters() {
         exporter: ExporterConfig {
             #[cfg(feature = "csv")]
             csv: None,
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         },
     };
 

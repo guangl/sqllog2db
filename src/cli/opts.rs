@@ -6,7 +6,7 @@ use clap_complete::{Shell, generate};
 #[command(
     name = "sqllog2db",
     version,
-    about = "Parse DM database SQL logs and export to CSV/Parquet/JSONL/SQLite/DuckDB/PostgreSQL/DM",
+    about = "Parse DM database SQL logs and export to CSV/JSONL/SQLite",
     long_about = "A lightweight and efficient CLI tool for parsing DM database SQL logs (streaming) and exporting to multiple formats with error tracking."
 )]
 pub struct Cli {

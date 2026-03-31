@@ -3,8 +3,6 @@
 use dm_database_sqllog2db::config::CsvExporter;
 #[cfg(feature = "jsonl")]
 use dm_database_sqllog2db::config::JsonlExporter;
-#[cfg(feature = "parquet")]
-use dm_database_sqllog2db::config::ParquetExporter;
 
 // ==================== CsvExporter Creation Tests ====================
 
@@ -131,23 +129,6 @@ fn test_jsonl_exporter_append_mode() {
 
     assert!(!exporter.overwrite);
     assert!(exporter.append);
-}
-
-// ==================== ParquetExporter Tests ====================
-
-#[cfg(feature = "parquet")]
-#[test]
-fn test_parquet_exporter_new() {
-    let exporter = ParquetExporter {
-        file: "output.parquet".to_string(),
-        overwrite: false,
-        row_group_size: Some(1024),
-        use_dictionary: Some(true),
-    };
-
-    assert_eq!(exporter.file, "output.parquet");
-    assert_eq!(exporter.row_group_size, Some(1024));
-    assert_eq!(exporter.use_dictionary, Some(true));
 }
 
 // ==================== Multiple Exporter Configurations ====================

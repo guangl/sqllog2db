@@ -10,32 +10,16 @@ use log::info;
 
 #[cfg(feature = "csv")]
 pub mod csv;
-#[cfg(feature = "dm")]
-pub mod dm;
-#[cfg(feature = "duckdb")]
-pub mod duckdb;
 #[cfg(feature = "jsonl")]
 pub mod jsonl;
-#[cfg(feature = "parquet")]
-pub mod parquet;
-#[cfg(feature = "postgres")]
-pub mod postgres;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 mod util;
 
 #[cfg(feature = "csv")]
 pub use csv::CsvExporter;
-#[cfg(feature = "dm")]
-pub use dm::DmExporter;
-#[cfg(feature = "duckdb")]
-pub use duckdb::DuckdbExporter;
 #[cfg(feature = "jsonl")]
 pub use jsonl::JsonlExporter;
-#[cfg(feature = "parquet")]
-pub use parquet::ParquetExporter;
-#[cfg(feature = "postgres")]
-pub use postgres::PostgresExporter;
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteExporter;
 
@@ -118,7 +102,7 @@ impl ExporterManager {
     pub fn from_config(config: &Config) -> Result<Self> {
         info!("Initializing exporter manager...");
 
-        // 优先级：CSV > Parquet > JSONL > SQLite > DM
+        // 优先级：CSV > JSONL > SQLite
 
         // 1. 尝试创建 CSV 导出器
         #[cfg(feature = "csv")]
@@ -130,17 +114,7 @@ impl ExporterManager {
             });
         }
 
-        // 2. 尝试创建 Parquet 导出器
-        #[cfg(feature = "parquet")]
-        if let Some(parquet_config) = config.exporter.parquet() {
-            let parquet_exporter = ParquetExporter::from_config(parquet_config);
-            info!("Using Parquet exporter: {}", parquet_config.file);
-            return Ok(Self {
-                exporter: Box::new(parquet_exporter),
-            });
-        }
-
-        // 3. 尝试创建 JSONL 导出器
+        // 2. 尝试创建 JSONL 导出器
         #[cfg(feature = "jsonl")]
         if let Some(jsonl_config) = config.exporter.jsonl() {
             let jsonl_exporter = JsonlExporter::from_config(jsonl_config);
@@ -150,43 +124,13 @@ impl ExporterManager {
             });
         }
 
-        // 4. 尝试创建 SQLite 导出器
+        // 3. 尝试创建 SQLite 导出器
         #[cfg(feature = "sqlite")]
         if let Some(sqlite_config) = config.exporter.sqlite() {
             let sqlite_exporter = SqliteExporter::from_config(sqlite_config);
             info!("Using SQLite exporter: {}", sqlite_config.database_url);
             return Ok(Self {
                 exporter: Box::new(sqlite_exporter),
-            });
-        }
-
-        // 5. 尝试创建 DuckDB 导出器
-        #[cfg(feature = "duckdb")]
-        if let Some(duckdb_config) = config.exporter.duckdb() {
-            let duckdb_exporter = DuckdbExporter::from_config(duckdb_config);
-            info!("Using DuckDB exporter: {}", duckdb_config.database_url);
-            return Ok(Self {
-                exporter: Box::new(duckdb_exporter),
-            });
-        }
-
-        // 6. 尝试创建 PostgreSQL 导出器
-        #[cfg(feature = "postgres")]
-        if let Some(postgres_config) = config.exporter.postgres() {
-            let postgres_exporter = PostgresExporter::from_config(postgres_config);
-            info!("Using PostgreSQL exporter");
-            return Ok(Self {
-                exporter: Box::new(postgres_exporter),
-            });
-        }
-
-        // 7. 尝试创建 DM 导出器
-        #[cfg(feature = "dm")]
-        if let Some(dm_config) = config.exporter.dm() {
-            let dm_exporter = DmExporter::from_config(dm_config);
-            info!("Using DM exporter: {}", dm_config.userid);
-            return Ok(Self {
-                exporter: Box::new(dm_exporter),
             });
         }
 

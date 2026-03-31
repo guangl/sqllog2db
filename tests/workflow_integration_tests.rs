@@ -58,18 +58,10 @@ mod full_workflow_tests {
                     overwrite: true,
                     append: false,
                 }),
-                #[cfg(feature = "parquet")]
-                parquet: None,
                 #[cfg(feature = "jsonl")]
                 jsonl: None,
                 #[cfg(feature = "sqlite")]
                 sqlite: None,
-                #[cfg(feature = "duckdb")]
-                duckdb: None,
-                #[cfg(feature = "postgres")]
-                postgres: None,
-                #[cfg(feature = "dm")]
-                dm: None,
             },
         };
 
@@ -124,18 +116,10 @@ mod full_workflow_tests {
                     overwrite: false,
                     append: true,
                 }),
-                #[cfg(feature = "parquet")]
-                parquet: None,
                 #[cfg(feature = "jsonl")]
                 jsonl: None,
                 #[cfg(feature = "sqlite")]
                 sqlite: None,
-                #[cfg(feature = "duckdb")]
-                duckdb: None,
-                #[cfg(feature = "postgres")]
-                postgres: None,
-                #[cfg(feature = "dm")]
-                dm: None,
             },
         };
 
@@ -292,18 +276,10 @@ mod full_workflow_tests {
                     overwrite: true,
                     append: false,
                 }),
-                #[cfg(feature = "parquet")]
-                parquet: None,
                 #[cfg(feature = "jsonl")]
                 jsonl: None,
                 #[cfg(feature = "sqlite")]
                 sqlite: None,
-                #[cfg(feature = "duckdb")]
-                duckdb: None,
-                #[cfg(feature = "postgres")]
-                postgres: None,
-                #[cfg(feature = "dm")]
-                dm: None,
             },
         };
 

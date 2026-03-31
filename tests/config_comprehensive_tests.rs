@@ -247,7 +247,7 @@ fn test_csv_exporter_with_complex_filename() {
 
 #[test]
 fn test_exporter_config_with_single_csv() {
-    #[cfg(all(feature = "csv", not(any(feature = "parquet", feature = "jsonl"))))]
+    #[cfg(all(feature = "csv", not(any(feature = "jsonl"))))]
     {
         let exporter_config = ExporterConfig {
             csv: Some(CsvExporter {
@@ -255,18 +255,10 @@ fn test_exporter_config_with_single_csv() {
                 overwrite: false,
                 append: false,
             }),
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         };
         assert!(exporter_config.validate().is_ok());
     }
@@ -280,18 +272,10 @@ fn test_exporter_config_with_single_csv() {
                 overwrite: false,
                 append: false,
             }),
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         };
         assert!(exporter_config.validate().is_ok());
     }
@@ -302,18 +286,10 @@ fn test_exporter_config_no_exporters() {
     let exporter_config = ExporterConfig {
         #[cfg(feature = "csv")]
         csv: None,
-        #[cfg(feature = "parquet")]
-        parquet: None,
         #[cfg(feature = "jsonl")]
         jsonl: None,
         #[cfg(feature = "sqlite")]
         sqlite: None,
-        #[cfg(feature = "duckdb")]
-        duckdb: None,
-        #[cfg(feature = "postgres")]
-        postgres: None,
-        #[cfg(feature = "dm")]
-        dm: None,
     };
     assert!(exporter_config.validate().is_err());
 }
@@ -328,8 +304,6 @@ fn test_exporter_config_multiple_exporters() {
                 overwrite: false,
                 append: false,
             }),
-            #[cfg(feature = "parquet")]
-            parquet: None,
             jsonl: Some(JsonlExporter {
                 file: "output.jsonl".to_string(),
                 overwrite: false,
@@ -337,12 +311,6 @@ fn test_exporter_config_multiple_exporters() {
             }),
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         };
         assert!(exporter_config.validate().is_ok());
     }
@@ -398,18 +366,10 @@ fn test_config_validate_minimal_config() {
                 overwrite: false,
                 append: false,
             }),
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         },
     };
 
@@ -439,18 +399,10 @@ fn test_config_validate_fails_with_invalid_log_level_simple() {
                 overwrite: false,
                 append: false,
             }),
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         },
     };
 

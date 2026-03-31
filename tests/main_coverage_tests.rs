@@ -171,18 +171,10 @@ fn test_exporter_config_has_exporters_check() {
     let config_without = ExporterConfig {
         #[cfg(feature = "csv")]
         csv: None,
-        #[cfg(feature = "parquet")]
-        parquet: None,
         #[cfg(feature = "jsonl")]
         jsonl: None,
         #[cfg(feature = "sqlite")]
         sqlite: None,
-        #[cfg(feature = "duckdb")]
-        duckdb: None,
-        #[cfg(feature = "postgres")]
-        postgres: None,
-        #[cfg(feature = "dm")]
-        dm: None,
     };
     assert!(!config_without.has_exporters());
 }
@@ -295,18 +287,10 @@ fn test_config_validation_with_invalid_exporter() {
         exporter: ExporterConfig {
             #[cfg(feature = "csv")]
             csv: None,
-            #[cfg(feature = "parquet")]
-            parquet: None,
             #[cfg(feature = "jsonl")]
             jsonl: None,
             #[cfg(feature = "sqlite")]
             sqlite: None,
-            #[cfg(feature = "duckdb")]
-            duckdb: None,
-            #[cfg(feature = "postgres")]
-            postgres: None,
-            #[cfg(feature = "dm")]
-            dm: None,
         },
     };
 

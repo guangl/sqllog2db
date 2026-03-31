@@ -252,18 +252,10 @@ append = false
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
                 csv: None,
-                #[cfg(feature = "parquet")]
-                parquet: None,
                 #[cfg(feature = "jsonl")]
                 jsonl: None,
                 #[cfg(feature = "sqlite")]
                 sqlite: None,
-                #[cfg(feature = "duckdb")]
-                duckdb: None,
-                #[cfg(feature = "postgres")]
-                postgres: None,
-                #[cfg(feature = "dm")]
-                dm: None,
             },
         };
 

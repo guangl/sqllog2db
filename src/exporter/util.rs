@@ -1,8 +1,8 @@
-#[cfg(any(feature = "csv", feature = "parquet", feature = "jsonl"))]
+#[cfg(any(feature = "csv", feature = "jsonl"))]
 use std::{fs, io, path::Path};
 
 /// Saturating cast from f32 milliseconds to i64 milliseconds without precision-loss warnings
-#[cfg(any(feature = "csv", feature = "parquet"))]
+#[cfg(feature = "csv")]
 #[must_use]
 pub fn f32_ms_to_i64(ms: f32) -> i64 {
     if !ms.is_finite() {
@@ -30,7 +30,7 @@ pub fn f32_ms_to_i64(ms: f32) -> i64 {
 }
 
 /// 确保输出文件的父目录存在
-#[cfg(any(feature = "csv", feature = "parquet", feature = "jsonl"))]
+#[cfg(any(feature = "csv", feature = "jsonl"))]
 pub fn ensure_parent_dir(path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.exists()) {
         fs::create_dir_all(parent)?;

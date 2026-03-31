@@ -88,7 +88,7 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
+# 同时配置多个时，按优先级使用：csv > jsonl > sqlite
 
 # 方案 1: csv 导出（默认）
 [exporter.csv]
@@ -96,53 +96,18 @@ file = "outputs/sqllog.csv"
 overwrite = true
 append = false
 
-# 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
-# [exporter.parquet]
-# file = "export/sqllog2db.parquet"
-# overwrite = true
-# row_group_size = 100000           # 每个 row group 的行数 (默认)
-# use_dictionary = true             # 是否启用字典编码
-
-# 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
+# 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
 # file = "export/sqllog2db.jsonl"
 # overwrite = true
 # append = false
 
-# 方案 4: SQLite 数据库导出
+# 方案 3: SQLite 数据库导出
 # [exporter.sqlite]
 # database_url = "export/sqllog2db.db"
 # table_name = "sqllog_records"
 # overwrite = true
 # append = false
-
-# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
-# [exporter.duckdb]
-# database_url = "export/sqllog2db.duckdb"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 6: PostgreSQL 数据库导出
-# [exporter.postgres]
-# host = "localhost"
-# port = 5432
-# username = "postgres"
-# password = "postgres"
-# database = "sqllog"
-# schema = "public"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
-# [exporter.dm]
-# userid = "SYSDBA/SYSDBA@localhost:5236"
-# table_name = "sqllog_records"
-# control_file = "export/sqllog.ctl"
-# log_dir = "export/log"
-# overwrite = true
-# charset = "UTF-8"
 
 "#;
 
