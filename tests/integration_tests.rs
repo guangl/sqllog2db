@@ -2,9 +2,9 @@
 #[cfg(test)]
 mod integration_tests {
     use dm_database_sqllog2db::config::{
-        ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
-        ReplaceParametersFeature, SqllogConfig,
+        ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig, SqllogConfig,
     };
+    use dm_database_sqllog2db::features::ReplaceParametersFeature;
     use dm_database_sqllog2db::parser::SqllogParser;
 
     #[test]

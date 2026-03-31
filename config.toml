@@ -20,10 +20,41 @@ retention_days = 7
 [features.filters]
 # 是否启用过滤器
 enable = true
-# 过滤指定的事务 ID (可选，默认为空表示不过滤)
-# trxids = ["44805597"]
-# 过滤指定的执行 ID (可选，关联事务过滤，即保留包含该执行 ID 的整个事务)
-exec_ids = [361175317, 361174410]
+
+# --- 元数据过滤器 (Record-level: 满足任一条件即保留该条记录) ---
+# 过滤时间范围 (格式：2023-01-01 00:00:00)
+start_ts = "2025-12-26 13:56:46"
+end_ts = "2025-12-26 13:56:47"
+# 过滤指定的会话 ID
+# sess_ids = ["0x7f41435437a8"]
+# 过滤指定的线程 ID (支持模糊匹配)
+# thrd_ids = ["2188515"]
+# 过滤指定的事务 ID
+# trxids = ["44805597", "12507101"]
+# 过滤指定的客户端 IP (支持模糊匹配)
+# client_ips = ["10.73.64.33"]
+# 过滤指定的用户名 (支持模糊匹配)
+# usernames = ["MAZGZ1"]
+# 过滤指定的语句类型 (支持模糊匹配)
+# statements = ["INS", "UPD", "DEL"]
+# 过滤指定的应用名称 (支持模糊匹配)
+# appnames = ["DMSQL"]
+
+# --- 指标过滤器 (Transaction-level: 满足条件则保留包含该语句的整个事务 - 需要预扫描) ---
+[features.filters.indicators]
+# 过滤指定的执行 ID (保留整个事务)
+# exec_ids = [257809109, 257809110]
+# 过滤最小执行时长 (毫秒)
+# min_runtime_ms = 1000
+# 过滤最小影响行数
+# min_row_count = 100
+
+# --- SQL 过滤器 (Transaction-level: 满足模式则保留整个事务 - 需要预扫描) ---
+[features.filters.sql]
+# 包含模式列表 (SQL 包含任一模式则匹配)
+# include_patterns = ["FROM USER_TABLES", "DELETE FROM"]
+# 排除模式列表 (SQL 包含任一模式则剔除)
+# exclude_patterns = ["SELECT 1", "DUAL"]
 
 [features.replace_parameters]
 enable = false
@@ -31,7 +62,7 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
+# 同时配置多个时，按优先级使用：csv > jsonl > sqlite
 
 # 方案 1: csv 导出（默认）
 # [exporter.csv]
@@ -39,50 +70,15 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # overwrite = true
 # append = false
 
-# 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
-# [exporter.parquet]
-# file = "export/sqllog2db.parquet"
-# overwrite = true
-# row_group_size = 100000           # 每个 row group 的行数 (默认)
-# use_dictionary = true             # 是否启用字典编码
-
-# 方案 3: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
+# 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
 # file = "export/sqllog2db.jsonl"
 # overwrite = true
 # append = false
 
-# 方案 4: SQLite 数据库导出
+# 方案 3: SQLite 数据库导出
 [exporter.sqlite]
 database_url = "export/sqllog2db.db"
 table_name = "sqllog_records"
 overwrite = true
 append = false
-
-# 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
-# [exporter.duckdb]
-# database_url = "export/sqllog2db.duckdb"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 6: PostgreSQL 数据库导出
-# [exporter.postgres]
-# host = "localhost"
-# port = 5432
-# username = "postgres"
-# password = "postgres"
-# database = "sqllog"
-# schema = "public"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
-
-# 方案 7: DM 数据库导出（使用 dmfldr 命令行工具）
-# [exporter.dm]
-# userid = "SYSDBA/SYSDBA@localhost:5236"
-# table_name = "sqllog_records"
-# control_file = "export/sqllog.ctl"
-# log_dir = "export/log"
-# overwrite = true
-# charset = "UTF-8"

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-01
+
+### Added
+- **时间范围过滤**：支持 `start_ts` 和 `end_ts` 过滤字段，允许按 SQL 日志的时间戳范围进行过滤。
+- **配置结构优化**：将过滤相关的元数据字段平铺到 `[features.filters]` 下，简化了 `config.toml` 的编写。
+- **智能过滤启用**：当检测到任何过滤器配置时，程序将自动应用过滤逻辑，不再强制要求 `enable = true`。
+
+### Fixed
+- **时间戳比较优化**：改进了 `ts` 过滤的字符串比较逻辑，支持毫秒级的精确匹配与范围包含。
+- **配置解析健壮性**：为配置结构增加了更多默认值，防止因缺少非必填字段导致的解析失败。
+- **代码质量**：修复了多处 Clippy 警告，包括冗余闭包和字段初始化优化。
+
 ## [0.3.1] - 2026-04-01
 
 ### Added
@@ -225,5 +237,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release artifacts 附带 SHA256 校验文件
 
 [0.1.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.1.0
+[0.3.2]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.2
 [0.3.1]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.1
 [0.3.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.0

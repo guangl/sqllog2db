@@ -1,7 +1,6 @@
 use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
-#[allow(unused_imports)]
-pub use crate::features::{FeaturesConfig, FiltersFeature, ReplaceParametersFeature};
+pub use crate::features::{FeaturesConfig, FiltersFeature};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,6 @@ fn default_table_name() -> String {
 }
 
 /// 默认 true 值
-#[cfg(feature = "sqlite")]
 fn default_true() -> bool {
     true
 }
@@ -113,7 +111,12 @@ impl SqllogConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ErrorConfig {
     /// 错误日志输出文件路径
+    #[serde(default = "default_error_file")]
     pub file: String,
+}
+
+fn default_error_file() -> String {
+    "export/errors.log".to_string()
 }
 
 impl ErrorConfig {
@@ -135,10 +138,20 @@ impl Default for ErrorConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct LoggingConfig {
     /// 应用日志输出文件路径
+    #[serde(default = "default_logging_file")]
     pub file: String,
+    #[serde(default = "default_logging_level")]
     pub level: String,
     #[serde(default = "default_retention_days")]
     pub retention_days: usize,
+}
+
+fn default_logging_file() -> String {
+    "logs/sqllog2db.log".to_string()
+}
+
+fn default_logging_level() -> String {
+    "info".to_string()
 }
 
 fn default_retention_days() -> usize {
@@ -310,8 +323,10 @@ pub struct JsonlExporter {
     /// JSONL 输出文件路径
     pub file: String,
     /// 是否覆盖已存在的文件
+    #[serde(default = "default_true")]
     pub overwrite: bool,
     /// 是否追加模式
+    #[serde(default)]
     pub append: bool,
 }
 
@@ -360,8 +375,10 @@ pub struct CsvExporter {
     /// CSV 输出文件路径
     pub file: String,
     /// 是否覆盖已存在的文件
+    #[serde(default = "default_true")]
     pub overwrite: bool,
     /// 是否追加模式（暂未实现）
+    #[serde(default)]
     pub append: bool,
 }
 

@@ -143,8 +143,6 @@ retention_days = 7
 
 [features.filters]
 enable = true
-
-[features.filters.meta]
 trxids = ["2002"]
 
 [features.filters.indicators]

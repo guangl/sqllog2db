@@ -1,6 +1,7 @@
 //! 更深入的配置验证测试，覆盖更多边界情况
 #![allow(clippy::needless_update)]
 use dm_database_sqllog2db::config::*;
+use dm_database_sqllog2db::features::ReplaceParametersFeature;
 use std::fs;
 use std::path::PathBuf;
 

@@ -60,8 +60,6 @@ retention_days = 7
 
 [features.filters]
 enable = true
-
-[features.filters.meta]
 trxids = ["101", "103"]
 
 [exporter.csv]

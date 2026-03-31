@@ -7,7 +7,7 @@ pub struct FiltersFeature {
     /// 是否启用过滤器
     pub enable: bool,
     /// 元数据过滤器 (记录级: 只要命中其中一个就保留该记录 - OR 逻辑)
-    #[serde(default)]
+    #[serde(flatten)]
     pub meta: MetaFilters,
     /// 指标过滤器 (事务级: 命中即保留整笔事务 - 需要预扫描)
     #[serde(default)]
@@ -20,6 +20,8 @@ pub struct FiltersFeature {
 /// 元数据过滤器 (Record-level)
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct MetaFilters {
+    pub start_ts: Option<String>,
+    pub end_ts: Option<String>,
     pub sess_ids: Option<Vec<String>>,
     pub thrd_ids: Option<Vec<String>>,
     pub usernames: Option<Vec<String>>,
@@ -28,10 +30,6 @@ pub struct MetaFilters {
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
-    /// 开始时间 (格式：2023-01-01 00:00:00)
-    pub start_ts: Option<String>,
-    /// 结束时间 (格式：2023-01-01 23:59:59)
-    pub end_ts: Option<String>,
 }
 
 /// 指标过滤器 (Transaction-level)
@@ -52,17 +50,28 @@ pub struct SqlFilters {
 impl FiltersFeature {
     pub fn validate() {}
 
+    /// 检查是否配置了任何过滤器
+    #[must_use]
+    pub fn has_filters(&self) -> bool {
+        self.meta.start_ts.is_some()
+            || self.meta.end_ts.is_some()
+            || self.meta.has_filters()
+            || self.indicators.has_filters()
+            || self.sql.has_filters()
+    }
+
     /// 检查是否提供了需要预扫描的过滤器 (Transaction-level)
     #[must_use]
     pub fn has_transaction_filters(&self) -> bool {
-        if !self.enable {
+        // 如果未开启过滤器功能，则不执行预扫描
+        if !self.enable && !self.has_filters() {
             return false;
         }
         self.indicators.has_filters() || self.sql.has_filters()
     }
 
     /// 检查记录是否应该被保留
-    /// 逻辑：(满足元数据过滤) OR (属于被选中的事务)
+    /// 逻辑：(满足时间过滤) AND ( (没有任何其他过滤) OR (满足任一元数据过滤) OR (属于被选中的事务) )
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn should_keep(
@@ -77,23 +86,42 @@ impl FiltersFeature {
         app: &str,
         tag: Option<&str>,
     ) -> bool {
-        if !self.enable {
+        // 如果未配置任何过滤器，保留所有记录
+        if !self.has_filters() {
             return true;
         }
 
-        // 如果开启了过滤器功能，但没有任何具体的过滤项配置，保留所有记录。
-        if !self.meta.has_filters() && !self.indicators.has_filters() && !self.sql.has_filters() {
+        // 如果配置了过滤器但未明确启用，且有配置项，我们就执行过滤
+        if !self.enable && !self.has_filters() {
             return true;
         }
 
-        // Meta 过滤 (Record-level)
+        // 1. 时间范围过滤 (AND 逻辑: 如果配置了时间，必须通过时间检查)
+        if let Some(start) = &self.meta.start_ts {
+            if ts < start.as_str() && !ts.starts_with(start.as_str()) {
+                return false;
+            }
+        }
+        if let Some(end) = &self.meta.end_ts {
+            if ts > end.as_str() && !ts.starts_with(end.as_str()) {
+                return false;
+            }
+        }
+
+        // 2. 元数据过滤 (OR 逻辑: 在通过时间过滤的前提下，如果配置了元数据过滤，需命中其中之一)
+        // 注意：如果 meta.has_filters() 为 false，说明只有时间过滤器或指标过滤器，
+        // 既然已经通过了时间过滤（如果有的话），且没有其他元数据要求，则暂且保留（指标过滤由后续逻辑或 merge_found_trxids 处理）
+        if !self.meta.has_filters() {
+            return true;
+        }
+
         self.meta
             .should_keep(ts, trxid, ip, sess, thrd, user, stmt, app, tag)
     }
 
     /// 合并预扫描发现的事务 ID 到 `MetaFilters` 中，以便在正式扫描时直接通过 trxid 匹配保留整笔事务
     pub fn merge_found_trxids(&mut self, trxids: Vec<String>) {
-        if !self.enable || trxids.is_empty() {
+        if (!self.enable && !self.has_filters()) || trxids.is_empty() {
             return;
         }
         let current = self.meta.trxids.take().unwrap_or_default();
@@ -116,15 +144,13 @@ impl MetaFilters {
             || self.statements.as_ref().is_some_and(|v| !v.is_empty())
             || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
             || self.tags.as_ref().is_some_and(|v| !v.is_empty())
-            || self.start_ts.is_some()
-            || self.end_ts.is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn should_keep(
         &self,
-        ts: &str,
+        _ts: &str,
         trxid: &str,
         ip: &str,
         sess: &str,
@@ -134,33 +160,7 @@ impl MetaFilters {
         app: &str,
         tag: Option<&str>,
     ) -> bool {
-        // 时间范围过滤
-        if let Some(start) = &self.start_ts {
-            if ts < start.as_str() {
-                return false;
-            }
-        }
-        if let Some(end) = &self.end_ts {
-            if ts > end.as_str() {
-                return false;
-            }
-        }
-
-        // 如果只有时间过滤器且已经通过，且没有其他过滤器，则保留
-        let has_other_filters = self.trxids.as_ref().is_some_and(|v| !v.is_empty())
-            || self.client_ips.as_ref().is_some_and(|v| !v.is_empty())
-            || self.sess_ids.as_ref().is_some_and(|v| !v.is_empty())
-            || self.thrd_ids.as_ref().is_some_and(|v| !v.is_empty())
-            || self.usernames.as_ref().is_some_and(|v| !v.is_empty())
-            || self.statements.as_ref().is_some_and(|v| !v.is_empty())
-            || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
-            || self.tags.as_ref().is_some_and(|v| !v.is_empty());
-
-        if !has_other_filters {
-            return true;
-        }
-
-        // OR 逻辑：命中任何一个已定义的列表即保留
+        // OR 逻辑：命中任何一个已定义的列表即保留 (前提是已通过时间过滤)
         Self::match_list(self.trxids.as_ref(), trxid, true)
             || Self::match_list(self.client_ips.as_ref(), ip, false)
             || Self::match_list(self.sess_ids.as_ref(), sess, false)

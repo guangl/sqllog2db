@@ -1,10 +1,15 @@
-use dm_database_sqllog2db::features::FiltersFeature;
+use dm_database_sqllog2db::features::{FiltersFeature, MetaFilters};
 
 #[test]
 fn test_filter_by_tag() {
-    let mut filters = FiltersFeature::default();
-    filters.enable = true;
-    filters.meta.tags = Some(vec!["IMPORTANT".to_string()]);
+    let filters = FiltersFeature {
+        enable: true,
+        meta: MetaFilters {
+            tags: Some(vec!["IMPORTANT".to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     // Test with matching tag
     assert!(filters.should_keep(
@@ -48,9 +53,14 @@ fn test_filter_by_tag() {
 
 #[test]
 fn test_filter_with_multiple_tags() {
-    let mut filters = FiltersFeature::default();
-    filters.enable = true;
-    filters.meta.tags = Some(vec!["IMPORTANT".to_string(), "CRITICAL".to_string()]);
+    let filters = FiltersFeature {
+        enable: true,
+        meta: MetaFilters {
+            tags: Some(vec!["IMPORTANT".to_string(), "CRITICAL".to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
 
     assert!(filters.should_keep(
         "2023-01-01 10:00:00",

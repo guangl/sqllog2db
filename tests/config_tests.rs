@@ -1,5 +1,6 @@
 /// Configuration module tests
 use dm_database_sqllog2db::config::*;
+use dm_database_sqllog2db::features::ReplaceParametersFeature;
 
 // ==================== SqllogConfig Tests ====================
 

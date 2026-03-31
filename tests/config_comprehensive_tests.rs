@@ -1,5 +1,6 @@
 /// Comprehensive configuration module tests with edge cases and validators
 use dm_database_sqllog2db::config::*;
+use dm_database_sqllog2db::features::ReplaceParametersFeature;
 use std::path::PathBuf;
 
 // ==================== SqllogConfig Advanced Tests ====================

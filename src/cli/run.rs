@@ -1,7 +1,6 @@
 use crate::error::{Error, Result};
 use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
-use crate::features::FiltersFeature;
 use crate::parser::SqllogParser;
 use crate::{config::Config, error::ParserError};
 use dm_database_parser_sqllog::LogParser;
@@ -39,24 +38,21 @@ fn process_log_file(
             Ok(record) => {
                 // 应用过滤器
                 let meta = record.parse_meta();
-                if !cfg
-                    .features
-                    .filters
-                    .as_ref()
-                    .is_none_or(|f: &FiltersFeature| {
-                        f.should_keep(
-                            record.ts.as_ref(),
-                            &meta.trxid,
-                            &meta.client_ip,
-                            &meta.sess_id,
-                            &meta.thrd_id,
-                            &meta.username,
-                            &meta.statement,
-                            &meta.appname,
-                            record.tag.as_deref(),
-                        )
-                    })
-                {
+                let should_keep = cfg.features.filters.as_ref().is_none_or(|f| {
+                    f.should_keep(
+                        record.ts.as_ref(),
+                        &meta.trxid,
+                        &meta.client_ip,
+                        &meta.sess_id,
+                        &meta.thrd_id,
+                        &meta.username,
+                        &meta.statement,
+                        &meta.appname,
+                        record.tag.as_deref(),
+                    )
+                });
+
+                if !should_keep {
                     continue;
                 }
 
@@ -107,7 +103,7 @@ fn scan_log_file_for_trxids(
     };
 
     let filters = match &cfg.features.filters {
-        Some(f) if f.enable => f,
+        Some(f) if f.has_transaction_filters() => f,
         _ => return,
     };
 
