@@ -48,6 +48,8 @@ retention_days = 7
 enable = false
 # 过滤指定的事务 ID (可选，默认为空表示不过滤)
 # trxids = ["257809109", "257809110"]
+# 过滤指定的执行 ID (可选，关联事务过滤，即保留包含该执行 ID 的整个事务)
+# exec_ids = [257809109, 257809110]
 
 [features.replace_parameters]
 enable = false

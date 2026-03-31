@@ -155,11 +155,19 @@ pub struct FiltersFeature {
     pub enable: bool,
     /// 过滤事务 ID 列表
     pub trxids: Option<Vec<String>>,
+    /// 过滤执行 ID 列表 (关联事务过滤)
+    pub exec_ids: Option<Vec<i64>>,
 }
 
 impl FiltersFeature {
     /// 验证过滤器配置
     pub fn validate() {}
+
+    /// 检查是否提供了执行 ID 过滤
+    #[must_use]
+    pub fn has_exec_id_filters(&self) -> bool {
+        self.enable && self.exec_ids.as_ref().is_some_and(|ids| !ids.is_empty())
+    }
 
     /// 检查是否应该保留该事务 ID
     #[must_use]
@@ -174,6 +182,20 @@ impl FiltersFeature {
             return trxids.iter().any(|id| id == trxid);
         }
         true
+    }
+
+    /// 合并额外的事务 ID
+    pub fn merge_trxids(&mut self, extra_trxids: Vec<String>) {
+        if extra_trxids.is_empty() {
+            return;
+        }
+        let mut current = self.trxids.take().unwrap_or_default();
+        for id in extra_trxids {
+            if !current.contains(&id) {
+                current.push(id);
+            }
+        }
+        self.trxids = Some(current);
     }
 }
 

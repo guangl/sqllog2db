@@ -18,9 +18,12 @@ level = "info"
 retention_days = 7
 
 [features.filters]
+# 是否启用过滤器
 enable = true
 # 过滤指定的事务 ID (可选，默认为空表示不过滤)
-trxids = ["44805597"]
+# trxids = ["44805597"]
+# 过滤指定的执行 ID (可选，关联事务过滤，即保留包含该执行 ID 的整个事务)
+exec_ids = [361175317, 361174410]
 
 [features.replace_parameters]
 enable = false
@@ -31,10 +34,10 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # 同时配置多个时，按优先级使用：csv > parquet > jsonl > sqlite > duckdb > postgres > dm
 
 # 方案 1: csv 导出（默认）
-[exporter.csv]
-file = "outputs/sqllog.csv"
-overwrite = true
-append = false
+# [exporter.csv]
+# file = "outputs/sqllog.csv"
+# overwrite = true
+# append = false
 
 # 方案 2: Parquet 导出（使用时注释掉上面的导出器,启用下面的 Parquet）
 # [exporter.parquet]
@@ -50,11 +53,11 @@ append = false
 # append = false
 
 # 方案 4: SQLite 数据库导出
-# [exporter.sqlite]
-# database_url = "export/sqllog2db.db"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
+[exporter.sqlite]
+database_url = "export/sqllog2db.db"
+table_name = "sqllog_records"
+overwrite = true
+append = false
 
 # 方案 5: DuckDB 数据库导出（分析型数据库，高性能）
 # [exporter.duckdb]

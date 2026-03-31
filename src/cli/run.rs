@@ -5,6 +5,7 @@ use crate::parser::SqllogParser;
 use crate::{config::Config, error::ParserError};
 use dm_database_parser_sqllog::LogParser;
 use log::{info, warn};
+use std::collections::HashSet;
 use std::time::Instant;
 
 /// 处理单个日志文件，带进度统计
@@ -100,6 +101,84 @@ fn process_log_file(
     Ok(())
 }
 
+/// 预扫描单个日志文件以寻找匹配执行 ID 的事务 ID
+fn scan_log_file_for_trxids(
+    file_path: &str,
+    remaining_exec_ids: &mut HashSet<i64>,
+    found_trxids: &mut HashSet<String>,
+) {
+    let Ok(parser) = LogParser::from_path(file_path) else {
+        return;
+    };
+
+    for result in parser.iter().flatten() {
+        if let Some(ind) = result.parse_indicators() {
+            if remaining_exec_ids.contains(&ind.execute_id) {
+                let meta = result.parse_meta();
+                found_trxids.insert(meta.trxid.to_string());
+                remaining_exec_ids.remove(&ind.execute_id);
+
+                // 如果当前文件已经找齐了所有需要的 exec_id，提前结束当前文件解析
+                if remaining_exec_ids.is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// 预扫描所有日志文件
+fn scan_for_trxids_by_exec_ids(log_files: &[std::path::PathBuf], cfg: &Config) -> HashSet<String> {
+    let mut found_trxids = HashSet::new();
+    let mut remaining_exec_ids: HashSet<i64> = cfg
+        .features
+        .filters
+        .as_ref()
+        .and_then(|f| f.exec_ids.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+
+    if remaining_exec_ids.is_empty() {
+        return found_trxids;
+    }
+
+    let total = log_files.len();
+    eprintln!(
+        "Pre-scanning {total} files for {} exec_id(s)...",
+        remaining_exec_ids.len()
+    );
+
+    for (idx, log_file) in log_files.iter().enumerate() {
+        let file_path_str = log_file.to_string_lossy();
+        if idx % 10 == 0 || idx + 1 == total {
+            eprintln!(
+                "  [{}/{total}] Scanning: {file_path_str} (remaining: {})",
+                idx + 1,
+                remaining_exec_ids.len()
+            );
+        }
+
+        scan_log_file_for_trxids(&file_path_str, &mut remaining_exec_ids, &mut found_trxids);
+
+        // 如果所有执行 ID 都已找到对应的事务 ID，则提前结束所有文件的预扫描
+        if remaining_exec_ids.is_empty() {
+            eprintln!("  [Done] All target exec_ids found.");
+            break;
+        }
+    }
+
+    if !remaining_exec_ids.is_empty() {
+        warn!("Could not find trxid for some exec_ids: {remaining_exec_ids:?}");
+    }
+
+    eprintln!(
+        "Found {} unique trxid(s) matching exec_id filters",
+        found_trxids.len()
+    );
+    found_trxids
+}
+
 /// 运行日志导出任务（单线程、单导出器架构）
 pub fn handle_run(cfg: &Config) -> Result<()> {
     // 记录总体开始时间
@@ -111,31 +190,44 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     let parser = SqllogParser::new(cfg.sqllog.directory());
     info!("SQL log input directory: {}", parser.path().display());
 
-    // 第二步：创建导出器管理器（单个导出器）
-    let mut exporter_manager = ExporterManager::from_config(cfg)?;
-    info!("Using exporter: {}", exporter_manager.name());
-
-    // 第三步：创建错误日志记录器
-    let mut error_logger = ErrorLogger::new(cfg.error.file())?;
-
-    // 第四步：初始化导出器
-    info!("Initializing exporters...");
-    exporter_manager.initialize()?;
-
-    // 第五步：解析 SQL 日志（流式）并导出
-    info!("Parsing and exporting SQL logs (streaming)...");
-
-    // 获取所有日志文件
+    // 第二步：获取所有日志文件
     let log_files = parser.log_files()?;
 
     if log_files.is_empty() {
         warn!("No log files found");
-        exporter_manager.finalize()?;
-        error_logger.finalize()?;
         return Ok(());
     }
 
     info!("Found {} log file(s)", log_files.len());
+
+    // 第三步：如果启用了执行 ID 过滤，进行预扫描
+    let mut final_cfg = cfg.clone();
+    let has_exec_filters = cfg
+        .features
+        .filters
+        .as_ref()
+        .is_some_and(crate::config::FiltersFeature::has_exec_id_filters);
+
+    if has_exec_filters {
+        let extra_trxids = scan_for_trxids_by_exec_ids(&log_files, cfg);
+        if let Some(f) = &mut final_cfg.features.filters {
+            f.merge_trxids(extra_trxids.into_iter().collect());
+        }
+    }
+
+    // 第四步：创建导出器管理器（单个导出器）
+    let mut exporter_manager = ExporterManager::from_config(&final_cfg)?;
+    info!("Using exporter: {}", exporter_manager.name());
+
+    // 第五步：创建错误日志记录器
+    let mut error_logger = ErrorLogger::new(final_cfg.error.file())?;
+
+    // 第六步：初始化导出器
+    info!("Initializing exporters...");
+    exporter_manager.initialize()?;
+
+    // 第七步：解析 SQL 日志（流式）并导出
+    info!("Parsing and exporting SQL logs (streaming)...");
 
     // 处理所有日志文件
     for (idx, log_file) in log_files.iter().enumerate() {
@@ -146,15 +238,15 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
             log_files.len(),
             &mut exporter_manager,
             &mut error_logger,
-            cfg,
+            &final_cfg,
         )?;
     }
 
-    // 第六步：完成导出
+    // 第八步：完成导出
     info!("Export finished...");
     exporter_manager.finalize()?;
 
-    // 第七步：完成错误日志记录
+    // 第九步：完成错误日志记录
     error_logger.finalize()?;
 
     // 计算总耗时
