@@ -1,6 +1,6 @@
 [package]
 name = "dm-database-sqllog2db"
-version = "0.2.5"
+version = "0.2.7"
 edition = "2024"
 rust-version = "1.85"
 authors = ["guangl <guangl@example.com>"]
@@ -63,6 +63,7 @@ rusqlite = { version = "0.37.0", features = [
 ], optional = true }
 duckdb = { version = "1.4.3", features = ["bundled"], optional = true }
 postgres = { version = "0.19.12", optional = true }
+self_update = "0.43.1"
 
 [features]
 # 默认保持当前行为：启用 CSV 已实现的文件型数据库导出器
@@ -88,6 +89,7 @@ missing_debug_implementations = "warn"
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 cargo = { level = "warn", priority = -1 }
+multiple_crate_versions = "allow"
 missing_errors_doc = "allow"
 module_name_repetitions = "allow"
 type_complexity = "allow"

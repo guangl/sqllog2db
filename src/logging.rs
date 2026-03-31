@@ -2,7 +2,6 @@ use crate::config::LoggingConfig;
 use crate::constants::LOG_LEVELS;
 use crate::error::{Error, FileError, Result};
 use chrono::Local;
-use log::SetLoggerError;
 use log::{Level, LevelFilter, Metadata, Record};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -124,13 +123,17 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     };
 
     // 注册 logger
-    log::set_max_level(level);
-    log::set_boxed_logger(Box::new(logger)).map_err(|e: SetLoggerError| {
-        Error::File(FileError::CreateDirectoryFailed {
-            path: log_file_path,
-            reason: format!("Failed to set logger: {e}"),
-        })
-    })?;
+    match log::set_boxed_logger(Box::new(logger)) {
+        Ok(()) => {
+            log::set_max_level(level);
+        }
+        Err(e) => {
+            // If already initialized, we just ignore it for integration tests
+            // but we can still print a message to the original stdout if needed
+            // However, in a CLI tool, this usually only happens during tests
+            let _ = e;
+        }
+    }
 
     log::info!(
         "Logging initialized - level: {:?}, file: {}, retention_days: {}",

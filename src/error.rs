@@ -29,9 +29,25 @@ pub enum Error {
     #[error("Export error: {0}")]
     Export(#[from] ExportError),
 
+    /// Update error
+    #[error("Update error: {0}")]
+    Update(#[from] UpdateError),
+
     /// IO error
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+}
+
+/// 更新错误
+#[derive(Debug, Error)]
+pub enum UpdateError {
+    /// Update failed
+    #[error("Update failed: {0}")]
+    UpdateFailed(String),
+
+    /// Check for updates failed
+    #[error("Check for updates failed: {0}")]
+    CheckFailed(String),
 }
 
 /// 配置错误
