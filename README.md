@@ -194,22 +194,28 @@ append = false
 
 - **默认启用**：`csv`
 - **可选导出器**：`jsonl`、`sqlite`
-- **可选功能**：`replace_parameters`（SQL 参数占位符替换）
+- **可选功能**：
+  - `filters`：SQL 记录级（元数据）与事务级（执行ID/时长/行数）过滤
+  - `replace_parameters`：SQL 参数占位符替换（依赖 `anyhow`）
+  - `full`：启用所有特性（包含所有导出器和功能模块）
 
 编译示例：
 
 ```powershell
-# 默认构建（仅 CSV）
+# 默认构建（仅 CSV，不含过滤与参数替换模块）
 cargo build --release
 
-# 按需启用导出器
-cargo build --release --features "jsonl sqlite"
+# 启用 CSV 导出 + 过滤器功能
+cargo build --release --features filters
 
-# 启用参数替换功能
-cargo build --release --features replace_parameters
+# 启用所有导出器与功能
+cargo build --release --features full
+
+# 按需启用
+cargo build --release --features "sqlite filters replace_parameters"
 ```
 
-> 💡 **体积优化提示**：只启用必要的导出器特性，可以让二进制更小。
+> 💡 **体积优化提示**：默认不再强制编译过滤器和参数替换模块。只启用必要的特性，可以让二进制体积进一步缩小。
 
 ---
 
