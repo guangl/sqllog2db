@@ -70,7 +70,6 @@ mod complete_export_workflow_tests {
         // Step 1: Validate config
         assert!(config.validate().is_ok());
         assert_eq!(config.sqllog.directory(), "target/test_outputs");
-        assert!(!config.features.should_replace_sql_parameters());
 
         // Step 2: Create manager
         let manager = ExporterManager::from_config(&config);

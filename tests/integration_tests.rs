@@ -1,10 +1,11 @@
 /// 集成测试 - 测试配置加载、解析和导出流程
 #[cfg(test)]
 mod integration_tests {
+    #[cfg(feature = "filters")]
+    use dm_database_sqllog2db::config::FiltersFeature;
     use dm_database_sqllog2db::config::{
-        ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig, SqllogConfig,
+        ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig, SqllogConfig,
     };
-    use dm_database_sqllog2db::features::ReplaceParametersFeature;
     use dm_database_sqllog2db::parser::SqllogParser;
 
     #[test]
@@ -182,58 +183,10 @@ mod integration_tests {
     #[test]
     fn test_features_config_creation() {
         // 测试 FeaturesConfig 创建
-        let config = FeaturesConfig {
-            replace_parameters: None,
+        let _config = FeaturesConfig {
+            #[cfg(feature = "filters")]
             filters: Some(FiltersFeature::default()),
         };
-
-        assert!(!config.should_replace_sql_parameters());
-    }
-
-    #[test]
-    fn test_features_config_with_replace_parameters_disabled() {
-        // 测试禁用参数替换的 FeaturesConfig
-        let config = FeaturesConfig {
-            replace_parameters: Some(ReplaceParametersFeature {
-                enable: false,
-                symbols: None,
-            }),
-            filters: Some(FiltersFeature::default()),
-        };
-
-        assert!(!config.should_replace_sql_parameters());
-    }
-
-    #[test]
-    fn test_features_config_with_replace_parameters_enabled() {
-        // 测试启用参数替换的 FeaturesConfig
-        let config = FeaturesConfig {
-            replace_parameters: Some(ReplaceParametersFeature {
-                enable: true,
-                symbols: None,
-            }),
-            filters: Some(FiltersFeature::default()),
-        };
-
-        assert!(config.should_replace_sql_parameters());
-    }
-
-    #[test]
-    fn test_features_config_with_replace_parameters_enabled_with_symbols() {
-        // 测试启用参数替换且带符号的 FeaturesConfig
-        let config = FeaturesConfig {
-            replace_parameters: Some(ReplaceParametersFeature {
-                enable: true,
-                symbols: Some(vec!["?".to_string(), ":".to_string()]),
-            }),
-            filters: Some(FiltersFeature::default()),
-        };
-
-        assert!(config.should_replace_sql_parameters());
-        if let Some(feature) = &config.replace_parameters {
-            assert!(feature.symbols.is_some());
-            assert_eq!(feature.symbols.as_ref().unwrap().len(), 2);
-        }
     }
 
     #[test]

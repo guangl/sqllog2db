@@ -2,8 +2,7 @@
 #[cfg(test)]
 mod exporter_and_logging_tests {
     use dm_database_sqllog2db::config::{
-        CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
-        SqllogConfig,
+        CsvExporter, ErrorConfig, ExporterConfig, LoggingConfig, SqllogConfig,
     };
     use dm_database_sqllog2db::constants::LOG_LEVELS;
 
@@ -85,11 +84,6 @@ mod exporter_and_logging_tests {
             retention_days: 7,
         };
 
-        let features = FeaturesConfig {
-            replace_parameters: None,
-            filters: Some(FiltersFeature::default()),
-        };
-
         let exporter = ExporterConfig {
             #[cfg(feature = "csv")]
             csv: None,
@@ -103,7 +97,6 @@ mod exporter_and_logging_tests {
         assert_eq!(sqllog.directory(), "sqllogs");
         assert_eq!(error.file(), "export/errors.log");
         assert_eq!(logging.file(), "logs/app.log");
-        assert!(!features.should_replace_sql_parameters());
         assert!(!exporter.has_exporters());
     }
 

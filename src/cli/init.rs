@@ -82,10 +82,6 @@ enable = false
 # 排除模式列表 (SQL 包含任一模式则剔除)
 # exclude_patterns = ["SELECT 1", "DUAL"]
 
-[features.replace_parameters]
-enable = false
-symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
-
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
 # 同时配置多个时，按优先级使用：csv > jsonl > sqlite

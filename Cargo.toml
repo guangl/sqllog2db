@@ -70,11 +70,10 @@ jsonl = ["dep:serde_json"]
 sqlite = ["dep:rusqlite", "dep:tempfile", "csv"]
 
 # 其他功能特性开关
-replace_parameters = ["dep:anyhow"]
 filters = []
 
 # 全量特性 (方便测试或一键启用)
-full = ["csv", "jsonl", "sqlite", "replace_parameters", "filters"]
+full = ["csv", "jsonl", "sqlite", "filters"]
 
 
 [lints.rust]

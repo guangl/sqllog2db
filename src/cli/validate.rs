@@ -12,22 +12,6 @@ pub fn handle_validate(cfg: &Config) {
     info!("日志保留: {} 天", cfg.logging.retention_days());
     info!("错误日志: {}", cfg.error.file());
 
-    info!(
-        "Feature flags - replace SQL params: {}",
-        if cfg.features.should_replace_sql_parameters() {
-            "启用"
-        } else {
-            "禁用"
-        },
-    );
-
-    #[cfg(feature = "replace_parameters")]
-    if let Some(rp) = &cfg.features.replace_parameters
-        && let Some(symbols) = &rp.symbols
-    {
-        info!("SQL参数占位符样式: {symbols:?}");
-    }
-
     #[cfg(feature = "filters")]
     if let Some(f) = &cfg.features.filters {
         info!(

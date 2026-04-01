@@ -1,6 +1,5 @@
 /// Configuration module tests
 use dm_database_sqllog2db::config::*;
-use dm_database_sqllog2db::features::ReplaceParametersFeature;
 
 // ==================== SqllogConfig Tests ====================
 
@@ -184,44 +183,7 @@ fn test_logging_config_validate_retention_valid_max() {
 
 #[test]
 fn test_features_config_default() {
-    let config = FeaturesConfig::default();
-    assert!(!config.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_features_config_replace_parameters_disabled() {
-    let config = FeaturesConfig {
-        replace_parameters: Some(ReplaceParametersFeature {
-            enable: false,
-            symbols: None,
-        }),
-        filters: Some(FiltersFeature::default()),
-    };
-    assert!(!config.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_features_config_replace_parameters_enabled() {
-    let config = FeaturesConfig {
-        replace_parameters: Some(ReplaceParametersFeature {
-            enable: true,
-            symbols: None,
-        }),
-        filters: Some(FiltersFeature::default()),
-    };
-    assert!(config.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_features_config_replace_parameters_enabled_with_symbols() {
-    let config = FeaturesConfig {
-        replace_parameters: Some(ReplaceParametersFeature {
-            enable: true,
-            symbols: Some(vec!["?".to_string(), "$".to_string()]),
-        }),
-        filters: Some(FiltersFeature::default()),
-    };
-    assert!(config.should_replace_sql_parameters());
+    let _config = FeaturesConfig::default();
 }
 
 // ==================== CSV Exporter Config Tests ====================

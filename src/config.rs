@@ -28,6 +28,7 @@ pub struct Config {
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
+    #[warn(dead_code)]
     pub features: FeaturesConfig,
     #[serde(default)]
     pub exporter: ExporterConfig,

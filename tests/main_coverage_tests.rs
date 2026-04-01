@@ -116,40 +116,7 @@ append = true
     fs::write(&config_path, content).expect("Failed to write config");
 
     let config = Config::from_file(&config_path).unwrap();
-    assert!(!config.features.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_config_with_replace_parameters_enabled() {
-    let test_dir = setup_test_dir("replace_enabled");
-    let config_path = test_dir.join("config.toml");
-
-    let content = r#"
-[sqllog]
-directory = "logs"
-
-[error]
-file = "errors.log"
-
-[logging]
-file = "app.log"
-level = "info"
-retention_days = 7
-
-[features.replace_parameters]
-enable = true
-symbols = ["?", ":"]
-
-[exporter.csv]
-file = "out.csv"
-overwrite = true
-append = false
-"#;
-
-    fs::write(&config_path, content).expect("Failed to write config");
-
-    let config = Config::from_file(&config_path).unwrap();
-    assert!(config.features.should_replace_sql_parameters());
+    assert!(config.validate().is_ok());
 }
 
 #[test]
@@ -203,8 +170,7 @@ fn test_exporter_config_csv_accessor() {
 fn test_features_config_default() {
     use dm_database_sqllog2db::config::FeaturesConfig;
 
-    let features = FeaturesConfig::default();
-    assert!(!features.should_replace_sql_parameters());
+    let _features = FeaturesConfig::default();
 }
 
 #[test]

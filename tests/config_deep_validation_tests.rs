@@ -1,7 +1,8 @@
 //! 更深入的配置验证测试，覆盖更多边界情况
 #![allow(clippy::needless_update)]
 use dm_database_sqllog2db::config::*;
-use dm_database_sqllog2db::features::ReplaceParametersFeature;
+#[cfg(feature = "filters")]
+use dm_database_sqllog2db::features::FiltersFeature;
 use std::fs;
 use std::path::PathBuf;
 
@@ -302,43 +303,12 @@ fn test_config_validation_fails_on_no_exporters() {
 }
 
 #[test]
-fn test_replace_parameters_feature_enabled() {
-    let feature = ReplaceParametersFeature {
-        enable: true,
-        symbols: None,
-    };
-
+#[cfg(feature = "filters")]
+fn test_features_config_filters() {
     let config = FeaturesConfig {
-        replace_parameters: Some(feature),
         filters: Some(FiltersFeature::default()),
     };
-
-    assert!(config.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_replace_parameters_feature_disabled() {
-    let feature = ReplaceParametersFeature {
-        enable: false,
-        symbols: None,
-    };
-
-    let config = FeaturesConfig {
-        replace_parameters: Some(feature),
-        filters: Some(FiltersFeature::default()),
-    };
-
-    assert!(!config.should_replace_sql_parameters());
-}
-
-#[test]
-fn test_replace_parameters_feature_none() {
-    let config = FeaturesConfig {
-        replace_parameters: None,
-        filters: Some(FiltersFeature::default()),
-    };
-
-    assert!(!config.should_replace_sql_parameters());
+    assert!(config.filters.is_some());
 }
 
 #[test]
@@ -368,9 +338,6 @@ file = "test_app.log"
 level = "debug"
 retention_days = 14
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "test_output.csv"
 overwrite = true
@@ -395,7 +362,6 @@ fn test_config_default_values() {
     assert_eq!(config.logging.file(), "logs/sqllog2db.log");
     assert_eq!(config.logging.level(), "info");
     assert_eq!(config.logging.retention_days(), 7);
-    assert!(!config.features.should_replace_sql_parameters());
 }
 
 #[test]
@@ -420,7 +386,5 @@ fn test_logging_config_default() {
 
 #[test]
 fn test_features_config_default() {
-    let config = FeaturesConfig::default();
-    assert!(!config.should_replace_sql_parameters());
-    assert!(config.replace_parameters.is_none());
+    let _config = FeaturesConfig::default();
 }

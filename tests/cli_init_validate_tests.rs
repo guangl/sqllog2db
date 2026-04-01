@@ -18,9 +18,6 @@ file = "logs/sqllog2db.log"
 level = "info"
 retention_days = 7
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "outputs/sqllog.csv"
 overwrite = true
@@ -144,10 +141,6 @@ append = false
         assert!(
             content.contains("[logging]"),
             "Should contain [logging] section"
-        );
-        assert!(
-            content.contains("[features.replace_parameters]"),
-            "Should contain [features.replace_parameters] section"
         );
         assert!(
             content.contains("[exporter.csv]"),

@@ -1,9 +1,11 @@
 /// 完整流程集成测试 - 模拟实际的应用程序执行
 #[cfg(test)]
 mod full_workflow_tests {
+    #[cfg(feature = "filters")]
+    use dm_database_sqllog2db::config::FiltersFeature;
     use dm_database_sqllog2db::config::{
-        Config, CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature,
-        LoggingConfig, SqllogConfig,
+        Config, CsvExporter, ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig,
+        SqllogConfig,
     };
     use dm_database_sqllog2db::exporter::{Exporter, ExporterManager};
     use dm_database_sqllog2db::parser::SqllogParser;
@@ -48,7 +50,7 @@ mod full_workflow_tests {
                 retention_days: 7,
             },
             features: FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {
@@ -106,7 +108,7 @@ mod full_workflow_tests {
                 retention_days: 14,
             },
             features: FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {
@@ -266,7 +268,7 @@ mod full_workflow_tests {
                 retention_days: 7,
             },
             features: FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
             },
             exporter: ExporterConfig {

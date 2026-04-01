@@ -21,7 +21,7 @@ mod cli_integration_tests {
                 retention_days: 7,
             },
             features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
@@ -63,9 +63,6 @@ file = "app.log"
 level = "info"
 retention_days = 7
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "output.csv"
 overwrite = true
@@ -106,7 +103,7 @@ append = false
                 retention_days: 7,
             },
             features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
@@ -147,7 +144,7 @@ append = false
                 retention_days: 7,
             },
             features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
@@ -182,7 +179,7 @@ append = false
                 retention_days: 7,
             },
             features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
@@ -222,9 +219,6 @@ file = "error.log"
 file = "app.log"
 level = "{level}"
 retention_days = 7
-
-[features.replace_parameters]
-enable = false
 
 [exporter.csv]
 file = "output.csv"
@@ -271,9 +265,6 @@ file = "app.log"
 level = "info"
 retention_days = 7
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "output.csv"
 overwrite = true
@@ -290,40 +281,6 @@ append = false
 
         // Clean up
         let _ = fs::remove_dir_all(test_dir);
-    }
-
-    /// Test feature flag configuration
-    #[test]
-    #[cfg(feature = "csv")]
-    fn test_config_feature_flags() {
-        let config = Config {
-            sqllog: dm_database_sqllog2db::config::SqllogConfig {
-                directory: "sqllogs".to_string(),
-            },
-            error: dm_database_sqllog2db::config::ErrorConfig {
-                file: "errors.log".to_string(),
-            },
-            logging: dm_database_sqllog2db::config::LoggingConfig {
-                file: "app.log".to_string(),
-                level: "info".to_string(),
-                retention_days: 7,
-            },
-            features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
-                filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
-            },
-            exporter: dm_database_sqllog2db::config::ExporterConfig {
-                csv: Some(dm_database_sqllog2db::config::CsvExporter {
-                    file: "output.csv".to_string(),
-                    overwrite: true,
-                    append: false,
-                }),
-                ..Default::default()
-            },
-        };
-
-        // Test default feature state
-        assert!(!config.features.should_replace_sql_parameters());
     }
 
     /// Test all config fields are populated correctly
@@ -343,7 +300,7 @@ append = false
                 retention_days: 14,
             },
             features: dm_database_sqllog2db::config::FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
@@ -385,9 +342,6 @@ file = "app.log"
 level = "info"
 retention_days = 0
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "output.csv"
 overwrite = true
@@ -423,9 +377,6 @@ file = "error_{i}.log"
 file = "app_{i}.log"
 level = "info"
 retention_days = 7
-
-[features.replace_parameters]
-enable = false
 
 [exporter.csv]
 file = "output_{i}.csv"

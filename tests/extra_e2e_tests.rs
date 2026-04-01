@@ -93,9 +93,6 @@ file = "app.log"
 level = "invalid_level_xyz"
 retention_days = 7
 
-[features.replace_parameters]
-enable = false
-
 [exporter.csv]
 file = "output.csv"
 overwrite = true

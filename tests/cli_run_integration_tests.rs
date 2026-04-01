@@ -343,7 +343,6 @@ mod cli_run_integration_tests {
         assert_eq!(config.sqllog.directory(), "sqllogs");
         assert_eq!(config.logging.level(), "info");
         assert_eq!(config.logging.retention_days(), 7);
-        assert!(!config.features.should_replace_sql_parameters());
     }
 
     /// 测试 CLI 中的配置验证链

@@ -1,3 +1,4 @@
+#![cfg(feature = "filters")]
 use dm_database_sqllog2db::features::{FiltersFeature, MetaFilters};
 
 #[test]

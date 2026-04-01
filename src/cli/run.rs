@@ -231,6 +231,7 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     info!("Found {} log file(s)", log_files.len());
 
     // 第三步：如果启用了事务级过滤 (indicators/sql)，进行预扫描
+    #[allow(unused_mut)]
     let mut final_cfg = cfg.clone();
 
     #[cfg(feature = "filters")]

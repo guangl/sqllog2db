@@ -29,9 +29,10 @@ mod main_integration_tests {
     /// 测试无效的配置验证（无导出器）
     #[test]
     fn test_invalid_config_no_exporters() {
+        #[cfg(feature = "filters")]
+        use dm_database_sqllog2db::config::FiltersFeature;
         use dm_database_sqllog2db::config::{
-            ErrorConfig, ExporterConfig, FeaturesConfig, FiltersFeature, LoggingConfig,
-            SqllogConfig,
+            ErrorConfig, ExporterConfig, FeaturesConfig, LoggingConfig, SqllogConfig,
         };
 
         let config = Config {
@@ -47,7 +48,7 @@ mod main_integration_tests {
                 retention_days: 7,
             },
             features: FeaturesConfig {
-                replace_parameters: None,
+                #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
             },
 
