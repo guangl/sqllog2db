@@ -21,13 +21,24 @@ pub fn handle_validate(cfg: &Config) {
         },
     );
 
+    #[cfg(feature = "replace_parameters")]
     if let Some(rp) = &cfg.features.replace_parameters
         && let Some(symbols) = &rp.symbols
     {
         info!("SQL参数占位符样式: {symbols:?}");
     }
 
-    // 导出配置（只支持单个导出器）
+    #[cfg(feature = "filters")]
+    if let Some(f) = &cfg.features.filters {
+        info!(
+            "Feature flags - filters: {}",
+            if f.enable {
+                "启用"
+            } else {
+                "配置但未明确启用"
+            }
+        );
+    }
     if let Some(csv) = &cfg.exporter.csv {
         info!(
             "CSV export: {} (overwrite: {})",

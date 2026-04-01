@@ -1,6 +1,8 @@
 use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
-pub use crate::features::{FeaturesConfig, FiltersFeature};
+pub use crate::features::FeaturesConfig;
+#[cfg(feature = "filters")]
+pub use crate::features::FiltersFeature;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 

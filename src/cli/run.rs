@@ -5,6 +5,7 @@ use crate::parser::SqllogParser;
 use crate::{config::Config, error::ParserError};
 use dm_database_parser_sqllog::LogParser;
 use log::{info, warn};
+#[cfg(feature = "filters")]
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -15,7 +16,7 @@ fn process_log_file(
     total_files: usize,
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
-    cfg: &Config,
+    #[allow(unused_variables)] cfg: &Config,
 ) -> Result<()> {
     let file_start = Instant::now();
     eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
@@ -37,8 +38,9 @@ fn process_log_file(
         match result {
             Ok(record) => {
                 // 应用过滤器
-                let meta = record.parse_meta();
+                #[cfg(feature = "filters")]
                 let should_keep = cfg.features.filters.as_ref().is_none_or(|f| {
+                    let meta = record.parse_meta();
                     f.should_keep(
                         record.ts.as_ref(),
                         &meta.trxid,
@@ -51,6 +53,9 @@ fn process_log_file(
                         record.tag.as_deref(),
                     )
                 });
+
+                #[cfg(not(feature = "filters"))]
+                let should_keep = true;
 
                 if !should_keep {
                     continue;
@@ -91,6 +96,7 @@ fn process_log_file(
     Ok(())
 }
 
+#[cfg(feature = "filters")]
 /// 预扫描单个日志文件以寻找匹配过滤条件的事务 ID (Transaction-level)
 fn scan_log_file_for_trxids(
     file_path: &str,
@@ -146,6 +152,7 @@ fn scan_log_file_for_trxids(
     }
 }
 
+#[cfg(feature = "filters")]
 /// 预扫描所有日志文件
 fn scan_for_trxids_by_transaction_filters(
     log_files: &[std::path::PathBuf],
@@ -225,16 +232,20 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
 
     // 第三步：如果启用了事务级过滤 (indicators/sql)，进行预扫描
     let mut final_cfg = cfg.clone();
-    let has_transaction_filters = cfg
-        .features
-        .filters
-        .as_ref()
-        .is_some_and(crate::config::FiltersFeature::has_transaction_filters);
 
-    if has_transaction_filters {
-        let extra_trxids = scan_for_trxids_by_transaction_filters(&log_files, cfg);
-        if let Some(f) = &mut final_cfg.features.filters {
-            f.merge_found_trxids(extra_trxids.into_iter().collect());
+    #[cfg(feature = "filters")]
+    {
+        let has_transaction_filters = cfg
+            .features
+            .filters
+            .as_ref()
+            .is_some_and(crate::config::FiltersFeature::has_transaction_filters);
+
+        if has_transaction_filters {
+            let extra_trxids = scan_for_trxids_by_transaction_filters(&log_files, cfg);
+            if let Some(f) = &mut final_cfg.features.filters {
+                f.merge_found_trxids(extra_trxids.into_iter().collect());
+            }
         }
     }
 
