@@ -53,6 +53,9 @@ impl FiltersFeature {
     /// 检查是否配置了任何过滤器
     #[must_use]
     pub fn has_filters(&self) -> bool {
+        if !self.enable {
+            return false;
+        }
         self.meta.start_ts.is_some()
             || self.meta.end_ts.is_some()
             || self.meta.has_filters()
@@ -64,7 +67,7 @@ impl FiltersFeature {
     #[must_use]
     pub fn has_transaction_filters(&self) -> bool {
         // 如果未开启过滤器功能，则不执行预扫描
-        if !self.enable && !self.has_filters() {
+        if !self.enable {
             return false;
         }
         self.indicators.has_filters() || self.sql.has_filters()
@@ -86,13 +89,8 @@ impl FiltersFeature {
         app: &str,
         tag: Option<&str>,
     ) -> bool {
-        // 如果未配置任何过滤器，保留所有记录
-        if !self.has_filters() {
-            return true;
-        }
-
-        // 如果配置了过滤器但未明确启用，且有配置项，我们就执行过滤
-        if !self.enable && !self.has_filters() {
+        // 如果未明确启用或未配置任何过滤器，保留所有记录
+        if !self.enable || !self.has_filters() {
             return true;
         }
 

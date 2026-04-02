@@ -40,6 +40,9 @@ fn process_log_file(
                 // 应用过滤器
                 #[cfg(feature = "filters")]
                 let should_keep = cfg.features.filters.as_ref().is_none_or(|f| {
+                    if !f.has_filters() {
+                        return true;
+                    }
                     let meta = record.parse_meta();
                     f.should_keep(
                         record.ts.as_ref(),

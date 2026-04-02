@@ -19,22 +19,22 @@ retention_days = 7
 
 [features.filters]
 # 是否启用过滤器
-enable = true
+enable = false
 
 # --- 元数据过滤器 (Record-level: 满足任一条件即保留该条记录) ---
+# 过滤指定的事务 ID
+# trxids = ["257809109", "257809110"]
+# 过滤指定的客户端 IP (支持模糊匹配)
+# client_ips = ["127.0.0.1", "192.168"]
+# 过滤指定的用户名 (支持模糊匹配)
+# usernames = ["SYSDBA"]
 # 过滤时间范围 (格式：2023-01-01 00:00:00)
-start_ts = "2025-12-26 13:56:46"
-end_ts = "2025-12-26 13:56:47"
-# 过滤指定的会话 ID
+# start_ts = "2023-01-01 00:00:00"
+# end_ts = "2023-01-01 23:59:59"
+# 过滤指定的会话 ID (支持模糊匹配)
 # sess_ids = ["0x7f41435437a8"]
 # 过滤指定的线程 ID (支持模糊匹配)
 # thrd_ids = ["2188515"]
-# 过滤指定的事务 ID
-# trxids = ["44805597", "12507101"]
-# 过滤指定的客户端 IP (支持模糊匹配)
-# client_ips = ["10.73.64.33"]
-# 过滤指定的用户名 (支持模糊匹配)
-# usernames = ["MAZGZ1"]
 # 过滤指定的语句类型 (支持模糊匹配)
 # statements = ["INS", "UPD", "DEL"]
 # 过滤指定的应用名称 (支持模糊匹配)
@@ -56,19 +56,15 @@ end_ts = "2025-12-26 13:56:47"
 # 排除模式列表 (SQL 包含任一模式则剔除)
 # exclude_patterns = ["SELECT 1", "DUAL"]
 
-[features.replace_parameters]
-enable = false
-symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
-
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
 # 同时配置多个时，按优先级使用：csv > jsonl > sqlite
 
 # 方案 1: csv 导出（默认）
-# [exporter.csv]
-# file = "outputs/sqllog.csv"
-# overwrite = true
-# append = false
+[exporter.csv]
+file = "outputs/sqllog.csv"
+overwrite = true
+append = false
 
 # 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
@@ -77,8 +73,8 @@ symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
 # append = false
 
 # 方案 3: SQLite 数据库导出
-[exporter.sqlite]
-database_url = "export/sqllog2db.db"
-table_name = "sqllog_records"
-overwrite = true
-append = false
+# [exporter.sqlite]
+# database_url = "export/sqllog2db.db"
+# table_name = "sqllog_records"
+# overwrite = true
+# append = false
