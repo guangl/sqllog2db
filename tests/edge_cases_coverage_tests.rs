@@ -223,7 +223,7 @@ fn test_sqllog_config_directory_accessor_returns_str() {
     let config = SqllogConfig {
         directory: "test_path".to_string(),
     };
-    let result = config.directory();
+    let result = &config.directory;
     assert_eq!(result, "test_path");
     assert!(std::ptr::eq(result.as_ptr(), config.directory.as_ptr()));
 }
@@ -233,7 +233,7 @@ fn test_error_config_file_accessor_returns_str() {
     let config = ErrorConfig {
         file: "error.log".to_string(),
     };
-    let result = config.file();
+    let result = &config.file;
     assert_eq!(result, "error.log");
 }
 
@@ -244,7 +244,7 @@ fn test_logging_config_level_accessor_returns_str() {
         file: "app.log".to_string(),
         retention_days: 7,
     };
-    let result = config.level();
+    let result = &config.level;
     assert_eq!(result, "debug");
 }
 
@@ -255,7 +255,7 @@ fn test_logging_config_file_accessor_returns_str() {
         file: "app.log".to_string(),
         retention_days: 7,
     };
-    let result = config.file();
+    let result = &config.file;
     assert_eq!(result, "app.log");
 }
 
@@ -266,7 +266,7 @@ fn test_logging_config_retention_days_accessor() {
         file: "app.log".to_string(),
         retention_days: 30,
     };
-    assert_eq!(config.retention_days(), 30);
+    assert_eq!(config.retention_days, 30);
 }
 
 // ==================== Type Trait Tests ====================
@@ -310,7 +310,7 @@ fn test_config_getter_methods_marked_must_use() {
     let config = SqllogConfig::default();
     // These should compile fine even if we don't use the return value
     // but in production code, Clippy would warn
-    let _ = config.directory();
+    let _ = &config.directory;
 }
 
 #[test]
@@ -318,6 +318,6 @@ fn test_directory_getter_lifetime() {
     let config = SqllogConfig {
         directory: "path".to_string(),
     };
-    let dir_ref = config.directory();
+    let dir_ref = &config.directory;
     assert_eq!(dir_ref, "path");
 }

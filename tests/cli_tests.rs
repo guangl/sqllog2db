@@ -75,8 +75,8 @@ append = false
         assert!(config.is_ok(), "Failed to load config: {:?}", config.err());
 
         let config = config.unwrap();
-        assert_eq!(config.sqllog.directory(), "test_logs");
-        assert_eq!(config.logging.level(), "info");
+        assert_eq!(config.sqllog.directory, "test_logs");
+        assert_eq!(config.logging.level, "info");
 
         // Clean up
         let _ = fs::remove_dir_all(test_dir);
@@ -159,7 +159,7 @@ append = false
 
         // Simulate CLI verbose flag behavior
         config.logging.level = "debug".to_string();
-        assert_eq!(config.logging.level(), "debug");
+        assert_eq!(config.logging.level, "debug");
     }
 
     /// Test config with quiet flag (would set logging.level = "error")
@@ -194,7 +194,7 @@ append = false
 
         // Simulate CLI quiet flag behavior
         config.logging.level = "error".to_string();
-        assert_eq!(config.logging.level(), "error");
+        assert_eq!(config.logging.level, "error");
     }
 
     /// Test various logging levels
@@ -237,7 +237,7 @@ append = false
             );
 
             let cfg = config.unwrap();
-            assert_eq!(cfg.logging.level(), level);
+            assert_eq!(cfg.logging.level, level);
         }
 
         // Clean up
@@ -314,11 +314,11 @@ append = false
         };
 
         // Verify all fields
-        assert_eq!(config.sqllog.directory(), "/path/to/logs");
+        assert_eq!(config.sqllog.directory, "/path/to/logs");
         assert_eq!(config.error.file, "/path/to/errors.log");
-        assert_eq!(config.logging.file(), "/path/to/app.log");
-        assert_eq!(config.logging.level(), "debug");
-        assert_eq!(config.logging.retention_days(), 14);
+        assert_eq!(config.logging.file, "/path/to/app.log");
+        assert_eq!(config.logging.level, "debug");
+        assert_eq!(config.logging.retention_days, 14);
         assert!(config.exporter.csv.is_some());
     }
 
@@ -349,8 +349,8 @@ append = false
 "#;
 
         fs::write(&config_path, config_content).unwrap();
-        let config = Config::from_file(&config_path);
-        assert!(config.is_err(), "Should reject retention_days=0");
+        let config = Config::from_file(&config_path).unwrap();
+        assert!(config.validate().is_err(), "Should reject retention_days=0");
 
         // Clean up
         let _ = fs::remove_dir_all(test_dir);
@@ -387,7 +387,7 @@ append = false
 
             fs::write(&config_path, config_content).unwrap();
             let config = Config::from_file(&config_path).unwrap();
-            assert_eq!(config.sqllog.directory(), format!("logs_{i}").as_str());
+            assert_eq!(config.sqllog.directory, format!("logs_{i}"));
         }
 
         // Clean up

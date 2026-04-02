@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-03
+
+### Changed
+- **全面重构**：以简洁、可读性、极致性能和易扩展性为目标对代码库进行全面重构。
+  - 移除 `rayon` 依赖，消除了 CSV 导出中 `par_iter().flat_map(Vec<u8>)` 按字节并行的隐藏 bug（CSV 导出速度从 ~7.64s 提升至 ~0.56s）
+  - 将 `export_batch` 接口签名从 `&[&Sqllog]` 改为 `&[Sqllog]`，消除每批次的 `Vec<&Sqllog>` 额外分配
+  - JSONL 导出器改用借用版 `JsonlRecord<'a>` + `serde_json::to_writer` 直写，消除逐条 String 分配（~1.60s）
+  - CSV 导出器改用 `itoa::Buffer` + `line_buf: Vec<u8>` 跨条目复用，零额外分配（~0.56s）
+  - SQLite 导出器直接传 `&str` 给 rusqlite 参数，消除逐条 `.to_string()` 分配（~1.11s）
+
+### Removed
+- **简化错误类型**：将 `ExportError::CsvExportFailed`、`FileCreateFailed`、`FileWriteFailed` 合并为单一 `WriteError { path, reason }`
+- **移除空类型**：删除无内容的 `DatabaseError`、`ParseError` 枚举及对应 `From` 实现
+- **简化 `ErrorLogger`**：移除 `ErrorMetrics`、`ParseErrorRecord` 中间结构，直接逐行写入
+- **简化 `Config`**：移除所有 getter 方法（`.directory()`、`.file()`、`.level()` 等），直接访问公开字段
+- **移除 `ProcessContext`**：简化 `Pipeline::run` 接口，移除无用的上下文参数
+- **移除 `anyhow` 可选依赖**
+
+### Fixed
+- 修复所有 `cargo clippy --all-targets --all-features -- -D warnings` 警告，并加入 pre-commit hook 强制执行
+
 ## [0.3.2] - 2026-04-01
 
 ### Added

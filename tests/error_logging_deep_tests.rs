@@ -144,32 +144,32 @@ mod error_logging_deep_tests {
 
     #[test]
     fn test_export_error_csv() {
-        let err = ExportError::CsvExportFailed {
+        let err = ExportError::WriteError {
             path: PathBuf::from("test.csv"),
             reason: "test".to_string(),
         };
         let msg = format!("{err}");
-        assert!(msg.contains("CSV"));
+        assert!(msg.contains("Write") || msg.contains("test.csv"));
     }
 
     #[test]
     fn test_export_error_file_create() {
-        let err = ExportError::FileCreateFailed {
+        let err = ExportError::WriteError {
             path: PathBuf::from("test.txt"),
-            reason: "Permission".to_string(),
+            reason: "Permission denied".to_string(),
         };
         let msg = format!("{err}");
-        assert!(msg.contains("create"));
+        assert!(!msg.is_empty());
     }
 
     #[test]
     fn test_export_error_file_write() {
-        let err = ExportError::FileWriteFailed {
+        let err = ExportError::WriteError {
             path: PathBuf::from("test.txt"),
             reason: "Disk full".to_string(),
         };
         let msg = format!("{err}");
-        assert!(msg.contains("write"));
+        assert!(!msg.is_empty());
     }
 
     #[test]

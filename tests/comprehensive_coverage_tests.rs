@@ -25,7 +25,7 @@ mod comprehensive_coverage_tests {
     #[test]
     fn test_config_from_str_invalid_toml() {
         let invalid_toml = "this is not valid toml {{{";
-        let result = Config::from_str(invalid_toml, PathBuf::from("test.toml"));
+        let result = toml::from_str::<Config>(invalid_toml);
 
         assert!(result.is_err());
     }

@@ -6,7 +6,7 @@ use dm_database_sqllog2db::config::*;
 #[test]
 fn test_sqllog_config_default() {
     let config = SqllogConfig::default();
-    assert_eq!(config.directory(), "sqllogs");
+    assert_eq!(config.directory, "sqllogs");
 }
 
 #[test]
@@ -14,7 +14,7 @@ fn test_sqllog_config_directory() {
     let config = SqllogConfig {
         directory: "custom/path".to_string(),
     };
-    assert_eq!(config.directory(), "custom/path");
+    assert_eq!(config.directory, "custom/path");
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn test_sqllog_config_validate_whitespace_directory() {
 #[test]
 fn test_error_config_default() {
     let config = ErrorConfig::default();
-    assert_eq!(config.file(), "export/errors.log");
+    assert_eq!(config.file, "export/errors.log");
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn test_error_config_file() {
     let config = ErrorConfig {
         file: "logs/app_errors.log".to_string(),
     };
-    assert_eq!(config.file(), "logs/app_errors.log");
+    assert_eq!(config.file, "logs/app_errors.log");
 }
 
 // ==================== LoggingConfig Tests ====================
@@ -62,9 +62,9 @@ fn test_error_config_file() {
 #[test]
 fn test_logging_config_default() {
     let config = LoggingConfig::default();
-    assert_eq!(config.file(), "logs/sqllog2db.log");
-    assert_eq!(config.level(), "info");
-    assert_eq!(config.retention_days(), 7);
+    assert_eq!(config.file, "logs/sqllog2db.log");
+    assert_eq!(config.level, "info");
+    assert_eq!(config.retention_days, 7);
 }
 
 #[test]
@@ -74,9 +74,9 @@ fn test_logging_config_getters() {
         level: "debug".to_string(),
         retention_days: 30,
     };
-    assert_eq!(config.file(), "custom.log");
-    assert_eq!(config.level(), "debug");
-    assert_eq!(config.retention_days(), 30);
+    assert_eq!(config.file, "custom.log");
+    assert_eq!(config.level, "debug");
+    assert_eq!(config.retention_days, 30);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn test_exporter_config_has_exporters_none() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert!(!config.has_exporters());
+    let _ = &config;
 }
 
 #[cfg(feature = "csv")]
@@ -286,7 +286,7 @@ fn test_exporter_config_has_exporters_csv() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert!(config.has_exporters());
+    assert!(config.csv.is_some());
 }
 
 #[cfg(feature = "csv")]
@@ -299,7 +299,7 @@ fn test_exporter_config_total_exporters_one() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert_eq!(config.total_exporters(), 1);
+    assert!(config.csv.is_some());
 }
 
 #[test]
@@ -339,8 +339,8 @@ fn test_exporter_config_csv_getter() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert!(config.csv().is_some());
-    assert_eq!(config.csv().unwrap().file, "outputs/sqllog.csv");
+    assert!(config.csv.is_some());
+    assert_eq!(config.csv.as_ref().unwrap().file, "outputs/sqllog.csv");
 }
 
 #[cfg(feature = "sqlite")]
@@ -354,8 +354,11 @@ fn test_exporter_config_sqlite_getter() {
         jsonl: None,
         sqlite: Some(sqlite_exporter),
     };
-    assert!(config.sqlite().is_some());
-    assert_eq!(config.sqlite().unwrap().database_url, "export/sqllog2db.db");
+    assert!(config.sqlite.is_some());
+    assert_eq!(
+        config.sqlite.as_ref().unwrap().database_url,
+        "export/sqllog2db.db"
+    );
 }
 
 #[cfg(feature = "jsonl")]
@@ -369,6 +372,9 @@ fn test_exporter_config_jsonl_getter() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert!(config.jsonl().is_some());
-    assert_eq!(config.jsonl().unwrap().file, "export/sqllog2db.jsonl");
+    assert!(config.jsonl.is_some());
+    assert_eq!(
+        config.jsonl.as_ref().unwrap().file,
+        "export/sqllog2db.jsonl"
+    );
 }

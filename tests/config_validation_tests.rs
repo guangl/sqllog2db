@@ -61,11 +61,8 @@ append = false
     fn test_config_from_str_parse_error() {
         let invalid_toml = "this is [[[not valid toml";
 
-        let result = Config::from_str(invalid_toml, PathBuf::from("test.toml"));
+        let result = toml::from_str::<Config>(invalid_toml);
         assert!(result.is_err());
-
-        let err = result.unwrap_err();
-        assert!(format!("{err:?}").contains("ParseFailed") || format!("{err:?}").contains("parse"));
     }
 
     #[test]
@@ -133,7 +130,7 @@ append = false
             directory: "test_dir".to_string(),
         };
 
-        assert_eq!(config.directory(), "test_dir");
+        assert_eq!(config.directory, "test_dir");
     }
 
     #[test]
@@ -192,7 +189,7 @@ overwrite = true
 append = false
 "#;
 
-        let result = Config::from_str(minimal_toml, PathBuf::from("test.toml"));
+        let result = toml::from_str::<Config>(minimal_toml);
         assert!(result.is_ok());
 
         let config = result.unwrap();

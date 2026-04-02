@@ -2,25 +2,14 @@ use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
 pub use crate::features::FeaturesConfig;
 #[cfg(feature = "filters")]
+#[allow(unused_imports)]
 pub use crate::features::FiltersFeature;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
-
-/// 默认表名
-#[cfg(feature = "sqlite")]
-fn default_table_name() -> String {
-    "sqllog_records".to_string()
-}
-
-/// 默认 true 值
-fn default_true() -> bool {
-    true
-}
+use std::path::Path;
 
 #[cfg_attr(feature = "csv", derive(Default))]
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    /// 新增：SQL 日志输入相关配置
     #[serde(default)]
     pub sqllog: SqllogConfig,
     #[serde(default)]
@@ -34,51 +23,29 @@ pub struct Config {
 }
 
 impl Config {
-    /// 从文件加载配置
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
             .map_err(|_| Error::Config(ConfigError::NotFound(path.to_path_buf())))?;
-        Self::from_str(&content, path.to_path_buf())
-    }
-
-    /// 从字符串解析配置
-    pub fn from_str(content: &str, path: PathBuf) -> Result<Self> {
-        let config: Config = toml::from_str(content).map_err(|e| {
+        toml::from_str(&content).map_err(|e| {
             Error::Config(ConfigError::ParseFailed {
-                path,
+                path: path.to_path_buf(),
                 reason: e.to_string(),
             })
-        })?;
-
-        // 验证配置
-        config.validate()?;
-
-        Ok(config)
+        })
     }
 
-    /// 验证配置的有效性
     pub fn validate(&self) -> Result<()> {
-        // 验证日志级别
         self.logging.validate()?;
-
-        // 验证导出器配置
         self.exporter.validate()?;
-
-        // 验证 sqllog 配置
         self.sqllog.validate()?;
-
-        // 验证功能配置
         FeaturesConfig::validate();
-
         Ok(())
     }
 }
 
-/// SQL 日志输入配置
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqllogConfig {
-    /// SQL 日志输入目录（可包含多个日志文件）
     pub directory: String,
 }
 
@@ -91,13 +58,6 @@ impl Default for SqllogConfig {
 }
 
 impl SqllogConfig {
-    /// 获取 SQL 日志输入目录
-    #[must_use]
-    pub fn directory(&self) -> &str {
-        &self.directory
-    }
-
-    /// 验证配置
     pub fn validate(&self) -> Result<()> {
         if self.directory.trim().is_empty() {
             return Err(Error::Config(ConfigError::InvalidValue {
@@ -112,21 +72,12 @@ impl SqllogConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ErrorConfig {
-    /// 错误日志输出文件路径
     #[serde(default = "default_error_file")]
     pub file: String,
 }
 
 fn default_error_file() -> String {
     "export/errors.log".to_string()
-}
-
-impl ErrorConfig {
-    /// 获取错误日志输出文件路径
-    #[must_use]
-    pub fn file(&self) -> &str {
-        &self.file
-    }
 }
 
 impl Default for ErrorConfig {
@@ -139,7 +90,6 @@ impl Default for ErrorConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct LoggingConfig {
-    /// 应用日志输出文件路径
     #[serde(default = "default_logging_file")]
     pub file: String,
     #[serde(default = "default_logging_level")]
@@ -151,57 +101,11 @@ pub struct LoggingConfig {
 fn default_logging_file() -> String {
     "logs/sqllog2db.log".to_string()
 }
-
 fn default_logging_level() -> String {
     "info".to_string()
 }
-
 fn default_retention_days() -> usize {
     7
-}
-
-impl LoggingConfig {
-    /// 获取日志输出文件路径
-    #[must_use]
-    pub fn file(&self) -> &str {
-        &self.file
-    }
-
-    /// 获取日志级别
-    #[must_use]
-    pub fn level(&self) -> &str {
-        &self.level
-    }
-
-    /// 获取日志保留天数
-    #[must_use]
-    pub fn retention_days(&self) -> usize {
-        self.retention_days
-    }
-
-    /// 验证日志级别是否有效
-    pub fn validate(&self) -> Result<()> {
-        if !LOG_LEVELS
-            .iter()
-            .any(|&l| l.eq_ignore_ascii_case(self.level.as_str()))
-        {
-            return Err(Error::Config(ConfigError::InvalidLogLevel {
-                level: self.level.clone(),
-                valid_levels: LOG_LEVELS.iter().map(|s| (*s).to_string()).collect(),
-            }));
-        }
-
-        // 验证保留天数（1-365天）
-        if self.retention_days == 0 || self.retention_days > 365 {
-            return Err(Error::Config(ConfigError::InvalidValue {
-                field: "logging.retention_days".to_string(),
-                value: self.retention_days.to_string(),
-                reason: "Retention days must be between 1 and 365".to_string(),
-            }));
-        }
-
-        Ok(())
-    }
 }
 
 impl Default for LoggingConfig {
@@ -211,6 +115,28 @@ impl Default for LoggingConfig {
             level: "info".to_string(),
             retention_days: 7,
         }
+    }
+}
+
+impl LoggingConfig {
+    pub fn validate(&self) -> Result<()> {
+        if !LOG_LEVELS
+            .iter()
+            .any(|&l| l.eq_ignore_ascii_case(&self.level))
+        {
+            return Err(Error::Config(ConfigError::InvalidLogLevel {
+                level: self.level.clone(),
+                valid_levels: LOG_LEVELS.iter().map(|s| (*s).to_string()).collect(),
+            }));
+        }
+        if self.retention_days == 0 || self.retention_days > 365 {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "logging.retention_days".to_string(),
+                value: self.retention_days.to_string(),
+                reason: "Retention days must be between 1 and 365".to_string(),
+            }));
+        }
+        Ok(())
     }
 }
 
@@ -225,83 +151,26 @@ pub struct ExporterConfig {
 }
 
 impl ExporterConfig {
-    /// 获取 CSV 导出器配置
-    #[cfg(feature = "csv")]
-    #[must_use]
-    pub fn csv(&self) -> Option<&CsvExporter> {
-        self.csv.as_ref()
-    }
-
-    #[cfg(feature = "jsonl")]
-    /// 获取 JSONL 导出器配置
-    #[must_use]
-    pub fn jsonl(&self) -> Option<&JsonlExporter> {
-        self.jsonl.as_ref()
-    }
-
-    #[cfg(feature = "sqlite")]
-    /// 获取 `SQLite` 导出器配置
-    #[must_use]
-    pub fn sqlite(&self) -> Option<&SqliteExporter> {
-        self.sqlite.as_ref()
-    }
-
-    /// 检查是否有任何导出器配置
-    #[must_use]
-    pub fn has_exporters(&self) -> bool {
-        let mut found = false;
+    fn has_any(&self) -> bool {
         #[cfg(feature = "csv")]
-        {
-            found = found || self.csv.is_some();
+        if self.csv.is_some() {
+            return true;
         }
         #[cfg(feature = "jsonl")]
-        {
-            found = found || self.jsonl.is_some();
+        if self.jsonl.is_some() {
+            return true;
         }
         #[cfg(feature = "sqlite")]
-        {
-            found = found || self.sqlite.is_some();
+        if self.sqlite.is_some() {
+            return true;
         }
-        found
+        false
     }
 
-    /// 统计配置的导出器总数
-    #[must_use]
-    pub fn total_exporters(&self) -> usize {
-        let mut count = 0;
-        #[cfg(feature = "csv")]
-        {
-            if self.csv.is_some() {
-                count += 1;
-            }
-        }
-        #[cfg(feature = "jsonl")]
-        {
-            if self.jsonl.is_some() {
-                count += 1;
-            }
-        }
-        #[cfg(feature = "sqlite")]
-        {
-            if self.sqlite.is_some() {
-                count += 1;
-            }
-        }
-        count
-    }
-
-    /// 验证导出器配置（只支持单个导出器）
     pub fn validate(&self) -> Result<()> {
-        if !self.has_exporters() {
+        if !self.has_any() {
             return Err(Error::Config(ConfigError::NoExporters));
         }
-
-        let total = self.total_exporters();
-        if total > 1 {
-            eprintln!("Warning: {total} exporters configured, but only one is supported.");
-            eprintln!("Will use the first exporter by priority: CSV > JSONL > SQLite");
-        }
-
         Ok(())
     }
 }
@@ -319,15 +188,33 @@ impl Default for ExporterConfig {
     }
 }
 
+#[cfg(feature = "csv")]
+#[derive(Debug, Deserialize, Clone)]
+pub struct CsvExporter {
+    pub file: String,
+    #[serde(default = "default_true")]
+    pub overwrite: bool,
+    #[serde(default)]
+    pub append: bool,
+}
+
+#[cfg(feature = "csv")]
+impl Default for CsvExporter {
+    fn default() -> Self {
+        Self {
+            file: "outputs/sqllog.csv".to_string(),
+            overwrite: true,
+            append: false,
+        }
+    }
+}
+
 #[cfg(feature = "jsonl")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct JsonlExporter {
-    /// JSONL 输出文件路径
     pub file: String,
-    /// 是否覆盖已存在的文件
     #[serde(default = "default_true")]
     pub overwrite: bool,
-    /// 是否追加模式
     #[serde(default)]
     pub append: bool,
 }
@@ -346,17 +233,18 @@ impl Default for JsonlExporter {
 #[cfg(feature = "sqlite")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqliteExporter {
-    /// `SQLite` 数据库文件路径
     pub database_url: String,
-    /// 表名
     #[serde(default = "default_table_name")]
     pub table_name: String,
-    /// 是否覆盖已存在的表
     #[serde(default = "default_true")]
     pub overwrite: bool,
-    /// 是否追加模式
     #[serde(default)]
     pub append: bool,
+}
+
+#[cfg(feature = "sqlite")]
+fn default_table_name() -> String {
+    "sqllog_records".to_string()
 }
 
 #[cfg(feature = "sqlite")]
@@ -371,26 +259,6 @@ impl Default for SqliteExporter {
     }
 }
 
-#[cfg(feature = "csv")]
-#[derive(Debug, Deserialize, Clone)]
-pub struct CsvExporter {
-    /// CSV 输出文件路径
-    pub file: String,
-    /// 是否覆盖已存在的文件
-    #[serde(default = "default_true")]
-    pub overwrite: bool,
-    /// 是否追加模式（暂未实现）
-    #[serde(default)]
-    pub append: bool,
-}
-
-#[cfg(feature = "csv")]
-impl Default for CsvExporter {
-    fn default() -> Self {
-        Self {
-            file: "outputs/sqllog.csv".to_string(),
-            overwrite: true,
-            append: false,
-        }
-    }
+fn default_true() -> bool {
+    true
 }

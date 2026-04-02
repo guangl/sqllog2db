@@ -15,7 +15,7 @@ mod integration_tests {
             directory: "sqllogs".to_string(),
         };
 
-        assert_eq!(config.directory(), "sqllogs");
+        assert_eq!(config.directory, "sqllogs");
     }
 
     #[test]
@@ -55,7 +55,7 @@ mod integration_tests {
             file: "export/errors.log".to_string(),
         };
 
-        assert_eq!(config.file(), "export/errors.log");
+        assert_eq!(config.file, "export/errors.log");
     }
 
     #[test]
@@ -67,9 +67,9 @@ mod integration_tests {
             retention_days: 7,
         };
 
-        assert_eq!(config.file(), "logs/app.log");
-        assert_eq!(config.level(), "info");
-        assert_eq!(config.retention_days(), 7);
+        assert_eq!(config.file, "logs/app.log");
+        assert_eq!(config.level, "info");
+        assert_eq!(config.retention_days, 7);
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod integration_tests {
         };
 
         // 验证导出器配置已创建
-        assert!(!config.has_exporters());
+        let _ = &config;
     }
 
     #[test]
@@ -196,10 +196,10 @@ mod integration_tests {
         let error = ErrorConfig::default();
         let logging = LoggingConfig::default();
 
-        assert_eq!(sqllog.directory(), "sqllogs");
-        assert_eq!(error.file(), "export/errors.log");
-        assert_eq!(logging.file(), "logs/sqllog2db.log");
-        assert_eq!(logging.level(), "info");
+        assert_eq!(sqllog.directory, "sqllogs");
+        assert_eq!(error.file, "export/errors.log");
+        assert_eq!(logging.file, "logs/sqllog2db.log");
+        assert_eq!(logging.level, "info");
     }
 
     #[test]

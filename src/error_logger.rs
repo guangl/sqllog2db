@@ -1,162 +1,89 @@
-/// 错误日志记录器 - 将解析失败的原始数据记录到文件
 use crate::error::{Error, ExportError, Result};
 use log::{debug, info};
-use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-/// 解析错误记录
-#[derive(Debug)]
-pub struct ParseErrorRecord {
-    /// 错误发生的文件路径
-    pub file_path: String,
-    /// 错误原因/描述
-    pub error_message: String,
-    /// 原始数据内容（导致解析失败的行或片段）
-    pub raw_content: Option<String>,
-    /// 行号（如果适用）
-    pub line_number: Option<usize>,
-}
-
-/// 错误日志记录器
-#[derive(Debug, Default)]
-pub struct ErrorMetrics {
-    /// 总错误数
-    pub total: usize,
-    /// 按分类统计
-    pub by_category: HashMap<String, usize>,
-    /// 解析错误的细分（变体）统计
-    pub parse_variants: HashMap<String, usize>,
-}
-
-impl ErrorMetrics {
-    fn incr_category(&mut self, cat: &str) {
-        *self.by_category.entry(cat.to_string()).or_insert(0) += 1;
-        self.total += 1;
-    }
-
-    fn incr_parse_variant(&mut self, variant: &str) {
-        *self.parse_variants.entry(variant.to_string()).or_insert(0) += 1;
-    }
-}
-
-#[derive(Debug)]
+/// 将解析失败的原始数据记录到文件
 pub struct ErrorLogger {
     writer: BufWriter<File>,
-    path: String,
+    path: PathBuf,
     count: usize,
-    metrics: ErrorMetrics,
+}
+
+impl std::fmt::Debug for ErrorLogger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ErrorLogger")
+            .field("path", &self.path)
+            .field("count", &self.count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ErrorLogger {
-    /// 创建新的错误日志记录器
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path_ref = path.as_ref();
-        let path_str = path_ref.to_string_lossy().to_string();
+        let path = path.as_ref().to_path_buf();
 
-        // 创建父目录(如果不存在)
-        if let Some(parent) = path_ref.parent().filter(|p| !p.exists()) {
+        if let Some(parent) = path.parent().filter(|p| !p.exists()) {
             std::fs::create_dir_all(parent).map_err(|e| {
-                Error::Export(ExportError::FileCreateFailed {
+                Error::Export(ExportError::WriteError {
                     path: parent.to_path_buf(),
                     reason: e.to_string(),
                 })
             })?;
         }
 
-        // 打开或创建文件（追加模式）
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(path_ref)
+            .open(&path)
             .map_err(|e| {
-                Error::Export(ExportError::FileCreateFailed {
-                    path: path_ref.to_path_buf(),
+                Error::Export(ExportError::WriteError {
+                    path: path.clone(),
                     reason: e.to_string(),
                 })
             })?;
 
-        info!("Error logger initialized: {path_str}");
+        info!("Error logger initialized: {}", path.display());
 
         Ok(Self {
             writer: BufWriter::new(file),
-            path: path_str,
+            path,
             count: 0,
-            metrics: ErrorMetrics::default(),
         })
     }
 
-    /// 记录一个解析错误
-    pub fn log_error(&mut self, record: &ParseErrorRecord) -> Result<()> {
-        // 将记录以可读文本行写入（file | error | raw | line）
-        let raw = record.raw_content.clone().unwrap_or_default();
-        let line_no = record
-            .line_number
-            .map(|n| n.to_string())
-            .unwrap_or_default();
-        let line = format!(
-            "{} | {} | {} | {}",
-            record.file_path,
-            record.error_message,
-            raw.replace('\n', "\\n"),
-            line_no
-        );
-
-        writeln!(self.writer, "{line}").map_err(|e| {
-            Error::Export(ExportError::FileWriteFailed {
-                path: PathBuf::from(&self.path),
-                reason: e.to_string(),
-            })
-        })?;
-
-        self.count += 1;
-        // 记录分类统计（默认按 parse 分类，若调用方希望其它分类应使用 log_app_error）
-        self.metrics.incr_category("parse");
-        Ok(())
-    }
-
-    /// 记录来自 dm-database-parser-sqllog 的解析错误
+    /// 记录来自 dm-database-parser-sqllog 的解析错误（格式：file | error | line）
     pub fn log_parse_error(
         &mut self,
         file_path: &str,
         error: &dm_database_parser_sqllog::ParseError,
     ) -> Result<()> {
-        let record = ParseErrorRecord {
-            file_path: file_path.to_string(),
-            error_message: format!("{error:?}"),
-            raw_content: None, // dm-database-parser-sqllog 的 ParseError 不包含原始内容
-            line_number: None,
-        };
-        // 粗略使用 Debug 字符串作为 variant 标识
-        let variant = format!("{error:?}");
-        self.metrics.incr_parse_variant(&variant);
-        self.log_error(&record)
-    }
-
-    /// 完成错误记录并生成 summary.json
-    /// 刷新缓冲区
-    pub fn flush(&mut self) -> Result<()> {
-        self.writer.flush().map_err(|e| {
-            Error::Export(ExportError::FileWriteFailed {
-                path: PathBuf::from(&self.path),
-                reason: format!("Flush failed: {e}"),
+        writeln!(self.writer, "{file_path} | {error:?}").map_err(|e| {
+            Error::Export(ExportError::WriteError {
+                path: self.path.clone(),
+                reason: e.to_string(),
             })
         })?;
+        self.count += 1;
         Ok(())
     }
 
-    /// 完成记录并显示统计信息
     pub fn finalize(&mut self) -> Result<()> {
-        self.flush()?;
-
+        self.writer.flush().map_err(|e| {
+            Error::Export(ExportError::WriteError {
+                path: self.path.clone(),
+                reason: format!("flush failed: {e}"),
+            })
+        })?;
         if self.count > 0 {
             info!(
-                "Error log written: {} ({} records, categories: {:?})",
-                self.path, self.count, self.metrics.by_category
+                "Error log: {} ({} records)",
+                self.path.display(),
+                self.count
             );
         } else {
-            debug!("No error records to write");
+            debug!("No parse errors");
         }
         Ok(())
     }

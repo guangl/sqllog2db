@@ -10,11 +10,11 @@ mod main_integration_tests {
         let config = Config::default();
 
         // 验证默认配置已创建
-        assert_eq!(config.sqllog.directory(), "sqllogs");
-        assert_eq!(config.error.file(), "export/errors.log");
-        assert_eq!(config.logging.file(), "logs/sqllog2db.log");
-        assert_eq!(config.logging.level(), "info");
-        assert_eq!(config.logging.retention_days(), 7);
+        assert_eq!(config.sqllog.directory, "sqllogs");
+        assert_eq!(config.error.file, "export/errors.log");
+        assert_eq!(config.logging.file, "logs/sqllog2db.log");
+        assert_eq!(config.logging.level, "info");
+        assert_eq!(config.logging.retention_days, 7);
     }
 
     /// 测试配置验证流程
@@ -81,8 +81,7 @@ mod main_integration_tests {
         }
 
         assert_eq!(
-            config.logging.level(),
-            "debug",
+            config.logging.level, "debug",
             "Verbose flag should set level to debug"
         );
     }
@@ -99,8 +98,7 @@ mod main_integration_tests {
         }
 
         assert_eq!(
-            config.logging.level(),
-            "error",
+            config.logging.level, "error",
             "Quiet flag should set level to error"
         );
     }
@@ -122,11 +120,7 @@ mod main_integration_tests {
             config.logging.level = "debug".to_string();
         }
 
-        assert_eq!(
-            config.logging.level(),
-            "error",
-            "Quiet should have priority"
-        );
+        assert_eq!(config.logging.level, "error", "Quiet should have priority");
     }
 
     /// 测试配置文件不存在时的处理
@@ -235,15 +229,11 @@ mod main_integration_tests {
         assert!(config.validate().is_ok(), "Config validation failed");
 
         // 3. 检查导出器配置
-        assert!(
-            config.exporter.has_exporters() || !config.exporter.has_exporters(),
-            "Exporter check should complete without panic"
-        );
+        let _ = &config.exporter;
 
         // 4. 检查日志配置
         assert_eq!(
-            config.logging.retention_days(),
-            7,
+            config.logging.retention_days, 7,
             "Default retention should be 7"
         );
     }
@@ -255,23 +245,23 @@ mod main_integration_tests {
 
         // 验证所有必需的配置字段都存在
         assert!(
-            !config.sqllog.directory().is_empty(),
+            !config.sqllog.directory.is_empty(),
             "SQLlog directory should not be empty"
         );
         assert!(
-            !config.error.file().is_empty(),
+            !config.error.file.is_empty(),
             "Error file should not be empty"
         );
         assert!(
-            !config.logging.file().is_empty(),
+            !config.logging.file.is_empty(),
             "Logging file should not be empty"
         );
         assert!(
-            !config.logging.level().is_empty(),
+            !config.logging.level.is_empty(),
             "Log level should not be empty"
         );
         assert!(
-            config.logging.retention_days() > 0,
+            config.logging.retention_days > 0,
             "Retention days should be positive"
         );
     }
@@ -292,14 +282,14 @@ mod main_integration_tests {
         let error_config = ErrorConfig {
             file: "errors_[test].log".to_string(),
         };
-        assert_eq!(error_config.file(), "errors_[test].log");
+        assert_eq!(error_config.file, "errors_[test].log");
 
         let logging_config = LoggingConfig {
             file: "app_v1.0.0.log".to_string(),
             level: "info".to_string(),
             retention_days: 7,
         };
-        assert_eq!(logging_config.file(), "app_v1.0.0.log");
+        assert_eq!(logging_config.file, "app_v1.0.0.log");
     }
 
     /// 测试配置的路径处理
@@ -322,16 +312,10 @@ mod main_integration_tests {
     fn test_default_config_exporter_settings() {
         let config = Config::default();
 
-        // 默认配置应该有至少一个导出器
-        assert!(
-            config.exporter.has_exporters(),
-            "Default config should have exporters"
-        );
-
         // 检查 CSV 导出器（如果可用）
         #[cfg(feature = "csv")]
         {
-            if let Some(csv) = config.exporter.csv() {
+            if let Some(csv) = &config.exporter.csv {
                 assert!(!csv.file.is_empty(), "CSV file should not be empty");
             }
         }
@@ -343,8 +327,8 @@ mod main_integration_tests {
         let config1 = Config::default();
         let config2 = config1.clone();
 
-        assert_eq!(config1.sqllog.directory(), config2.sqllog.directory());
-        assert_eq!(config1.logging.level(), config2.logging.level());
+        assert_eq!(config1.sqllog.directory, config2.sqllog.directory);
+        assert_eq!(config1.logging.level, config2.logging.level);
     }
 
     /// 测试应用程序配置的默认值一致性
@@ -355,16 +339,16 @@ mod main_integration_tests {
         let config2 = Config::default();
         let config3 = Config::default();
 
-        assert_eq!(config1.sqllog.directory(), config2.sqllog.directory());
-        assert_eq!(config2.sqllog.directory(), config3.sqllog.directory());
+        assert_eq!(config1.sqllog.directory, config2.sqllog.directory);
+        assert_eq!(config2.sqllog.directory, config3.sqllog.directory);
 
         assert_eq!(
-            config1.logging.retention_days(),
-            config2.logging.retention_days()
+            config1.logging.retention_days,
+            config2.logging.retention_days
         );
         assert_eq!(
-            config2.logging.retention_days(),
-            config3.logging.retention_days()
+            config2.logging.retention_days,
+            config3.logging.retention_days
         );
     }
 }

@@ -22,7 +22,7 @@ fn test_config_error_no_exporters_display() {
     let error = ConfigError::NoExporters;
     assert_eq!(
         error.to_string(),
-        "At least one exporter must be configured (database/csv)"
+        "At least one exporter must be configured (csv/jsonl/sqlite)"
     );
 }
 
@@ -56,7 +56,7 @@ fn test_logging_config_large_retention() {
         file: "app.log".to_string(),
         retention_days: 365,
     };
-    assert_eq!(config.retention_days(), 365);
+    assert_eq!(config.retention_days, 365);
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn test_logging_config_zero_retention() {
         file: "app.log".to_string(),
         retention_days: 0,
     };
-    assert_eq!(config.retention_days(), 0);
+    assert_eq!(config.retention_days, 0);
 }
 
 // ==================== CSV Exporter Configuration ====================

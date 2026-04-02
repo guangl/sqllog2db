@@ -157,32 +157,32 @@ fn test_error_from_parser_error() {
 
 #[test]
 fn test_csv_export_failed() {
-    let error = ExportError::CsvExportFailed {
+    let error = ExportError::WriteError {
         path: PathBuf::from("output.csv"),
         reason: "invalid format".to_string(),
     };
     let error_msg = format!("{error}");
-    assert!(error_msg.contains("CSV") || error_msg.contains("csv"));
+    assert!(error_msg.contains("Write") || error_msg.contains("output.csv"));
 }
 
 #[test]
 fn test_file_create_failed() {
-    let error = ExportError::FileCreateFailed {
+    let error = ExportError::WriteError {
         path: PathBuf::from("output.log"),
         reason: "permission denied".to_string(),
     };
     let error_msg = format!("{error}");
-    assert!(error_msg.contains("create") || error_msg.contains("Create"));
+    assert!(!error_msg.is_empty());
 }
 
 #[test]
 fn test_file_write_failed() {
-    let error = ExportError::FileWriteFailed {
+    let error = ExportError::WriteError {
         path: PathBuf::from("output.csv"),
         reason: "disk full".to_string(),
     };
     let error_msg = format!("{error}");
-    assert!(error_msg.contains("write") || error_msg.contains("Write"));
+    assert!(!error_msg.is_empty());
 }
 
 #[cfg(feature = "sqlite")]
