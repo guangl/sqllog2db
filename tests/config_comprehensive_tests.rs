@@ -1,6 +1,5 @@
 /// Comprehensive configuration module tests with edge cases and validators
 use dm_database_sqllog2db::config::*;
-use std::path::PathBuf;
 
 // ==================== SqllogConfig Advanced Tests ====================
 
@@ -9,7 +8,7 @@ fn test_sqllog_config_with_relative_path() {
     let config = SqllogConfig {
         directory: "./logs/sqllogs".to_string(),
     };
-    assert_eq!(config.directory(), "./logs/sqllogs");
+    assert_eq!(config.directory, "./logs/sqllogs");
 }
 
 #[test]
@@ -17,7 +16,7 @@ fn test_sqllog_config_with_absolute_path() {
     let config = SqllogConfig {
         directory: "/var/log/sqllogs".to_string(),
     };
-    assert_eq!(config.directory(), "/var/log/sqllogs");
+    assert_eq!(config.directory, "/var/log/sqllogs");
 }
 
 #[test]
@@ -25,7 +24,7 @@ fn test_sqllog_config_with_windows_path() {
     let config = SqllogConfig {
         directory: "C:\\Logs\\SqlLogs".to_string(),
     };
-    assert_eq!(config.directory(), "C:\\Logs\\SqlLogs");
+    assert_eq!(config.directory, "C:\\Logs\\SqlLogs");
 }
 
 #[test]
@@ -49,7 +48,7 @@ fn test_sqllog_config_validate_single_space() {
 #[test]
 fn test_error_config_default() {
     let config = ErrorConfig::default();
-    assert_eq!(config.file(), "export/errors.log");
+    assert_eq!(config.file, "export/errors.log");
 }
 
 #[test]
@@ -57,7 +56,7 @@ fn test_error_config_custom_path() {
     let config = ErrorConfig {
         file: "/var/log/app-errors.log".to_string(),
     };
-    assert_eq!(config.file(), "/var/log/app-errors.log");
+    assert_eq!(config.file, "/var/log/app-errors.log");
 }
 
 #[test]
@@ -65,7 +64,7 @@ fn test_error_config_with_special_characters() {
     let config = ErrorConfig {
         file: "export/errors_2024-12-06.log".to_string(),
     };
-    assert!(config.file().contains("2024"));
+    assert!(config.file.contains("2024"));
 }
 
 // ==================== LoggingConfig Advanced Tests ====================
@@ -73,9 +72,9 @@ fn test_error_config_with_special_characters() {
 #[test]
 fn test_logging_config_default() {
     let config = LoggingConfig::default();
-    assert_eq!(config.level(), "info");
-    assert_eq!(config.file(), "logs/sqllog2db.log");
-    assert_eq!(config.retention_days(), 7);
+    assert_eq!(config.level, "info");
+    assert_eq!(config.file, "logs/sqllog2db.log");
+    assert_eq!(config.retention_days, 7);
 }
 
 #[test]
@@ -85,7 +84,7 @@ fn test_logging_config_custom_retention() {
         file: "logs/app.log".to_string(),
         retention_days: 30,
     };
-    assert_eq!(config.retention_days(), 30);
+    assert_eq!(config.retention_days, 30);
 }
 
 #[test]
@@ -183,7 +182,7 @@ fn test_logging_config_large_retention_days() {
         file: "logs/app.log".to_string(),
         retention_days: 365,
     };
-    assert_eq!(config.retention_days(), 365);
+    assert_eq!(config.retention_days, 365);
 }
 
 // ==================== FeaturesConfig Tests ====================
@@ -315,7 +314,7 @@ overwrite = false
 append = false
 "#;
 
-    let result = Config::from_str(toml_str, PathBuf::from("test.toml"));
+    let result = toml::from_str::<Config>(toml_str);
     assert!(result.is_ok());
 }
 

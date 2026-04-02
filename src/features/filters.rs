@@ -53,6 +53,9 @@ impl FiltersFeature {
     /// 检查是否配置了任何过滤器
     #[must_use]
     pub fn has_filters(&self) -> bool {
+        if !self.enable {
+            return false;
+        }
         self.meta.start_ts.is_some()
             || self.meta.end_ts.is_some()
             || self.meta.has_filters()
@@ -64,7 +67,7 @@ impl FiltersFeature {
     #[must_use]
     pub fn has_transaction_filters(&self) -> bool {
         // 如果未开启过滤器功能，则不执行预扫描
-        if !self.enable && !self.has_filters() {
+        if !self.enable {
             return false;
         }
         self.indicators.has_filters() || self.sql.has_filters()
@@ -86,16 +89,6 @@ impl FiltersFeature {
         app: &str,
         tag: Option<&str>,
     ) -> bool {
-        // 如果未配置任何过滤器，保留所有记录
-        if !self.has_filters() {
-            return true;
-        }
-
-        // 如果配置了过滤器但未明确启用，且有配置项，我们就执行过滤
-        if !self.enable && !self.has_filters() {
-            return true;
-        }
-
         // 1. 时间范围过滤 (AND 逻辑: 如果配置了时间，必须通过时间检查)
         if let Some(start) = &self.meta.start_ts {
             if ts < start.as_str() && !ts.starts_with(start.as_str()) {
@@ -109,8 +102,7 @@ impl FiltersFeature {
         }
 
         // 2. 元数据过滤 (OR 逻辑: 在通过时间过滤的前提下，如果配置了元数据过滤，需命中其中之一)
-        // 注意：如果 meta.has_filters() 为 false，说明只有时间过滤器或指标过滤器，
-        // 既然已经通过了时间过滤（如果有的话），且没有其他元数据要求，则暂且保留（指标过滤由后续逻辑或 merge_found_trxids 处理）
+        // 如果 meta.has_filters() 为 false，且通过了时间过滤，则保留。
         if !self.meta.has_filters() {
             return true;
         }

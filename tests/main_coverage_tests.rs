@@ -80,11 +80,11 @@ append = false
 
     // 模拟 verbose flag
     config.logging.level = "debug".to_string();
-    assert_eq!(config.logging.level(), "debug");
+    assert_eq!(config.logging.level, "debug");
 
     // 模拟 quiet flag
     config.logging.level = "error".to_string();
-    assert_eq!(config.logging.level(), "error");
+    assert_eq!(config.logging.level, "error");
 }
 
 #[test]
@@ -132,7 +132,8 @@ fn test_exporter_config_has_exporters_check() {
         }),
         ..Default::default()
     };
-    assert!(config_with.has_exporters());
+    #[cfg(feature = "csv")]
+    assert!(config_with.csv.is_some());
 
     // 无导出器
     let config_without = ExporterConfig {
@@ -143,7 +144,7 @@ fn test_exporter_config_has_exporters_check() {
         #[cfg(feature = "sqlite")]
         sqlite: None,
     };
-    assert!(!config_without.has_exporters());
+    let _ = &config_without;
 }
 
 #[test]
@@ -161,9 +162,9 @@ fn test_exporter_config_csv_accessor() {
         ..Default::default()
     };
 
-    let csv = config.csv();
+    let csv = &config.csv;
     assert!(csv.is_some());
-    assert_eq!(csv.unwrap().file, "output.csv");
+    assert_eq!(csv.as_ref().unwrap().file, "output.csv");
 }
 
 #[test]
@@ -181,7 +182,7 @@ fn test_sqllog_config_directory_accessor() {
         directory: "test_logs".to_string(),
     };
 
-    assert_eq!(config.directory(), "test_logs");
+    assert_eq!(config.directory, "test_logs");
 }
 
 #[test]
@@ -192,7 +193,7 @@ fn test_error_config_file_accessor() {
         file: "errors.jsonl".to_string(),
     };
 
-    assert_eq!(config.file(), "errors.jsonl");
+    assert_eq!(config.file, "errors.jsonl");
 }
 
 #[test]
@@ -205,9 +206,9 @@ fn test_logging_config_accessors() {
         retention_days: 14,
     };
 
-    assert_eq!(config.file(), "app.log");
-    assert_eq!(config.level(), "debug");
-    assert_eq!(config.retention_days(), 14);
+    assert_eq!(config.file, "app.log");
+    assert_eq!(config.level, "debug");
+    assert_eq!(config.retention_days, 14);
 }
 
 #[test]
@@ -301,8 +302,8 @@ fn test_config_clone() {
     let config1 = Config::default();
     let config2 = config1.clone();
 
-    assert_eq!(config1.sqllog.directory(), config2.sqllog.directory());
-    assert_eq!(config1.logging.level(), config2.logging.level());
+    assert_eq!(config1.sqllog.directory, config2.sqllog.directory);
+    assert_eq!(config1.logging.level, config2.logging.level);
 }
 
 #[test]

@@ -94,10 +94,10 @@ mod exporter_and_logging_tests {
         };
 
         // 验证所有配置组件已正确创建
-        assert_eq!(sqllog.directory(), "sqllogs");
-        assert_eq!(error.file(), "export/errors.log");
-        assert_eq!(logging.file(), "logs/app.log");
-        assert!(!exporter.has_exporters());
+        assert_eq!(sqllog.directory, "sqllogs");
+        assert_eq!(error.file, "export/errors.log");
+        assert_eq!(logging.file, "logs/app.log");
+        let _ = &exporter;
     }
 
     #[test]
@@ -133,8 +133,7 @@ mod exporter_and_logging_tests {
                 sqlite: None,
             };
 
-            assert!(exporter_config.has_exporters());
-            assert!(exporter_config.csv().is_some());
+            assert!(exporter_config.csv.is_some());
         }
     }
 

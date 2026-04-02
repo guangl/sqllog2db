@@ -348,40 +348,40 @@ append = false
     assert!(result.is_ok());
 
     let config = result.unwrap();
-    assert_eq!(config.sqllog.directory(), "test_logs");
-    assert_eq!(config.logging.level(), "debug");
-    assert_eq!(config.logging.retention_days(), 14);
+    assert_eq!(config.sqllog.directory, "test_logs");
+    assert_eq!(config.logging.level, "debug");
+    assert_eq!(config.logging.retention_days, 14);
 }
 
 #[test]
 fn test_config_default_values() {
     let config = Config::default();
 
-    assert_eq!(config.sqllog.directory(), "sqllogs");
-    assert_eq!(config.error.file(), "export/errors.log");
-    assert_eq!(config.logging.file(), "logs/sqllog2db.log");
-    assert_eq!(config.logging.level(), "info");
-    assert_eq!(config.logging.retention_days(), 7);
+    assert_eq!(config.sqllog.directory, "sqllogs");
+    assert_eq!(config.error.file, "export/errors.log");
+    assert_eq!(config.logging.file, "logs/sqllog2db.log");
+    assert_eq!(config.logging.level, "info");
+    assert_eq!(config.logging.retention_days, 7);
 }
 
 #[test]
 fn test_sqllog_config_default() {
     let config = SqllogConfig::default();
-    assert_eq!(config.directory(), "sqllogs");
+    assert_eq!(config.directory, "sqllogs");
 }
 
 #[test]
 fn test_error_config_default() {
     let config = ErrorConfig::default();
-    assert_eq!(config.file(), "export/errors.log");
+    assert_eq!(config.file, "export/errors.log");
 }
 
 #[test]
 fn test_logging_config_default() {
     let config = LoggingConfig::default();
-    assert_eq!(config.file(), "logs/sqllog2db.log");
-    assert_eq!(config.level(), "info");
-    assert_eq!(config.retention_days(), 7);
+    assert_eq!(config.file, "logs/sqllog2db.log");
+    assert_eq!(config.level, "info");
+    assert_eq!(config.retention_days, 7);
 }
 
 #[test]

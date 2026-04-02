@@ -24,7 +24,6 @@ static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::n
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     // 解析日志级别
     let level = parse_log_level(&config.level)?;
-
     // 获取日志文件路径和目录
     let log_path = Path::new(&config.file);
     let parent_dir = log_path.parent().ok_or_else(|| {
@@ -139,7 +138,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         "Logging initialized - level: {:?}, file: {}, retention_days: {}",
         level,
         config.file,
-        config.retention_days()
+        config.retention_days
     );
 
     Ok(())

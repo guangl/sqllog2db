@@ -1,6 +1,6 @@
 /// Comprehensive error handling tests
 use dm_database_sqllog2db::error::{
-    ConfigError, DatabaseError, Error, ExportError, FileError, ParseError, ParserError, Result,
+    ConfigError, Error, ExportError, FileError, ParserError, Result,
 };
 use std::path::PathBuf;
 
@@ -61,7 +61,7 @@ fn test_config_error_no_exporters() {
     let error = ConfigError::NoExporters;
     assert_eq!(
         error.to_string(),
-        "At least one exporter must be configured (database/csv)"
+        "At least one exporter must be configured (csv/jsonl/sqlite)"
     );
 }
 
@@ -98,22 +98,6 @@ fn test_file_error_create_directory_failed() {
     };
     assert!(error.to_string().contains("Failed to create directory"));
     assert!(error.to_string().contains("Permission denied"));
-}
-
-// ==================== DatabaseError Tests ====================
-
-#[test]
-fn test_database_error_is_enum() {
-    // DatabaseError is an empty enum
-    let _type_check = std::any::type_name::<DatabaseError>();
-}
-
-// ==================== ParseError Tests ====================
-
-#[test]
-fn test_parse_error_is_enum() {
-    // ParseError is an empty enum, we can test its existence
-    let _type_check = std::any::type_name::<ParseError>();
 }
 
 // ==================== ParserError Tests ====================

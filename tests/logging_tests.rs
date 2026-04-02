@@ -63,7 +63,7 @@ mod logging_tests {
             retention_days: 30,
         };
 
-        let retention = config.retention_days();
+        let retention = config.retention_days;
         assert_eq!(retention, 30, "Retention days should be 30");
     }
 
@@ -76,7 +76,7 @@ mod logging_tests {
             retention_days: 1,
         };
 
-        let retention = config.retention_days();
+        let retention = config.retention_days;
         assert_eq!(retention, 1, "Retention days minimum should be 1");
     }
 
@@ -89,7 +89,7 @@ mod logging_tests {
             retention_days: 365,
         };
 
-        let retention = config.retention_days();
+        let retention = config.retention_days;
         assert_eq!(retention, 365, "Retention days maximum should be 365");
     }
 
@@ -185,6 +185,6 @@ mod logging_tests {
 
         assert_eq!(config.level, "warn");
         assert_eq!(config.file, "/var/log/app.log");
-        assert_eq!(config.retention_days(), 14);
+        assert_eq!(config.retention_days, 14);
     }
 }

@@ -158,15 +158,15 @@ mod cli_run_integration_tests {
 
         // 测试 verbose 标志
         config.logging.level = "debug".to_string();
-        assert_eq!(config.logging.level(), "debug");
+        assert_eq!(config.logging.level, "debug");
 
         // 测试 quiet 标志
         config.logging.level = "error".to_string();
-        assert_eq!(config.logging.level(), "error");
+        assert_eq!(config.logging.level, "error");
 
         // 测试默认值
         config.logging.level = "info".to_string();
-        assert_eq!(config.logging.level(), "info");
+        assert_eq!(config.logging.level, "info");
     }
 
     /// 测试 CLI 运行流程中的统计信息收集
@@ -204,11 +204,7 @@ mod cli_run_integration_tests {
         let manager = ExporterManager::from_config(&config).unwrap();
 
         // 获取统计信息
-        let stats = manager.stats();
-        assert!(
-            stats.is_some() || stats.is_none(),
-            "Stats should be retrievable"
-        );
+        manager.log_stats();
     }
 
     /// 测试 CLI 运行中的错误处理
@@ -319,8 +315,8 @@ mod cli_run_integration_tests {
         assert!(config.validate().is_ok());
 
         // 2. 创建解析器
-        let parser = SqllogParser::new(config.sqllog.directory());
-        assert_eq!(parser.path().to_string_lossy(), config.sqllog.directory());
+        let parser = SqllogParser::new(&config.sqllog.directory);
+        assert_eq!(parser.path().to_string_lossy(), config.sqllog.directory);
 
         // 3. 创建导出器
         let mut manager = ExporterManager::from_config(&config).unwrap();
@@ -340,9 +336,9 @@ mod cli_run_integration_tests {
     fn test_cli_config_defaults() {
         let config = Config::default();
 
-        assert_eq!(config.sqllog.directory(), "sqllogs");
-        assert_eq!(config.logging.level(), "info");
-        assert_eq!(config.logging.retention_days(), 7);
+        assert_eq!(config.sqllog.directory, "sqllogs");
+        assert_eq!(config.logging.level, "info");
+        assert_eq!(config.logging.retention_days, 7);
     }
 
     /// 测试 CLI 中的配置验证链

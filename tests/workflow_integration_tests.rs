@@ -238,11 +238,11 @@ mod full_workflow_tests {
         };
 
         // 验证所有字段都已正确设置
-        assert_eq!(sqllog.directory(), "input");
-        assert_eq!(error.file(), "errors.log");
-        assert_eq!(logging.file(), "app.log");
-        assert_eq!(logging.level(), "warn");
-        assert_eq!(logging.retention_days(), 30);
+        assert_eq!(sqllog.directory, "input");
+        assert_eq!(error.file, "errors.log");
+        assert_eq!(logging.file, "app.log");
+        assert_eq!(logging.level, "warn");
+        assert_eq!(logging.retention_days, 30);
     }
 
     #[test]
@@ -296,8 +296,7 @@ mod full_workflow_tests {
         assert_eq!(name, "CSV");
 
         // 获取统计信息
-        let stats = manager.stats();
-        let _ = stats; // 可以是 Some 或 None
+        manager.log_stats();
 
         // 完成
         assert!(manager.finalize().is_ok());
