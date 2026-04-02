@@ -17,15 +17,17 @@ mod tests {
     }
 
     #[test]
-    fn test_should_keep_respects_enable() {
+    fn test_should_keep_when_enabled_and_no_match() {
         let mut feature = FiltersFeature::default();
-        feature.enable = false;
+        feature.enable = true;
         feature.meta = MetaFilters {
             start_ts: Some("2023-01-01".to_string()),
             ..Default::default()
         };
 
-        // Should keep everything if enable is false
-        assert!(feature.should_keep("2022-01-01", "", "", "", "", "", "", "", None));
+        // Should filter out if before start_ts
+        assert!(!feature.should_keep("2022-01-01", "", "", "", "", "", "", "", None));
+        // Should keep if after start_ts
+        assert!(feature.should_keep("2023-01-01", "", "", "", "", "", "", "", None));
     }
 }

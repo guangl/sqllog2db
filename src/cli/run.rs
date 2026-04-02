@@ -34,17 +34,16 @@ fn process_log_file(
     let mut records_in_file = 0;
     let mut errors_in_file = 0;
 
-    for result in parser.iter() {
-        match result {
-            Ok(record) => {
-                // 应用过滤器
-                #[cfg(feature = "filters")]
-                let should_keep = cfg.features.filters.as_ref().is_none_or(|f| {
-                    if !f.has_filters() {
-                        return true;
-                    }
+    #[cfg(feature = "filters")]
+    let filters = cfg.features.filters.as_ref().filter(|f| f.has_filters());
+
+    #[cfg(feature = "filters")]
+    if let Some(f) = filters {
+        for result in parser.iter() {
+            match result {
+                Ok(record) => {
                     let meta = record.parse_meta();
-                    f.should_keep(
+                    let should_keep = f.should_keep(
                         record.ts.as_ref(),
                         &meta.trxid,
                         &meta.client_ip,
@@ -54,16 +53,64 @@ fn process_log_file(
                         &meta.statement,
                         &meta.appname,
                         record.tag.as_deref(),
-                    )
-                });
+                    );
 
-                #[cfg(not(feature = "filters"))]
-                let should_keep = true;
+                    if !should_keep {
+                        continue;
+                    }
 
-                if !should_keep {
-                    continue;
+                    records_in_file += 1;
+                    batch.push(record);
+                    if batch.len() >= 1000 {
+                        exporter_manager.export_batch(&batch)?;
+                        batch.clear();
+                        eprintln!("  [Progress] {records_in_file} records processed");
+                    }
                 }
+                Err(e) => {
+                    errors_in_file += 1;
+                    if !batch.is_empty() {
+                        exporter_manager.export_batch(&batch)?;
+                        batch.clear();
+                    }
+                    if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
+                        warn!("Failed to record parse error: {log_err}");
+                    }
+                }
+            }
+        }
+    } else {
+        // 无过滤器路径：避免任何额外的检查或解析
+        for result in parser.iter() {
+            match result {
+                Ok(record) => {
+                    records_in_file += 1;
+                    batch.push(record);
+                    if batch.len() >= 1000 {
+                        exporter_manager.export_batch(&batch)?;
+                        batch.clear();
+                        eprintln!("  [Progress] {records_in_file} records processed");
+                    }
+                }
+                Err(e) => {
+                    errors_in_file += 1;
+                    if !batch.is_empty() {
+                        exporter_manager.export_batch(&batch)?;
+                        batch.clear();
+                    }
+                    if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
+                        warn!("Failed to record parse error: {log_err}");
+                    }
+                }
+            }
+        }
+    }
 
+    #[cfg(not(feature = "filters"))]
+    // 无过滤器编译路径
+    for result in parser.iter() {
+        match result {
+            Ok(record) => {
                 records_in_file += 1;
                 batch.push(record);
                 if batch.len() >= 1000 {
