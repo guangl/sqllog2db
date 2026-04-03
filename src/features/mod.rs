@@ -40,6 +40,7 @@ impl Pipeline {
     }
 
     /// 添加处理器到管线末尾
+    #[cfg(feature = "filters")]
     pub fn add(&mut self, processor: Box<dyn LogProcessor>) {
         self.processors.push(processor);
     }
