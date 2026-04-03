@@ -49,6 +49,7 @@ self_update = "0.43.1"
 
 # 可选功能依赖
 serde_json = { version = "1.0.145", optional = true }
+ryu = { version = "1", optional = true }
 # 数据库依赖
 tempfile = { version = "3.23.0", optional = true }
 rusqlite = { version = "0.37.0", features = [
@@ -63,7 +64,7 @@ default = ["csv"]
 
 # 各导出器特性开关
 csv = []
-jsonl = ["dep:serde_json"]
+jsonl = ["dep:serde_json", "dep:ryu"]
 sqlite = ["dep:rusqlite", "dep:tempfile", "csv"]
 
 # 其他功能特性开关
