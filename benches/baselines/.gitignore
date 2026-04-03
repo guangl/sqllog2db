@@ -1,0 +1,5 @@
+# Only commit the saved baseline JSON data.
+# Criterion writes 'new/' (latest run) and 'report/' (HTML) alongside it;
+# those are local artifacts and should not be versioned.
+**/new/
+**/report/
