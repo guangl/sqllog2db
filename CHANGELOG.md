@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-03
+
+### Performance
+
+- **过滤器零开销快速路径**：当 `filters` 未配置或未启用时，主循环完全跳过过滤逻辑，不再产生任何运行时开销。
+- **重构 `Pipeline` 架构**：将过滤逻辑从 `process_log_file` 中抽出，封装为独立的 `FilterProcessor` + `Pipeline`，热循环中仅保留 `pipeline.is_empty()` 判断。
+- **修复 `enable` 标志未生效**：之前即使 `enable = false`，过滤条件仍会执行；现已确保只有在 `has_filters()` 为真时才将处理器加入管线。
+
 ## [0.4.0] - 2026-04-03
 
 ### Changed
