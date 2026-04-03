@@ -1,3 +1,4 @@
+use super::util::strip_ip_prefix;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -129,6 +130,7 @@ impl Exporter for SqliteExporter {
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
 
         let meta = sqllog.parse_meta();
+        let pm = sqllog.parse_performance_metrics();
         let ind = sqllog.parse_indicators();
         let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
             (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
@@ -143,9 +145,9 @@ impl Exporter for SqliteExporter {
             meta.trxid.as_ref(),
             meta.statement.as_ref(),
             meta.appname.as_ref(),
-            meta.client_ip.as_ref(),
+            strip_ip_prefix(meta.client_ip.as_ref()),
             sqllog.tag.as_deref(),
-            sqllog.body().as_ref(),
+            pm.sql.as_ref(),
             exec_time,
             row_count,
             exec_id
@@ -174,6 +176,7 @@ impl Exporter for SqliteExporter {
 
         for sqllog in sqllogs {
             let meta = sqllog.parse_meta();
+            let pm = sqllog.parse_performance_metrics();
             let ind = sqllog.parse_indicators();
             let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
                 (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
@@ -188,9 +191,9 @@ impl Exporter for SqliteExporter {
                 meta.trxid.as_ref(),
                 meta.statement.as_ref(),
                 meta.appname.as_ref(),
-                meta.client_ip.as_ref(),
+                strip_ip_prefix(meta.client_ip.as_ref()),
                 sqllog.tag.as_deref(),
-                sqllog.body().as_ref(),
+                pm.sql.as_ref(),
                 exec_time,
                 row_count,
                 exec_id

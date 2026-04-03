@@ -183,7 +183,7 @@ mod integration_tests {
     #[test]
     fn test_features_config_creation() {
         // 测试 FeaturesConfig 创建
-        let _config = FeaturesConfig {
+        let _ = FeaturesConfig {
             #[cfg(feature = "filters")]
             filters: Some(FiltersFeature::default()),
         };

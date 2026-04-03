@@ -1,4 +1,4 @@
-use super::util::{ensure_parent_dir, f32_ms_to_i64};
+use super::util::{ensure_parent_dir, f32_ms_to_i64, strip_ip_prefix};
 use super::{ExportStats, Exporter};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
@@ -82,7 +82,7 @@ impl CsvExporter {
         line_buf.push(b',');
         line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
         line_buf.push(b',');
-        line_buf.extend_from_slice(meta.client_ip.as_ref().as_bytes());
+        line_buf.extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
         line_buf.push(b',');
         if let Some(tag) = &sqllog.tag {
             line_buf.extend_from_slice(tag.as_ref().as_bytes());

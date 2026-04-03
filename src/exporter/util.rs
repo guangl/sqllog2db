@@ -1,6 +1,17 @@
 #[cfg(any(feature = "csv", feature = "jsonl"))]
 use std::{fs, io, path::Path};
 
+/// 去除 IPv4-mapped IPv6 地址前缀（如 `::ffff:192.168.1.1` → `192.168.1.1`）
+#[must_use]
+pub fn strip_ip_prefix(ip: &str) -> &str {
+    const PREFIX: &str = "::ffff:";
+    if ip.len() > PREFIX.len() && ip[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+        &ip[PREFIX.len()..]
+    } else {
+        ip
+    }
+}
+
 /// Saturating cast from f32 milliseconds to i64 milliseconds without precision-loss warnings
 #[cfg(feature = "csv")]
 #[must_use]

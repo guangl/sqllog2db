@@ -1,4 +1,4 @@
-use super::util::ensure_parent_dir;
+use super::util::{ensure_parent_dir, strip_ip_prefix};
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
@@ -74,8 +74,8 @@ impl JsonlExporter {
     #[inline]
     fn write_record(writer: &mut BufWriter<File>, sqllog: &Sqllog<'_>, path: &Path) -> Result<()> {
         let meta = sqllog.parse_meta();
+        let pm = sqllog.parse_performance_metrics();
         let ind = sqllog.parse_indicators();
-        let body = sqllog.body();
         let record = JsonlRecord {
             ts: sqllog.ts.as_ref(),
             ep: meta.ep,
@@ -85,9 +85,9 @@ impl JsonlExporter {
             trx_id: meta.trxid.as_ref(),
             statement: meta.statement.as_ref(),
             appname: meta.appname.as_ref(),
-            client_ip: meta.client_ip.as_ref(),
+            client_ip: strip_ip_prefix(meta.client_ip.as_ref()),
             tag: sqllog.tag.as_deref(),
-            sql: body.as_ref(),
+            sql: pm.sql.as_ref(),
             exec_time_ms: ind.as_ref().map(|i| i.exectime),
             row_count: ind.as_ref().map(|i| i.rowcount),
             exec_id: ind.as_ref().map(|i| i.exec_id),
