@@ -92,3 +92,24 @@ items_after_statements = "allow"
 
 [dev-dependencies]
 tempfile = "3.23.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "bench_csv"
+harness = false
+required-features = ["csv"]
+
+[[bench]]
+name = "bench_jsonl"
+harness = false
+required-features = ["jsonl"]
+
+[[bench]]
+name = "bench_sqlite"
+harness = false
+required-features = ["sqlite"]
+
+[[bench]]
+name = "bench_filters"
+harness = false
+required-features = ["filters", "csv"]

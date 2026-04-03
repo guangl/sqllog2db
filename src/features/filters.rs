@@ -1,5 +1,13 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
+
+fn vec_to_hashset<'de, D>(deserializer: D) -> Result<Option<HashSet<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v: Option<Vec<String>> = Option::deserialize(deserializer)?;
+    Ok(v.map(|items| items.into_iter().collect()))
+}
 
 /// 过滤器配置 (重构后)
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -25,7 +33,8 @@ pub struct MetaFilters {
     pub sess_ids: Option<Vec<String>>,
     pub thrd_ids: Option<Vec<String>>,
     pub usernames: Option<Vec<String>>,
-    pub trxids: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "vec_to_hashset")]
+    pub trxids: Option<HashSet<String>>,
     pub statements: Option<Vec<String>>,
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
@@ -116,12 +125,10 @@ impl FiltersFeature {
         if (!self.enable && !self.has_filters()) || trxids.is_empty() {
             return;
         }
-        let current = self.meta.trxids.take().unwrap_or_default();
-        let mut set: HashSet<_> = current.into_iter().collect();
-        for id in trxids {
-            set.insert(id);
-        }
-        self.meta.trxids = Some(set.into_iter().collect());
+        self.meta
+            .trxids
+            .get_or_insert_with(HashSet::new)
+            .extend(trxids);
     }
 }
 
@@ -153,29 +160,26 @@ impl MetaFilters {
         tag: Option<&str>,
     ) -> bool {
         // OR 逻辑：命中任何一个已定义的列表即保留 (前提是已通过时间过滤)
-        Self::match_list(self.trxids.as_ref(), trxid, true)
-            || Self::match_list(self.client_ips.as_ref(), ip, false)
-            || Self::match_list(self.sess_ids.as_ref(), sess, false)
-            || Self::match_list(self.thrd_ids.as_ref(), thrd, false)
-            || Self::match_list(self.usernames.as_ref(), user, false)
-            || Self::match_list(self.statements.as_ref(), stmt, false)
-            || Self::match_list(self.appnames.as_ref(), app, false)
-            || tag.is_some_and(|t| Self::match_list(self.tags.as_ref(), t, false))
+        Self::match_exact(self.trxids.as_ref(), trxid)
+            || Self::match_substring(self.client_ips.as_ref(), ip)
+            || Self::match_substring(self.sess_ids.as_ref(), sess)
+            || Self::match_substring(self.thrd_ids.as_ref(), thrd)
+            || Self::match_substring(self.usernames.as_ref(), user)
+            || Self::match_substring(self.statements.as_ref(), stmt)
+            || Self::match_substring(self.appnames.as_ref(), app)
+            || tag.is_some_and(|t| Self::match_substring(self.tags.as_ref(), t))
     }
 
-    fn match_list(list: Option<&Vec<String>>, val: &str, exact: bool) -> bool {
-        if let Some(items) = list {
-            if items.is_empty() {
-                return false;
-            }
-            if exact {
-                items.iter().any(|i| i == val)
-            } else {
-                items.iter().any(|i| val.contains(i))
-            }
-        } else {
-            false
-        }
+    /// O(1) 精确匹配，适用于高基数的 trxid 集合
+    fn match_exact(set: Option<&HashSet<String>>, val: &str) -> bool {
+        set.is_some_and(|s| !s.is_empty() && s.contains(val))
+    }
+
+    /// O(n) 子串匹配，适用于小型过滤列表
+    fn match_substring(list: Option<&Vec<String>>, val: &str) -> bool {
+        list.is_some_and(|items| {
+            !items.is_empty() && items.iter().any(|i| val.contains(i.as_str()))
+        })
     }
 }
 
