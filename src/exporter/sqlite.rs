@@ -9,6 +9,7 @@ use std::path::Path;
 pub struct SqliteExporter {
     database_url: String,
     table_name: String,
+    insert_sql: String,
     overwrite: bool,
     append: bool,
     conn: Option<Connection>,
@@ -28,9 +29,12 @@ impl std::fmt::Debug for SqliteExporter {
 impl SqliteExporter {
     #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
+        let insert_sql =
+            format!("INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         Self {
             database_url,
             table_name,
+            insert_sql,
             overwrite,
             append,
             conn: None,
@@ -121,12 +125,8 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
-        let sql = format!(
-            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            self.table_name
-        );
         let mut stmt = conn
-            .prepare_cached(&sql)
+            .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
 
         let meta = sqllog.parse_meta();
@@ -166,12 +166,8 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
-        let sql = format!(
-            "INSERT INTO {} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            self.table_name
-        );
         let mut stmt = conn
-            .prepare_cached(&sql)
+            .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
 
         for sqllog in sqllogs {

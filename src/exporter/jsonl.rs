@@ -3,33 +3,51 @@ use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::{info, warn};
-use serde::Serialize;
 use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-/// 零分配借用版记录结构，直接引用 Sqllog 中的数据
-#[derive(Debug, Serialize)]
-struct JsonlRecord<'a> {
-    ts: &'a str,
-    ep: u8,
-    sess_id: &'a str,
-    thrd_id: &'a str,
-    username: &'a str,
-    trx_id: &'a str,
-    statement: &'a str,
-    appname: &'a str,
-    client_ip: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    tag: Option<&'a str>,
-    sql: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    exec_time_ms: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    row_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    exec_id: Option<i64>,
+/// Hex digits for JSON `\uXXXX` escaping of control characters.
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
+/// Append `s` as a quoted JSON string, applying full RFC 8259 escaping.
+///
+/// Use this for user-controlled fields that may contain `"`, `\`, newlines,
+/// or other control characters (e.g. `sql`, `username`, `appname`, `tag`).
+#[inline]
+fn write_json_str(buf: &mut Vec<u8>, s: &str) {
+    buf.push(b'"');
+    for &byte in s.as_bytes() {
+        match byte {
+            b'"' => buf.extend_from_slice(b"\\\""),
+            b'\\' => buf.extend_from_slice(b"\\\\"),
+            b'\n' => buf.extend_from_slice(b"\\n"),
+            b'\r' => buf.extend_from_slice(b"\\r"),
+            b'\t' => buf.extend_from_slice(b"\\t"),
+            0x08 => buf.extend_from_slice(b"\\b"),
+            0x0C => buf.extend_from_slice(b"\\f"),
+            0x00..=0x1F => {
+                buf.extend_from_slice(b"\\u00");
+                buf.push(HEX[(byte >> 4) as usize]);
+                buf.push(HEX[(byte & 0x0F) as usize]);
+            }
+            _ => buf.push(byte),
+        }
+    }
+    buf.push(b'"');
+}
+
+/// Append `s` as a quoted JSON string **without escaping**.
+///
+/// Only safe for fields whose format is guaranteed to contain no characters
+/// that require JSON escaping: timestamps, hex session/thread/trx IDs,
+/// IP addresses, statement IDs.  Avoids the per-byte branch overhead.
+#[inline]
+fn write_json_str_raw(buf: &mut Vec<u8>, s: &str) {
+    buf.push(b'"');
+    buf.extend_from_slice(s.as_bytes());
+    buf.push(b'"');
 }
 
 pub struct JsonlExporter {
@@ -38,6 +56,10 @@ pub struct JsonlExporter {
     append: bool,
     writer: Option<BufWriter<File>>,
     stats: ExportStats,
+    /// Reused per-record byte buffer — same optimisation as `CsvExporter`.
+    line_buf: Vec<u8>,
+    itoa_buf: itoa::Buffer,
+    float_buf: ryu::Buffer,
 }
 
 impl std::fmt::Debug for JsonlExporter {
@@ -58,6 +80,9 @@ impl JsonlExporter {
             append: false,
             writer: None,
             stats: ExportStats::new(),
+            line_buf: Vec::with_capacity(512),
+            itoa_buf: itoa::Buffer::new(),
+            float_buf: ryu::Buffer::new(),
         }
     }
 
@@ -71,34 +96,67 @@ impl JsonlExporter {
         e
     }
 
+    /// Format one record into `line_buf` and flush it to `writer` in a single
+    /// `write_all` call — zero allocations after the first record.
     #[inline]
-    fn write_record(writer: &mut BufWriter<File>, sqllog: &Sqllog<'_>, path: &Path) -> Result<()> {
+    fn write_record(
+        line_buf: &mut Vec<u8>,
+        itoa_buf: &mut itoa::Buffer,
+        float_buf: &mut ryu::Buffer,
+        sqllog: &Sqllog<'_>,
+        writer: &mut BufWriter<File>,
+        path: &Path,
+    ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
         let ind = sqllog.parse_indicators();
-        let record = JsonlRecord {
-            ts: sqllog.ts.as_ref(),
-            ep: meta.ep,
-            sess_id: meta.sess_id.as_ref(),
-            thrd_id: meta.thrd_id.as_ref(),
-            username: meta.username.as_ref(),
-            trx_id: meta.trxid.as_ref(),
-            statement: meta.statement.as_ref(),
-            appname: meta.appname.as_ref(),
-            client_ip: strip_ip_prefix(meta.client_ip.as_ref()),
-            tag: sqllog.tag.as_deref(),
-            sql: pm.sql.as_ref(),
-            exec_time_ms: ind.as_ref().map(|i| i.exectime),
-            row_count: ind.as_ref().map(|i| i.rowcount),
-            exec_id: ind.as_ref().map(|i| i.exec_id),
-        };
-        serde_json::to_writer(&mut *writer, &record).map_err(|e| {
-            Error::Export(ExportError::WriteError {
-                path: path.to_path_buf(),
-                reason: format!("serialize failed: {e}"),
-            })
-        })?;
-        writer.write_all(b"\n").map_err(|e| {
+
+        line_buf.clear();
+
+        // Fields with guaranteed-safe format (timestamps, hex IDs, IPs) —
+        // no escaping needed, use direct memcpy.
+        line_buf.extend_from_slice(b"{\"ts\":");
+        write_json_str_raw(line_buf, sqllog.ts.as_ref());
+        line_buf.extend_from_slice(b",\"ep\":");
+        line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
+        line_buf.extend_from_slice(b",\"sess_id\":");
+        write_json_str_raw(line_buf, meta.sess_id.as_ref());
+        line_buf.extend_from_slice(b",\"thrd_id\":");
+        write_json_str_raw(line_buf, meta.thrd_id.as_ref());
+        line_buf.extend_from_slice(b",\"username\":");
+        write_json_str(line_buf, meta.username.as_ref());
+        line_buf.extend_from_slice(b",\"trx_id\":");
+        write_json_str_raw(line_buf, meta.trxid.as_ref());
+        line_buf.extend_from_slice(b",\"statement\":");
+        write_json_str_raw(line_buf, meta.statement.as_ref());
+        line_buf.extend_from_slice(b",\"appname\":");
+        write_json_str(line_buf, meta.appname.as_ref());
+        line_buf.extend_from_slice(b",\"client_ip\":");
+        write_json_str_raw(line_buf, strip_ip_prefix(meta.client_ip.as_ref()));
+
+        // Optional: tag (user-controlled, full escaping)
+        if let Some(tag) = sqllog.tag.as_deref() {
+            line_buf.extend_from_slice(b",\"tag\":");
+            write_json_str(line_buf, tag);
+        }
+
+        // SQL body (user SQL, full escaping)
+        line_buf.extend_from_slice(b",\"sql\":");
+        write_json_str(line_buf, pm.sql.as_ref());
+
+        // Optional: performance indicators
+        if let Some(ind) = ind {
+            line_buf.extend_from_slice(b",\"exec_time_ms\":");
+            line_buf.extend_from_slice(float_buf.format(ind.exectime).as_bytes());
+            line_buf.extend_from_slice(b",\"row_count\":");
+            line_buf.extend_from_slice(itoa_buf.format(i64::from(ind.rowcount)).as_bytes());
+            line_buf.extend_from_slice(b",\"exec_id\":");
+            line_buf.extend_from_slice(itoa_buf.format(ind.exec_id).as_bytes());
+        }
+
+        line_buf.extend_from_slice(b"}\n");
+
+        writer.write_all(line_buf).map_err(|e| {
             Error::Export(ExportError::WriteError {
                 path: path.to_path_buf(),
                 reason: format!("write failed: {e}"),
@@ -149,7 +207,14 @@ impl Exporter for JsonlExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
-        Self::write_record(writer, sqllog, &self.path)?;
+        Self::write_record(
+            &mut self.line_buf,
+            &mut self.itoa_buf,
+            &mut self.float_buf,
+            sqllog,
+            writer,
+            &self.path,
+        )?;
         self.stats.record_success();
         Ok(())
     }
@@ -165,7 +230,14 @@ impl Exporter for JsonlExporter {
             })
         })?;
         for sqllog in sqllogs {
-            Self::write_record(writer, sqllog, &self.path)?;
+            Self::write_record(
+                &mut self.line_buf,
+                &mut self.itoa_buf,
+                &mut self.float_buf,
+                sqllog,
+                writer,
+                &self.path,
+            )?;
         }
         self.stats.record_success_batch(sqllogs.len());
         Ok(())
