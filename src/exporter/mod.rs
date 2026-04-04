@@ -81,6 +81,42 @@ impl ExportStats {
     }
 }
 
+/// 空运行导出器：只计数，不写任何文件（用于 --dry-run 模式）
+#[derive(Debug, Default)]
+pub struct DryRunExporter {
+    stats: ExportStats,
+}
+
+impl Exporter for DryRunExporter {
+    fn initialize(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn export(&mut self, _sqllog: &Sqllog<'_>) -> Result<()> {
+        self.stats.exported += 1;
+        Ok(())
+    }
+
+    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
+        self.stats.exported += sqllogs.len();
+        self.stats.flush_operations += 1;
+        self.stats.last_flush_size = sqllogs.len();
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn name(&self) -> &'static str {
+        "dry-run"
+    }
+
+    fn stats_snapshot(&self) -> Option<ExportStats> {
+        Some(self.stats.clone())
+    }
+}
+
 /// 导出器管理器
 pub struct ExporterManager {
     exporter: Box<dyn Exporter>,
@@ -95,6 +131,15 @@ impl std::fmt::Debug for ExporterManager {
 }
 
 impl ExporterManager {
+    /// 创建空运行导出器，只统计记录数不写文件
+    #[must_use]
+    pub fn dry_run() -> Self {
+        info!("Dry-run mode: no output will be written");
+        Self {
+            exporter: Box::new(DryRunExporter::default()),
+        }
+    }
+
     pub fn from_config(config: &Config) -> Result<Self> {
         info!("Initializing exporter manager...");
 

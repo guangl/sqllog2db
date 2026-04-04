@@ -55,8 +55,11 @@ fn run() -> Result<()> {
     use clap::Parser;
     let cli = cli::opts::Cli::parse();
 
-    // Initial logging for basic commands and startup phase
-    init_simple_logging(cli.verbose, cli.quiet);
+    // run 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
+    let is_run_command = matches!(&cli.command, Some(cli::opts::Commands::Run { .. }));
+    if !is_run_command {
+        init_simple_logging(cli.verbose, cli.quiet);
+    }
 
     // Check for updates at startup unless we are already running self-update or quiet
     if !cli.quiet
@@ -75,17 +78,21 @@ fn run() -> Result<()> {
             Ok(())
         }
         Some(cli::opts::Commands::SelfUpdate { check }) => cli::update::handle_update(*check),
-        Some(cli::opts::Commands::Run { config, .. }) => {
+        Some(cli::opts::Commands::Run {
+            config,
+            limit,
+            dry_run,
+        }) => {
             let mut cfg = load_config(config)?;
             cfg.validate()?;
             info!("Configuration validation passed");
 
             apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
-            // Full logging (file + stdout) for run command
-            logging::init_logging(&cfg.logging)?;
+            // run 命令使用进度条，日志只写文件不写 stdout
+            logging::init_logging(&cfg.logging, false)?;
             info!("Application started");
 
-            cli::run::handle_run(&cfg)
+            cli::run::handle_run(&cfg, *limit, *dry_run)
         }
         Some(cli::opts::Commands::Validate { config }) => {
             let mut cfg = load_config(config)?;
@@ -93,8 +100,8 @@ fn run() -> Result<()> {
             info!("Configuration validation passed");
 
             apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
-            // Full logging (file + stdout) for validate command
-            logging::init_logging(&cfg.logging)?;
+            // validate 命令无进度条，日志同时输出到 stdout
+            logging::init_logging(&cfg.logging, true)?;
             info!("Application started");
 
             cli::validate::handle_validate(&cfg);

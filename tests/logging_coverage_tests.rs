@@ -26,7 +26,7 @@ mod logging_coverage_tests {
 
         // This will fail because logging can only be initialized once
         // But we're testing the parsing path
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -40,7 +40,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -54,7 +54,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -68,7 +68,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -82,7 +82,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -96,7 +96,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let result = logging::init_logging(&config);
+        let result = logging::init_logging(&config, true);
         assert!(result.is_err());
     }
 
@@ -112,7 +112,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
 
         // Directory should be created
         assert!(nested.exists());
@@ -127,7 +127,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let result = logging::init_logging(&config);
+        let result = logging::init_logging(&config, true);
         // Should fail
         let _ = result;
     }
@@ -143,7 +143,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -157,7 +157,7 @@ mod logging_coverage_tests {
             retention_days: 7,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod logging_coverage_tests {
             retention_days: 0,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 
     #[test]
@@ -185,6 +185,6 @@ mod logging_coverage_tests {
             retention_days: 365,
         };
 
-        let _ = logging::init_logging(&config);
+        let _ = logging::init_logging(&config, true);
     }
 }

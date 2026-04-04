@@ -25,7 +25,7 @@ mod logging_tests {
 
         // 只初始化一次
         INIT.call_once(|| {
-            let result = init_logging(&config);
+            let result = init_logging(&config, true);
             assert!(result.is_ok(), "Failed to initialize logging");
         });
 
@@ -47,7 +47,7 @@ mod logging_tests {
         };
 
         // 第一次初始化会失败（无效级别），但不会设置全局日志记录器
-        let result = init_logging(&config);
+        let result = init_logging(&config, true);
         assert!(result.is_err(), "Should fail with invalid level");
 
         // Clean up

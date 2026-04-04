@@ -21,7 +21,10 @@ static LOG_LEVEL_MAP: LazyLock<HashMap<&'static str, LevelFilter>> = LazyLock::n
 });
 
 /// 初始化日志系统
-pub fn init_logging(config: &LoggingConfig) -> Result<()> {
+///
+/// `log_to_stdout`: 是否同时向 stdout 输出日志。进度条模式下应传 `false`，
+/// 避免日志输出干扰进度条渲染。
+pub fn init_logging(config: &LoggingConfig, log_to_stdout: bool) -> Result<()> {
     // 解析日志级别
     let level = parse_log_level(&config.level)?;
     // 获取日志文件路径和目录
@@ -74,10 +77,11 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
 
     let shared_file = Arc::new(Mutex::new(file));
 
-    // 自定义简单 Logger，写入文件与 stdout
+    // 自定义简单 Logger，写入文件，可选同时输出到 stdout
     struct SimpleLogger {
         level: LevelFilter,
         file: Arc<Mutex<std::fs::File>>,
+        log_to_stdout: bool,
     }
 
     impl log::Log for SimpleLogger {
@@ -104,8 +108,9 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
                 record.target(),
                 record.args()
             );
-            // 写到 stdout
-            let _ = std::io::stdout().write_all(msg.as_bytes());
+            if self.log_to_stdout {
+                let _ = std::io::stdout().write_all(msg.as_bytes());
+            }
 
             // 写到文件
             if let Ok(mut f) = self.file.lock() {
@@ -119,6 +124,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     let logger = SimpleLogger {
         level,
         file: shared_file.clone(),
+        log_to_stdout,
     };
 
     // 注册 logger
