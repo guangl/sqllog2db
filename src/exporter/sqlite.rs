@@ -68,12 +68,10 @@ impl SqliteExporter {
     }
 
     fn do_insert(
-        conn: &Connection,
-        insert_sql: &str,
+        stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
         #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
     ) -> std::result::Result<(), rusqlite::Error> {
-        let mut stmt = conn.prepare_cached(insert_sql)?;
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
         let ind = sqllog.parse_indicators();
@@ -200,9 +198,11 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
+        let mut stmt = conn
+            .prepare_cached(&self.insert_sql)
+            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         Self::do_insert(
-            conn,
-            &self.insert_sql,
+            &mut stmt,
             sqllog,
             #[cfg(feature = "replace_parameters")]
             None,
@@ -220,10 +220,12 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
+        let mut stmt = conn
+            .prepare_cached(&self.insert_sql)
+            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         for sqllog in sqllogs {
             Self::do_insert(
-                conn,
-                &self.insert_sql,
+                &mut stmt,
                 sqllog,
                 #[cfg(feature = "replace_parameters")]
                 None,
@@ -247,10 +249,13 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
+        let mut stmt = conn
+            .prepare_cached(&self.insert_sql)
+            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         let normalize = self.normalize;
         for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
             let ns_ref = if normalize { ns.as_deref() } else { None };
-            Self::do_insert(conn, &self.insert_sql, sqllog, ns_ref)
+            Self::do_insert(&mut stmt, sqllog, ns_ref)
                 .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         }
         self.stats.record_success_batch(sqllogs.len());
