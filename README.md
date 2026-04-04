@@ -124,6 +124,21 @@ sqllog2db run -c config.toml --from "2025-01-01" --to "2025-12-31"
 
 # 静默模式
 sqllog2db -q run -c config.toml
+
+# 关闭颜色输出
+sqllog2db --no-color run -c config.toml
+
+# 通过环境变量指定配置文件
+SQLLOG2DB_CONFIG=config.toml sqllog2db run
+```
+
+### 统计日志记录数
+
+无需导出，直接统计日志目录中所有文件的记录数：
+
+```bash
+sqllog2db stats -c config.toml
+sqllog2db stats --set sqllog.directory=./logs
 ```
 
 ### 查看当前生效配置

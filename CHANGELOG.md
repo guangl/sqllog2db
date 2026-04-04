@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-04-04
+
+### Added
+
+- **`--no-color` 全局标志**：强制关闭 ANSI 颜色输出；同时兼容 `NO_COLOR` 环境变量
+- **`SQLLOG2DB_CONFIG` 环境变量**：所有带 `--config` 参数的子命令（`run`、`validate`、`show-config`、`stats`）均可通过该环境变量指定配置文件路径
+- **`run` 结束后错误摘要**：存在解析错误时，在完成摘要行下方额外打印错误条数及错误日志路径（`⚠ N parse errors logged → path`）
+- **`stats` 子命令**：无需导出即可统计日志目录下所有文件的记录总数和解析错误数，并显示处理速率与耗时
+- **preflight 预检（`run` 前）**：启动导出前自动校验日志目录存在性及输出文件可写性；`--dry-run` 模式下跳过预检
+
+---
+
 ## [0.6.0] - 2026-04-04
 
 ### Added
