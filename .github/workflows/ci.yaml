@@ -98,15 +98,19 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: sqllog2db-x86_64-linux
+            use_cross: false
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             artifact: sqllog2db-aarch64-linux
+            use_cross: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: sqllog2db-x86_64-windows.exe
+            use_cross: false
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact: sqllog2db-aarch64-macos
+            use_cross: false
     steps:
       - name: Free Disk Space (Ubuntu)
         if: runner.os == 'Linux'
@@ -127,38 +131,22 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install aarch64 cross-compile tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo dpkg --add-architecture arm64
-          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
-          sudo find /etc/apt/sources.list.d -name '*.list' \
-            -exec sudo sed -i 's/^deb /deb [arch=amd64] /' {} +
-          CODENAME=$(lsb_release -cs)
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${CODENAME} main restricted universe multiverse" \
-            | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${CODENAME}-updates main restricted universe multiverse" \
-            | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports ${CODENAME}-security main restricted universe multiverse" \
-            | sudo tee -a /etc/apt/sources.list
-          sudo apt-get update
-          sudo apt-get install -y pkg-config gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libssl-dev:arm64
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Build
         run: |
-          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-            export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            export PKG_CONFIG_ALLOW_CROSS=1
-            export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
-            export OPENSSL_DIR=/usr/lib/aarch64-linux-gnu
-            export OPENSSL_INCLUDE_DIR=/usr/include/aarch64-linux-gnu
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --all-features --target ${{ matrix.target }}
+          else
+            cargo build --release --all-features --target ${{ matrix.target }}
           fi
-          cargo build --release --all-features --target ${{ matrix.target }}
         shell: bash
 
       - name: Prepare artifact
