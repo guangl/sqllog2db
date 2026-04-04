@@ -23,6 +23,8 @@ mod cli_integration_tests {
             features: dm_database_sqllog2db::config::FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
@@ -105,6 +107,8 @@ append = false
             features: dm_database_sqllog2db::config::FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
@@ -146,6 +150,8 @@ append = false
             features: dm_database_sqllog2db::config::FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
@@ -181,6 +187,8 @@ append = false
             features: dm_database_sqllog2db::config::FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {
@@ -302,6 +310,8 @@ append = false
             features: dm_database_sqllog2db::config::FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(dm_database_sqllog2db::config::FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: dm_database_sqllog2db::config::ExporterConfig {
                 csv: Some(dm_database_sqllog2db::config::CsvExporter {

@@ -186,6 +186,8 @@ mod integration_tests {
         let _ = FeaturesConfig {
             #[cfg(feature = "filters")]
             filters: Some(FiltersFeature::default()),
+            #[cfg(feature = "replace_parameters")]
+            replace_parameters: None,
         };
     }
 

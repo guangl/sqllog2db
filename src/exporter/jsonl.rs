@@ -60,6 +60,8 @@ pub struct JsonlExporter {
     line_buf: Vec<u8>,
     itoa_buf: itoa::Buffer,
     float_buf: ryu::Buffer,
+    #[cfg(feature = "replace_parameters")]
+    pub(super) normalize: bool,
 }
 
 impl std::fmt::Debug for JsonlExporter {
@@ -83,6 +85,8 @@ impl JsonlExporter {
             line_buf: Vec::with_capacity(512),
             itoa_buf: itoa::Buffer::new(),
             float_buf: ryu::Buffer::new(),
+            #[cfg(feature = "replace_parameters")]
+            normalize: true,
         }
     }
 
@@ -106,6 +110,7 @@ impl JsonlExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
+        #[cfg(feature = "replace_parameters")] normalize: bool,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -155,7 +160,7 @@ impl JsonlExporter {
         }
 
         #[cfg(feature = "replace_parameters")]
-        {
+        if normalize {
             let normalized = crate::features::normalize_sql(pm.sql.as_ref());
             line_buf.extend_from_slice(b",\"normalized_sql\":");
             write_json_str(line_buf, &normalized);
@@ -221,6 +226,8 @@ impl Exporter for JsonlExporter {
             sqllog,
             writer,
             &self.path,
+            #[cfg(feature = "replace_parameters")]
+            self.normalize,
         )?;
         self.stats.record_success();
         Ok(())
@@ -236,6 +243,8 @@ impl Exporter for JsonlExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
+        #[cfg(feature = "replace_parameters")]
+        let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
                 &mut self.line_buf,
@@ -244,6 +253,8 @@ impl Exporter for JsonlExporter {
                 sqllog,
                 writer,
                 &self.path,
+                #[cfg(feature = "replace_parameters")]
+                normalize,
             )?;
         }
         self.stats.record_success_batch(sqllogs.len());

@@ -307,6 +307,8 @@ fn test_config_validation_fails_on_no_exporters() {
 fn test_features_config_filters() {
     let config = FeaturesConfig {
         filters: Some(FiltersFeature::default()),
+        #[cfg(feature = "replace_parameters")]
+        replace_parameters: None,
     };
     assert!(config.filters.is_some());
 }
