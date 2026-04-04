@@ -1,3 +1,4 @@
+use crate::color;
 use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
@@ -173,10 +174,15 @@ fn process_log_file(
         "File {file_path}: {records_in_file} records, {errors_in_file} errors, total {elapsed:.2}s",
     );
 
+    let errors_label = if errors_in_file > 0 {
+        color::yellow(format!(", {errors_in_file} errors"))
+    } else {
+        String::new()
+    };
     pb.println(format!(
-        "✓ [{file_index}/{total_files}] {file_path} — {} records, {} errors, {elapsed:.2}s",
-        HumanCount(records_in_file as u64),
-        errors_in_file,
+        "{} [{file_index}/{total_files}] {file_path} — {}{errors_label}, {elapsed:.2}s",
+        color::green("✓"),
+        color::green(HumanCount(records_in_file as u64)),
     ));
 
     Ok(records_in_file)
@@ -384,8 +390,9 @@ pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<(
     let elapsed = total_start.elapsed().as_secs_f64();
     let mode_label = if dry_run { " [dry-run]" } else { "" };
     eprintln!(
-        "\n✓ SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
-        HumanCount(total_records as u64),
+        "\n{} SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
+        color::green("✓"),
+        color::green(HumanCount(total_records as u64)),
     );
     exporter_manager.log_stats();
     Ok(())

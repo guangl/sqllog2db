@@ -35,6 +35,15 @@ pub enum Commands {
         /// Parse and count records without writing output
         #[arg(long = "dry-run")]
         dry_run: bool,
+        /// Override config values, e.g. --set exporter.csv.file=out.csv
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// Keep only records at or after this timestamp (requires filters feature)
+        #[arg(long = "from", value_name = "DATETIME")]
+        from: Option<String>,
+        /// Keep only records at or before this timestamp (requires filters feature)
+        #[arg(long = "to", value_name = "DATETIME")]
+        to: Option<String>,
     },
     /// Generate a default configuration file
     Init {
@@ -50,6 +59,15 @@ pub enum Commands {
         /// Configuration file path
         #[arg(short = 'c', long = "config", default_value = "config.toml")]
         config: String,
+    },
+    /// Show effective configuration (after loading and any --set overrides)
+    ShowConfig {
+        /// Configuration file path
+        #[arg(short = 'c', long = "config", default_value = "config.toml")]
+        config: String,
+        /// Override config values before displaying
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
     },
     /// Generate shell completion scripts
     Completions {
