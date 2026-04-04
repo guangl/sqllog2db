@@ -102,9 +102,15 @@ fn run() -> Result<()> {
     use clap::Parser;
     let cli = cli::opts::Cli::parse();
 
-    // run 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
-    let is_run_command = matches!(&cli.command, Some(cli::opts::Commands::Run { .. }));
-    if !is_run_command {
+    // 尽早初始化颜色开关，后续所有输出均依赖此状态
+    color::init(cli.no_color);
+
+    // run/stats 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
+    let needs_simple_logging = !matches!(
+        &cli.command,
+        Some(cli::opts::Commands::Run { .. } | cli::opts::Commands::Stats { .. })
+    );
+    if needs_simple_logging {
         init_simple_logging(cli.verbose, cli.quiet);
     }
 
@@ -159,6 +165,14 @@ fn run() -> Result<()> {
             logging::init_logging(&cfg.logging, false)?;
             info!("Application started");
 
+            // preflight：日志目录 + 输出可写性
+            if !*dry_run {
+                let pf = cli::preflight::check(&cfg);
+                if pf.print_and_check() {
+                    std::process::exit(EXIT_CONFIG);
+                }
+            }
+
             // 注册 Ctrl+C 处理器：设置中断标志，让处理循环在下一个 batch 结束时优雅退出
             let interrupted = Arc::new(AtomicBool::new(false));
             let interrupted_flag = Arc::clone(&interrupted);
@@ -186,6 +200,12 @@ fn run() -> Result<()> {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             cli::show_config::handle_show_config(&cfg, config);
+            Ok(())
+        }
+        Some(cli::opts::Commands::Stats { config, set }) => {
+            let mut cfg = load_config(config)?;
+            cfg.apply_overrides(set)?;
+            cli::stats::handle_stats(&cfg, cli.quiet);
             Ok(())
         }
         None => {

@@ -18,6 +18,10 @@ pub struct Cli {
     #[arg(short = 'q', long = "quiet", global = true, conflicts_with = "verbose")]
     pub quiet: bool,
 
+    /// Disable colored output (also respects `NO_COLOR` env var)
+    #[arg(long = "no-color", global = true)]
+    pub no_color: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -27,7 +31,12 @@ pub enum Commands {
     /// Run the log export task
     Run {
         /// Configuration file path
-        #[arg(short = 'c', long = "config", default_value = "config.toml")]
+        #[arg(
+            short = 'c',
+            long = "config",
+            default_value = "config.toml",
+            env = "SQLLOG2DB_CONFIG"
+        )]
         config: String,
         /// Stop after processing N records (across all files)
         #[arg(short = 'n', long = "limit")]
@@ -57,15 +66,39 @@ pub enum Commands {
     /// Validate a configuration file
     Validate {
         /// Configuration file path
-        #[arg(short = 'c', long = "config", default_value = "config.toml")]
+        #[arg(
+            short = 'c',
+            long = "config",
+            default_value = "config.toml",
+            env = "SQLLOG2DB_CONFIG"
+        )]
         config: String,
     },
     /// Show effective configuration (after loading and any --set overrides)
     ShowConfig {
         /// Configuration file path
-        #[arg(short = 'c', long = "config", default_value = "config.toml")]
+        #[arg(
+            short = 'c',
+            long = "config",
+            default_value = "config.toml",
+            env = "SQLLOG2DB_CONFIG"
+        )]
         config: String,
         /// Override config values before displaying
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+    },
+    /// Count records in log files without exporting
+    Stats {
+        /// Configuration file path
+        #[arg(
+            short = 'c',
+            long = "config",
+            default_value = "config.toml",
+            env = "SQLLOG2DB_CONFIG"
+        )]
+        config: String,
+        /// Override config values, e.g. --set sqllog.directory=./logs
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
     },

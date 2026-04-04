@@ -69,6 +69,12 @@ impl ErrorLogger {
         Ok(())
     }
 
+    /// 返回已记录的解析错误数量
+    #[must_use]
+    pub fn error_count(&self) -> usize {
+        self.count
+    }
+
     pub fn finalize(&mut self) -> Result<()> {
         self.writer.flush().map_err(|e| {
             Error::Export(ExportError::WriteError {

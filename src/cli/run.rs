@@ -408,6 +408,7 @@ pub fn handle_run(
     pb.finish_and_clear();
 
     exporter_manager.finalize()?;
+    let parse_errors = error_logger.error_count();
     error_logger.finalize()?;
 
     if !quiet {
@@ -419,6 +420,14 @@ pub fn handle_run(
             color::green(HumanCount(total_records as u64)),
         );
         exporter_manager.log_stats();
+        if parse_errors > 0 {
+            eprintln!(
+                "{} {} parse errors logged → {}",
+                color::yellow("⚠"),
+                color::yellow(HumanCount(parse_errors as u64)),
+                final_cfg.error.file,
+            );
+        }
     }
 
     if interrupted.load(Ordering::Relaxed) {
