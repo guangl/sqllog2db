@@ -31,6 +31,18 @@ pub trait Exporter {
         Ok(())
     }
 
+    /// 批量导出，同时传入每条记录对应的 `normalized_sql`（仅 `replace_parameters` 特性使用）。
+    /// 默认实现忽略 normalized 参数，直接调用 `export_batch`。
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        let _ = normalized;
+        self.export_batch(sqllogs)
+    }
+
     fn finalize(&mut self) -> Result<()>;
     fn name(&self) -> &str;
 
@@ -145,6 +157,17 @@ impl ExporterManager {
     /// 批量导出，直接传 slice，零额外分配
     pub fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
         self.exporter.export_batch(sqllogs)
+    }
+
+    /// 批量导出，同时传入每条记录的 `normalized_sql`（`replace_parameters` 特性专用）
+    #[cfg(feature = "replace_parameters")]
+    pub fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        self.exporter
+            .export_batch_with_normalized(sqllogs, normalized)
     }
 
     pub fn finalize(&mut self) -> Result<()> {

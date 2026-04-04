@@ -65,6 +65,7 @@ impl CsvExporter {
         writer: &mut BufWriter<File>,
         path: &Path,
         #[cfg(feature = "replace_parameters")] normalize: bool,
+        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -114,16 +115,17 @@ impl CsvExporter {
 
         #[cfg(feature = "replace_parameters")]
         if normalize {
-            let normalized = crate::features::normalize_sql(pm.sql.as_ref());
             line_buf.push(b',');
-            line_buf.push(b'"');
-            for &byte in normalized.as_bytes() {
-                if byte == b'"' {
-                    line_buf.push(b'"');
+            if let Some(ns) = normalized_sql {
+                line_buf.push(b'"');
+                for &byte in ns.as_bytes() {
+                    if byte == b'"' {
+                        line_buf.push(b'"');
+                    }
+                    line_buf.push(byte);
                 }
-                line_buf.push(byte);
+                line_buf.push(b'"');
             }
-            line_buf.push(b'"');
         }
 
         line_buf.push(b'\n');
@@ -206,6 +208,8 @@ impl Exporter for CsvExporter {
             &self.path,
             #[cfg(feature = "replace_parameters")]
             self.normalize,
+            #[cfg(feature = "replace_parameters")]
+            None,
         )?;
         self.stats.record_success();
         Ok(())
@@ -232,6 +236,39 @@ impl Exporter for CsvExporter {
                 &self.path,
                 #[cfg(feature = "replace_parameters")]
                 normalize,
+                #[cfg(feature = "replace_parameters")]
+                None,
+            )?;
+        }
+        self.stats.record_success_batch(sqllogs.len());
+        Ok(())
+    }
+
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::WriteError {
+                path: self.path.clone(),
+                reason: "not initialized".to_string(),
+            })
+        })?;
+        let normalize = self.normalize;
+        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
+            Self::write_record(
+                &mut self.itoa_buf,
+                &mut self.line_buf,
+                sqllog,
+                writer,
+                &self.path,
+                normalize,
+                ns.as_deref(),
             )?;
         }
         self.stats.record_success_batch(sqllogs.len());

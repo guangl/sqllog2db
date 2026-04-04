@@ -66,6 +66,60 @@ impl SqliteExporter {
             reason: reason.into(),
         })
     }
+
+    fn do_insert(
+        conn: &Connection,
+        insert_sql: &str,
+        sqllog: &Sqllog<'_>,
+        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
+    ) -> std::result::Result<(), rusqlite::Error> {
+        let mut stmt = conn.prepare_cached(insert_sql)?;
+        let meta = sqllog.parse_meta();
+        let pm = sqllog.parse_performance_metrics();
+        let ind = sqllog.parse_indicators();
+        let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
+            (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
+        });
+
+        #[cfg(not(feature = "replace_parameters"))]
+        stmt.execute(params![
+            sqllog.ts.as_ref(),
+            meta.ep,
+            meta.sess_id.as_ref(),
+            meta.thrd_id.as_ref(),
+            meta.username.as_ref(),
+            meta.trxid.as_ref(),
+            meta.statement.as_ref(),
+            meta.appname.as_ref(),
+            strip_ip_prefix(meta.client_ip.as_ref()),
+            sqllog.tag.as_deref(),
+            pm.sql.as_ref(),
+            exec_time,
+            row_count,
+            exec_id
+        ])?;
+
+        #[cfg(feature = "replace_parameters")]
+        stmt.execute(params![
+            sqllog.ts.as_ref(),
+            meta.ep,
+            meta.sess_id.as_ref(),
+            meta.thrd_id.as_ref(),
+            meta.username.as_ref(),
+            meta.trxid.as_ref(),
+            meta.statement.as_ref(),
+            meta.appname.as_ref(),
+            strip_ip_prefix(meta.client_ip.as_ref()),
+            sqllog.tag.as_deref(),
+            pm.sql.as_ref(),
+            exec_time,
+            row_count,
+            exec_id,
+            normalized_sql
+        ])?;
+
+        Ok(())
+    }
 }
 
 impl Exporter for SqliteExporter {
@@ -146,61 +200,14 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-
-        let meta = sqllog.parse_meta();
-        let pm = sqllog.parse_performance_metrics();
-        let ind = sqllog.parse_indicators();
-        let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
-            (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
-        });
-
-        #[cfg(not(feature = "replace_parameters"))]
-        stmt.execute(params![
-            sqllog.ts.as_ref(),
-            meta.ep,
-            meta.sess_id.as_ref(),
-            meta.thrd_id.as_ref(),
-            meta.username.as_ref(),
-            meta.trxid.as_ref(),
-            meta.statement.as_ref(),
-            meta.appname.as_ref(),
-            strip_ip_prefix(meta.client_ip.as_ref()),
-            sqllog.tag.as_deref(),
-            pm.sql.as_ref(),
-            exec_time,
-            row_count,
-            exec_id
-        ])
+        Self::do_insert(
+            conn,
+            &self.insert_sql,
+            sqllog,
+            #[cfg(feature = "replace_parameters")]
+            None,
+        )
         .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-
-        #[cfg(feature = "replace_parameters")]
-        {
-            let normalized: Option<String> = self
-                .normalize
-                .then(|| crate::features::normalize_sql(pm.sql.as_ref()));
-            stmt.execute(params![
-                sqllog.ts.as_ref(),
-                meta.ep,
-                meta.sess_id.as_ref(),
-                meta.thrd_id.as_ref(),
-                meta.username.as_ref(),
-                meta.trxid.as_ref(),
-                meta.statement.as_ref(),
-                meta.appname.as_ref(),
-                strip_ip_prefix(meta.client_ip.as_ref()),
-                sqllog.tag.as_deref(),
-                pm.sql.as_ref(),
-                exec_time,
-                row_count,
-                exec_id,
-                normalized.as_deref()
-            ])
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-        }
-
         self.stats.record_success();
         Ok(())
     }
@@ -213,63 +220,39 @@ impl Exporter for SqliteExporter {
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-
         for sqllog in sqllogs {
-            let meta = sqllog.parse_meta();
-            let pm = sqllog.parse_performance_metrics();
-            let ind = sqllog.parse_indicators();
-            let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
-                (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
-            });
-
-            #[cfg(not(feature = "replace_parameters"))]
-            stmt.execute(params![
-                sqllog.ts.as_ref(),
-                meta.ep,
-                meta.sess_id.as_ref(),
-                meta.thrd_id.as_ref(),
-                meta.username.as_ref(),
-                meta.trxid.as_ref(),
-                meta.statement.as_ref(),
-                meta.appname.as_ref(),
-                strip_ip_prefix(meta.client_ip.as_ref()),
-                sqllog.tag.as_deref(),
-                pm.sql.as_ref(),
-                exec_time,
-                row_count,
-                exec_id
-            ])
+            Self::do_insert(
+                conn,
+                &self.insert_sql,
+                sqllog,
+                #[cfg(feature = "replace_parameters")]
+                None,
+            )
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-
-            #[cfg(feature = "replace_parameters")]
-            {
-                let normalized: Option<String> = self
-                    .normalize
-                    .then(|| crate::features::normalize_sql(pm.sql.as_ref()));
-                stmt.execute(params![
-                    sqllog.ts.as_ref(),
-                    meta.ep,
-                    meta.sess_id.as_ref(),
-                    meta.thrd_id.as_ref(),
-                    meta.username.as_ref(),
-                    meta.trxid.as_ref(),
-                    meta.statement.as_ref(),
-                    meta.appname.as_ref(),
-                    strip_ip_prefix(meta.client_ip.as_ref()),
-                    sqllog.tag.as_deref(),
-                    pm.sql.as_ref(),
-                    exec_time,
-                    row_count,
-                    exec_id,
-                    normalized.as_deref()
-                ])
-                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-            }
         }
+        self.stats.record_success_batch(sqllogs.len());
+        Ok(())
+    }
 
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| Self::db_err("not initialized"))?;
+        let normalize = self.normalize;
+        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
+            let ns_ref = if normalize { ns.as_deref() } else { None };
+            Self::do_insert(conn, &self.insert_sql, sqllog, ns_ref)
+                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        }
         self.stats.record_success_batch(sqllogs.len());
         Ok(())
     }

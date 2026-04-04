@@ -7,16 +7,40 @@ pub use filters::{FiltersFeature, IndicatorFilters, MetaFilters, SqlFilters};
 #[cfg(feature = "replace_parameters")]
 pub mod replace_parameters;
 #[cfg(feature = "replace_parameters")]
-pub use replace_parameters::normalize_sql;
+#[allow(unused_imports)]
+pub use replace_parameters::{ParamValue, apply_params, compute_normalized, parse_params};
 
 use dm_database_parser_sqllog::Sqllog;
 use serde::Deserialize;
+
+/// `[features.replace_parameters]` 配置段
+#[cfg(feature = "replace_parameters")]
+#[derive(Debug, Deserialize, Clone)]
+pub struct ReplaceParametersConfig {
+    /// 是否在导出结果中写入 `normalized_sql` 列（默认 true）
+    #[serde(default = "default_true")]
+    pub enable: bool,
+}
+
+#[cfg(feature = "replace_parameters")]
+impl Default for ReplaceParametersConfig {
+    fn default() -> Self {
+        Self { enable: true }
+    }
+}
+
+#[cfg(feature = "replace_parameters")]
+fn default_true() -> bool {
+    true
+}
 
 /// 功能开关配置
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FeaturesConfig {
     #[cfg(feature = "filters")]
     pub filters: Option<FiltersFeature>,
+    #[cfg(feature = "replace_parameters")]
+    pub replace_parameters: Option<ReplaceParametersConfig>,
 }
 
 impl FeaturesConfig {

@@ -44,7 +44,8 @@ level = "info"
 retention_days = 7
 
 [features.replace_parameters]
-# 是否在导出结果中写入 normalized_sql 列（将 SQL 字面量替换为占位符 ?）
+# 是否在导出结果中写入 normalized_sql 列
+# 对 INS/DEL/UPD/ORA 类型的记录，将 PARAMS 参数值填入 SQL 的 ? 占位符
 enable = true
 
 [features.filters]

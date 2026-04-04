@@ -17,6 +17,10 @@ level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
+[features.replace_parameters]
+# 是否在导出结果中写入 normalized_sql 列（将 SQL 字面量替换为占位符 ?）
+enable = true
+
 [features.filters]
 # 是否启用过滤器
 enable = false
@@ -61,20 +65,20 @@ enable = false
 # 同时配置多个时，按优先级使用：csv > jsonl > sqlite
 
 # 方案 1: csv 导出（默认）
-[exporter.csv]
-file = "outputs/sqllog.csv"
-overwrite = true
-append = false
+# [exporter.csv]
+# file = "outputs/sqllog.csv"
+# overwrite = true
+# append = false
 
 # 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
 # [exporter.jsonl]
-# file = "outputs/sqllog.jsonl"
+# file = "export/sqllog2db.jsonl"
 # overwrite = true
 # append = false
 
 # 方案 3: SQLite 数据库导出
-# [exporter.sqlite]
-# database_url = "outputs/sqllog.db"
-# table_name = "sqllog_records"
-# overwrite = true
-# append = false
+[exporter.sqlite]
+database_url = "export/sqllog2db.db"
+table_name = "sqllog_records"
+overwrite = true
+append = false
