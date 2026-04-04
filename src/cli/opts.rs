@@ -29,6 +29,12 @@ pub enum Commands {
         /// Configuration file path
         #[arg(short = 'c', long = "config", default_value = "config.toml")]
         config: String,
+        /// Stop after processing N records (across all files)
+        #[arg(short = 'n', long = "limit")]
+        limit: Option<usize>,
+        /// Parse and count records without writing output
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
     /// Generate a default configuration file
     Init {

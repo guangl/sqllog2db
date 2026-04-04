@@ -6,8 +6,9 @@ use crate::exporter::ExporterManager;
 use crate::features::Pipeline;
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::LogParser;
+use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use log::{info, warn};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "filters")]
 use std::collections::HashSet;
@@ -57,6 +58,9 @@ impl LogProcessor for FilterProcessor {
     }
 }
 
+/// 处理单个日志文件，返回本文件实际导出的记录数。
+///
+/// `limit`: 最多再导出多少条记录（跨文件的剩余配额），`None` 表示不限制。
 fn process_log_file(
     file_path: &str,
     file_index: usize,
@@ -64,11 +68,21 @@ fn process_log_file(
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
     pipeline: &Pipeline,
+    pb: &ProgressBar,
+    limit: Option<usize>,
     #[cfg(feature = "replace_parameters")] do_normalize: bool,
     #[cfg(feature = "replace_parameters")] placeholder_override: Option<bool>,
-) -> Result<()> {
+) -> Result<usize> {
     let file_start = Instant::now();
-    eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
+
+    let file_name = std::path::Path::new(file_path).file_name().map_or_else(
+        || file_path.to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+
+    pb.set_prefix(format!("{file_index}/{total_files}"));
+    pb.set_message(file_name);
+    pb.reset();
 
     let parser = LogParser::from_path(file_path).map_err(|e| {
         Error::Parser(ParserError::InvalidPath {
@@ -89,7 +103,10 @@ fn process_log_file(
     macro_rules! flush_batch {
         () => {
             if !batch.is_empty() {
-                records_in_file += batch.len();
+                let batch_len = batch.len();
+                records_in_file += batch_len;
+                pb.inc(batch_len as u64);
+
                 #[cfg(feature = "replace_parameters")]
                 if do_normalize {
                     exporter_manager.export_batch_with_normalized(&batch, &batch_normalized)?;
@@ -99,12 +116,13 @@ fn process_log_file(
                 }
                 #[cfg(not(feature = "replace_parameters"))]
                 exporter_manager.export_batch(&batch)?;
+
                 batch.clear();
             }
         };
     }
 
-    for result in parser.iter() {
+    'outer: for result in parser.iter() {
         match result {
             Ok(record) => {
                 #[cfg(feature = "replace_parameters")]
@@ -120,6 +138,14 @@ fn process_log_file(
 
                 let passes = pipeline.is_empty() || pipeline.run(&record);
                 if passes {
+                    // 检查是否即将超出本文件的剩余配额
+                    if let Some(remaining) = limit {
+                        if records_in_file + batch.len() + 1 > remaining {
+                            flush_batch!();
+                            break 'outer;
+                        }
+                    }
+
                     #[cfg(feature = "replace_parameters")]
                     if do_normalize {
                         batch_normalized.push(ns);
@@ -142,15 +168,18 @@ fn process_log_file(
 
     flush_batch!();
 
+    let elapsed = file_start.elapsed().as_secs_f64();
     info!(
-        "File {}: {} records, {} errors, total {:.2}s",
-        file_path,
-        records_in_file,
-        errors_in_file,
-        file_start.elapsed().as_secs_f64()
+        "File {file_path}: {records_in_file} records, {errors_in_file} errors, total {elapsed:.2}s",
     );
 
-    Ok(())
+    pb.println(format!(
+        "✓ [{file_index}/{total_files}] {file_path} — {} records, {} errors, {elapsed:.2}s",
+        HumanCount(records_in_file as u64),
+        errors_in_file,
+    ));
+
+    Ok(records_in_file)
 }
 
 #[cfg(feature = "filters")]
@@ -248,7 +277,20 @@ fn scan_for_trxids_by_transaction_filters(
     found_trxids
 }
 
-pub fn handle_run(cfg: &Config) -> Result<()> {
+fn make_progress_bar() -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.cyan} [{prefix}] {msg} | {human_pos} records @ {per_sec} [{elapsed_precise}]",
+        )
+        .expect("valid template")
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    pb.enable_steady_tick(Duration::from_millis(80));
+    pb
+}
+
+pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<()> {
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.directory).log_files()?;
     if log_files.is_empty() {
@@ -276,7 +318,11 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     let final_cfg = cfg;
 
     let pipeline = build_pipeline(final_cfg);
-    let mut exporter_manager = ExporterManager::from_config(final_cfg)?;
+    let mut exporter_manager = if dry_run {
+        ExporterManager::dry_run()
+    } else {
+        ExporterManager::from_config(final_cfg)?
+    };
     let mut error_logger = ErrorLogger::new(&final_cfg.error.file)?;
     exporter_manager.initialize()?;
 
@@ -294,28 +340,52 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
 
-    info!("Parsing and exporting SQL logs...");
+    if dry_run {
+        info!("Dry-run: parsing SQL logs without writing output...");
+    } else {
+        info!("Parsing and exporting SQL logs...");
+    }
+
+    let pb = make_progress_bar();
+    let mut total_records = 0usize;
+
     for (idx, log_file) in log_files.iter().enumerate() {
-        process_log_file(
+        let remaining = limit.map(|l| l.saturating_sub(total_records));
+        if remaining == Some(0) {
+            break;
+        }
+
+        let processed = process_log_file(
             &log_file.to_string_lossy(),
             idx + 1,
             log_files.len(),
             &mut exporter_manager,
             &mut error_logger,
             &pipeline,
+            &pb,
+            remaining,
             #[cfg(feature = "replace_parameters")]
             do_normalize,
             #[cfg(feature = "replace_parameters")]
             placeholder_override,
         )?;
+
+        total_records += processed;
+        if limit.is_some_and(|l| total_records >= l) {
+            break;
+        }
     }
+
+    pb.finish_and_clear();
 
     exporter_manager.finalize()?;
     error_logger.finalize()?;
 
+    let elapsed = total_start.elapsed().as_secs_f64();
+    let mode_label = if dry_run { " [dry-run]" } else { "" };
     eprintln!(
-        "\n✓ SQL Log Export Task Completed in {:.2}s",
-        total_start.elapsed().as_secs_f64()
+        "\n✓ SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
+        HumanCount(total_records as u64),
     );
     exporter_manager.log_stats();
     Ok(())

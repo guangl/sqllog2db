@@ -58,7 +58,7 @@ append = false
     let config: Config = toml::from_str(&config_toml).unwrap();
 
     println!("--- Starting handle_run with enable=false ---");
-    handle_run(&config).unwrap();
+    handle_run(&config, None, false).unwrap();
     println!("--- Finished handle_run with enable=false ---");
 
     let mut config_enabled = config.clone();
@@ -69,6 +69,6 @@ append = false
     }
 
     println!("--- Starting handle_run with enable=true ---");
-    handle_run(&config_enabled).unwrap();
+    handle_run(&config_enabled, None, false).unwrap();
     println!("--- Finished handle_run with enable=true ---");
 }
