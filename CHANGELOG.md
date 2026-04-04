@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-04
+
+### Added
+- **`replace_parameters` feature**：将 `PARAMS(SEQNO, TYPE, DATA)` 参数值替换进 SQL 占位符，在导出结果中新增 `normalized_sql` 列
+  - 支持 `?` 顺序占位符和 `:N` 序号占位符（Oracle 风格）两种风格，可通过 `placeholders` 数组配置，空数组自动检测
+  - 支持 INS / DEL / UPD / SEL 四种执行记录类型
+  - 替换前校验 PARAMS 数量与占位符数量一致性，不符则写入警告日志跳过替换
+  - buffer 采用消耗语义（`remove`），防止达梦 `stmt` 内存地址复用导致跨 SQL 参数污染
+
+### Fixed
+- **SQLite 性能回退**：`do_insert` 重构后 `prepare_cached` 被移入循环内（每条记录一次），恢复为循环外单次 prepare + 复用 `CachedStatement`，50000 条耗时 40ms → 34ms
+
+### Performance
+- SQLite 导出较 0.4.3 基线提升约 10%
+
+---
+
 ## [0.4.3] - 2026-04-04
 
 ### Changed
