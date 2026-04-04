@@ -154,6 +154,13 @@ impl JsonlExporter {
             line_buf.extend_from_slice(itoa_buf.format(ind.exec_id).as_bytes());
         }
 
+        #[cfg(feature = "replace_parameters")]
+        {
+            let normalized = crate::features::normalize_sql(pm.sql.as_ref());
+            line_buf.extend_from_slice(b",\"normalized_sql\":");
+            write_json_str(line_buf, &normalized);
+        }
+
         line_buf.extend_from_slice(b"}\n");
 
         writer.write_all(line_buf).map_err(|e| {

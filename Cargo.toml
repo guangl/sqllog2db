@@ -70,9 +70,10 @@ sqlite = ["dep:rusqlite", "dep:tempfile", "csv"]
 
 # 其他功能特性开关
 filters = ["dep:rayon"]
+replace_parameters = []
 
 # 全量特性 (方便测试或一键启用)
-full = ["csv", "jsonl", "sqlite", "filters"]
+full = ["csv", "jsonl", "sqlite", "filters", "replace_parameters"]
 
 
 [lints.rust]
