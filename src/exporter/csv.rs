@@ -103,10 +103,25 @@ impl CsvExporter {
             line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
             line_buf.push(b',');
             line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
-            line_buf.push(b'\n');
         } else {
-            line_buf.extend_from_slice(b",,\n");
+            line_buf.extend_from_slice(b",,");
         }
+
+        #[cfg(feature = "replace_parameters")]
+        {
+            let normalized = crate::features::normalize_sql(pm.sql.as_ref());
+            line_buf.push(b',');
+            line_buf.push(b'"');
+            for &byte in normalized.as_bytes() {
+                if byte == b'"' {
+                    line_buf.push(b'"');
+                }
+                line_buf.push(byte);
+            }
+            line_buf.push(b'"');
+        }
+
+        line_buf.push(b'\n');
 
         writer.write_all(line_buf).map_err(|e| {
             Error::Export(ExportError::WriteError {
@@ -151,14 +166,16 @@ impl Exporter for CsvExporter {
         let mut writer = BufWriter::with_capacity(16 * 1024 * 1024, file);
 
         if !append_mode || !file_exists {
-            writer
-                .write_all(b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n")
-                .map_err(|e| {
-                    Error::Export(ExportError::WriteError {
-                        path: self.path.clone(),
-                        reason: format!("write header failed: {e}"),
-                    })
-                })?;
+            #[cfg(not(feature = "replace_parameters"))]
+            let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n".as_ref();
+            #[cfg(feature = "replace_parameters")]
+            let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n".as_ref();
+            writer.write_all(header).map_err(|e| {
+                Error::Export(ExportError::WriteError {
+                    path: self.path.clone(),
+                    reason: format!("write header failed: {e}"),
+                })
+            })?;
         }
 
         self.writer = Some(writer);

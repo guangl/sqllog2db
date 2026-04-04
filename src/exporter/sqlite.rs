@@ -29,8 +29,13 @@ impl std::fmt::Debug for SqliteExporter {
 impl SqliteExporter {
     #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
+        #[cfg(not(feature = "replace_parameters"))]
         let insert_sql =
             format!("INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        #[cfg(feature = "replace_parameters")]
+        let insert_sql = format!(
+            "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
         Self {
             database_url,
             table_name,
@@ -97,21 +102,33 @@ impl Exporter for SqliteExporter {
         }
 
         let conn = self.conn.as_ref().unwrap();
-        conn.execute(
-            &format!(
-                "CREATE TABLE IF NOT EXISTS {} (
-                    ts TEXT NOT NULL, ep INTEGER NOT NULL,
-                    sess_id TEXT NOT NULL, thrd_id TEXT NOT NULL,
-                    username TEXT NOT NULL, trx_id TEXT NOT NULL,
-                    statement TEXT, appname TEXT, client_ip TEXT, tag TEXT,
-                    sql TEXT NOT NULL,
-                    exec_time_ms REAL, row_count INTEGER, exec_id INTEGER
-                )",
-                self.table_name
-            ),
-            [],
-        )
-        .map_err(|e| Self::db_err(format!("create table failed: {e}")))?;
+        #[cfg(not(feature = "replace_parameters"))]
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                ts TEXT NOT NULL, ep INTEGER NOT NULL,
+                sess_id TEXT NOT NULL, thrd_id TEXT NOT NULL,
+                username TEXT NOT NULL, trx_id TEXT NOT NULL,
+                statement TEXT, appname TEXT, client_ip TEXT, tag TEXT,
+                sql TEXT NOT NULL,
+                exec_time_ms REAL, row_count INTEGER, exec_id INTEGER
+            )",
+            self.table_name
+        );
+        #[cfg(feature = "replace_parameters")]
+        let create_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+                ts TEXT NOT NULL, ep INTEGER NOT NULL,
+                sess_id TEXT NOT NULL, thrd_id TEXT NOT NULL,
+                username TEXT NOT NULL, trx_id TEXT NOT NULL,
+                statement TEXT, appname TEXT, client_ip TEXT, tag TEXT,
+                sql TEXT NOT NULL,
+                exec_time_ms REAL, row_count INTEGER, exec_id INTEGER,
+                normalized_sql TEXT
+            )",
+            self.table_name
+        );
+        conn.execute(&create_sql, [])
+            .map_err(|e| Self::db_err(format!("create table failed: {e}")))?;
 
         conn.execute_batch("BEGIN TRANSACTION;")
             .map_err(|e| Self::db_err(format!("begin transaction failed: {e}")))?;
@@ -136,6 +153,7 @@ impl Exporter for SqliteExporter {
             (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
         });
 
+        #[cfg(not(feature = "replace_parameters"))]
         stmt.execute(params![
             sqllog.ts.as_ref(),
             meta.ep,
@@ -151,6 +169,26 @@ impl Exporter for SqliteExporter {
             exec_time,
             row_count,
             exec_id
+        ])
+        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+
+        #[cfg(feature = "replace_parameters")]
+        stmt.execute(params![
+            sqllog.ts.as_ref(),
+            meta.ep,
+            meta.sess_id.as_ref(),
+            meta.thrd_id.as_ref(),
+            meta.username.as_ref(),
+            meta.trxid.as_ref(),
+            meta.statement.as_ref(),
+            meta.appname.as_ref(),
+            strip_ip_prefix(meta.client_ip.as_ref()),
+            sqllog.tag.as_deref(),
+            pm.sql.as_ref(),
+            exec_time,
+            row_count,
+            exec_id,
+            crate::features::normalize_sql(pm.sql.as_ref()).as_str()
         ])
         .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
 
@@ -178,6 +216,7 @@ impl Exporter for SqliteExporter {
                 (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
             });
 
+            #[cfg(not(feature = "replace_parameters"))]
             stmt.execute(params![
                 sqllog.ts.as_ref(),
                 meta.ep,
@@ -193,6 +232,26 @@ impl Exporter for SqliteExporter {
                 exec_time,
                 row_count,
                 exec_id
+            ])
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+
+            #[cfg(feature = "replace_parameters")]
+            stmt.execute(params![
+                sqllog.ts.as_ref(),
+                meta.ep,
+                meta.sess_id.as_ref(),
+                meta.thrd_id.as_ref(),
+                meta.username.as_ref(),
+                meta.trxid.as_ref(),
+                meta.statement.as_ref(),
+                meta.appname.as_ref(),
+                strip_ip_prefix(meta.client_ip.as_ref()),
+                sqllog.tag.as_deref(),
+                pm.sql.as_ref(),
+                exec_time,
+                row_count,
+                exec_id,
+                crate::features::normalize_sql(pm.sql.as_ref()).as_str()
             ])
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         }

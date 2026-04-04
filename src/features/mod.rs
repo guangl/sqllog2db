@@ -4,6 +4,11 @@ pub mod filters;
 #[allow(unused_imports)]
 pub use filters::{FiltersFeature, IndicatorFilters, MetaFilters, SqlFilters};
 
+#[cfg(feature = "replace_parameters")]
+pub mod replace_parameters;
+#[cfg(feature = "replace_parameters")]
+pub use replace_parameters::normalize_sql;
+
 use dm_database_parser_sqllog::Sqllog;
 use serde::Deserialize;
 
