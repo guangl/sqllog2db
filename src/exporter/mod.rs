@@ -108,6 +108,7 @@ impl ExporterManager {
         #[cfg(feature = "csv")]
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = CsvExporter::from_config(cfg);
             #[cfg(feature = "replace_parameters")]
             {
@@ -121,6 +122,7 @@ impl ExporterManager {
         #[cfg(feature = "jsonl")]
         if let Some(cfg) = &config.exporter.jsonl {
             info!("Using JSONL exporter: {}", cfg.file);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = JsonlExporter::from_config(cfg);
             #[cfg(feature = "replace_parameters")]
             {
@@ -134,6 +136,7 @@ impl ExporterManager {
         #[cfg(feature = "sqlite")]
         if let Some(cfg) = &config.exporter.sqlite {
             info!("Using SQLite exporter: {}", cfg.database_url);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = SqliteExporter::from_config(cfg);
             #[cfg(feature = "replace_parameters")]
             {

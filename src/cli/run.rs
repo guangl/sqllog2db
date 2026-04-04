@@ -65,6 +65,7 @@ fn process_log_file(
     error_logger: &mut ErrorLogger,
     pipeline: &Pipeline,
     #[cfg(feature = "replace_parameters")] do_normalize: bool,
+    #[cfg(feature = "replace_parameters")] placeholder_override: Option<bool>,
 ) -> Result<()> {
     let file_start = Instant::now();
     eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
@@ -108,7 +109,11 @@ fn process_log_file(
             Ok(record) => {
                 #[cfg(feature = "replace_parameters")]
                 let ns = if do_normalize {
-                    crate::features::compute_normalized(&record, &mut params_buffer)
+                    crate::features::compute_normalized(
+                        &record,
+                        &mut params_buffer,
+                        placeholder_override,
+                    )
                 } else {
                     None
                 };
@@ -282,6 +287,13 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
         .as_ref()
         .is_none_or(|r| r.enable);
 
+    #[cfg(feature = "replace_parameters")]
+    let placeholder_override = final_cfg
+        .features
+        .replace_parameters
+        .as_ref()
+        .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
+
     info!("Parsing and exporting SQL logs...");
     for (idx, log_file) in log_files.iter().enumerate() {
         process_log_file(
@@ -293,6 +305,8 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
             &pipeline,
             #[cfg(feature = "replace_parameters")]
             do_normalize,
+            #[cfg(feature = "replace_parameters")]
+            placeholder_override,
         )?;
     }
 
