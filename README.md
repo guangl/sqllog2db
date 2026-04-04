@@ -9,10 +9,10 @@
 
 一个轻量、高效的 SQL 日志导出 CLI 工具：解析达梦数据库 SQL 日志（流式处理），导出到 CSV / JSONL / SQLite，并提供按行落盘的错误追踪。
 
-- **高性能**：单线程流式处理，~170万条/秒吞吐量（mmap + SIMD + 零分配优化）
+- **高性能**：单线程流式处理，~155万条/秒吞吐量（mmap + SIMD + 零分配优化）
 - **稳健可靠**：批量导出 + 解析错误逐行落盘（便于追踪原始日志）
 - **易于使用**：清晰的 TOML 配置，三步完成导出任务；进度条实时反馈
-- **体积优化**：默认仅 CSV 导出，可选启用其它导出器特性
+- **开箱即用**：CSV / JSONL / SQLite 三种导出器及所有过滤功能均内置，无需额外编译开关
 
 > 适用场景：日志归档、数据分析预处理、基于日志的问责/审计、异构系统导出。
 
@@ -33,20 +33,20 @@
 
 ## 功能特性
 
-- **流式解析 SQL 日志**：单线程顺序处理，性能可预测（~170万条/秒）
+- **流式解析 SQL 日志**：单线程顺序处理，性能可预测（~155万条/秒）
 - **单导出目标（按优先级选择）**：csv > jsonl > sqlite
-  - CSV（默认特性，16MB 缓冲优化）
-  - JSONL（可选特性，轻量流式）
-  - SQLite（可选特性）
-- **错误追踪**：解析失败逐条写入配置的错误日志文件（纯文本行，`文件|错误|原始片段|行号`），便于后续 grep/统计
-- **日志管理**：每日滚动、保留天数可配（1-365 天）
+  - CSV（16MB 缓冲优化，`itoa` 零分配整数格式化）
+  - JSONL（轻量流式，自定义 RFC 8259 转义）
+  - SQLite（批量事务，`PRAGMA` 性能调优）
+- **SQL 参数标准化**：自动替换占位符，导出 `normalized_sql` 列，支持 `?` 和 `:N` 两种风格
+- **灵活过滤**：记录级（时间范围、用户、IP、标签）与事务级（执行时长、行数、exec_id）过滤
+- **错误追踪**：解析失败逐条写入配置的错误日志文件（纯文本行，`文件|错误`）
+- **日志管理**：可配置级别与保留天数（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
 
 ---
 
 ## 安装与构建
-
-你可以选择多种方式安装 or 构建。
 
 ### 从 crates.io 安装（推荐）
 
@@ -56,34 +56,15 @@ cargo install dm-database-sqllog2db
 
 ### 本地构建
 
-**本地构建（开发者推荐）**
-
-```powershell
+```bash
 # 在仓库根目录
 cargo build --release
 ```
 
-**本地安装（把可执行安装到 Cargo bin 目录）**
-
-```powershell
+```bash
+# 安装到 Cargo bin 目录
 cargo install --path .
 ```
-
-### 构建可选导出器（特性开关）
-
-```powershell
-# 默认仅 CSV
-cargo build --release
-
-# 选择性启用
-cargo build --release --features jsonl
-cargo build --release --features sqlite
-
-# 启用多个
-cargo build --release --features "jsonl sqlite"
-```
-
-> 💡 提示：默认仅包含 CSV 导出，如需其他导出器请按需启用对应 feature。
 
 ---
 
@@ -119,7 +100,7 @@ sqllog2db run -c config.toml --dry-run
 # 命令行覆盖配置字段
 sqllog2db run -c config.toml --set exporter.csv.file=out.csv
 
-# 按时间范围过滤（需 filters feature）
+# 按时间范围过滤
 sqllog2db run -c config.toml --from "2025-01-01" --to "2025-12-31"
 
 # 静默模式
@@ -177,31 +158,29 @@ sqllog2db completions fish > ~/.config/fish/completions/sqllog2db.fish
 # SQL 日志导出工具默认配置文件 (请根据需要修改)
 
 [sqllog]
-# SQL 日志目录或文件路径
+# SQL 日志目录路径
 directory = "sqllogs"
 
 [error]
-# 解析错误日志输出路径（内容为纯文本行: file | error | raw | line）
+# 解析错误日志输出路径（内容为纯文本行: file | error）
 file = "export/errors.log"
 
 [logging]
-# 应用日志输出目录或文件路径 (当前版本要求为"文件路径"，例如 logs/sqllog2db.log)
-# 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
+# 应用日志文件路径
 file = "logs/sqllog2db.log"
 # 日志级别: trace | debug | info | warn | error
 level = "info"
-# 日志保留天数 (1-365) - 用于滚动文件最大保留数量
+# 日志保留天数 (1-365)
 retention_days = 7
 
 [features.replace_parameters]
-enable = false
-symbols = ["?", ":name", "$1"] # 可选参数占位符样式列表
+# 是否在导出结果中写入 normalized_sql 列（默认 true）
+enable = true
 
 # ===================== 导出器配置 =====================
-# 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > jsonl > sqlite
+# 只能配置一个导出器，同时配置多个时按优先级使用：csv > jsonl > sqlite
 
-# 方案 1: csv 导出（默认）
+# 方案 1: CSV 导出（默认）
 [exporter.csv]
 file = "outputs/sqllog.csv"
 overwrite = true
@@ -222,45 +201,18 @@ append = false
 ```
 
 **配置说明：**
-- 只支持单个导出器，如配置多个按优先级选择第一个
+- 只支持单个导出器，如配置多个按优先级选择第一个（csv > jsonl > sqlite）
 - `logging.retention_days` 必须在 1-365 之间
-- 默认仅启用 CSV，其他导出器需在编译期开启对应 feature
-
-## 导出与错误日志
-
-- **导出统计**：导出器会输出成功/失败条数与批量 flush 次数
-- **错误日志**：由 `[error].file` 指定的文件按行追加记录，格式为 `文件路径 | 错误原因 | 原始内容(换行被转义) | 行号`。当前版本不会额外生成 summary 文件，统计信息会在控制台日志中输出。
-- **过滤增强 (v0.3.2+)**：支持 `start_ts` 与 `end_ts` 时间范围过滤，并优化了配置结构（平铺于 `[features.filters]` 下）。
-- **SQL Tag 支持 (v0.3.1+)**：同步获取并导出 SQL 日志中的 Tag 标签，支持按标签过滤。
 
 ---
 
-## 功能特性开关
+## 导出与错误日志
 
-- **默认启用**：`csv`
-- **可选导出器**：`jsonl`、`sqlite`
-- **可选功能**：
-  - `filters`：SQL 记录级（元数据）与事务级（执行ID/时长/行数）过滤
-  - `replace_parameters`：SQL 参数占位符替换（依赖 `anyhow`）
-  - `full`：启用所有特性（包含所有导出器和功能模块）
-
-编译示例：
-
-```powershell
-# 默认构建（仅 CSV，不含过滤与参数替换模块）
-cargo build --release
-
-# 启用 CSV 导出 + 过滤器功能
-cargo build --release --features filters
-
-# 启用所有导出器与功能
-cargo build --release --features full
-
-# 按需启用
-cargo build --release --features "sqlite filters replace_parameters"
-```
-
-> 💡 **体积优化提示**：默认不再强制编译过滤器和参数替换模块。只启用必要的特性，可以让二进制体积进一步缩小。
+- **导出统计**：运行结束后输出成功/失败条数与耗时
+- **错误日志**：由 `[error].file` 指定的文件按行追加记录，格式为 `文件路径 | 错误原因`，便于 grep 和统计
+- **SQL 参数标准化**：`[features.replace_parameters]` 启用时，导出结果含 `normalized_sql` 列（参数值替换为 `?` 或 `:N`）
+- **时间范围过滤**：`[features.filters]` 支持 `start_ts`/`end_ts` 毫秒级时间范围
+- **SQL Tag 支持**：同步导出 SQL 日志中的 Tag 标签，支持按标签过滤
 
 ---
 
@@ -290,78 +242,82 @@ sqllog2db -q run -c config.toml
 | 4 | 导出错误 |
 | 130 | 用户中断（Ctrl+C） |
 
+---
+
 ## 开发与测试
 
-运行全部测试：
-
-```powershell
+```bash
+# 运行全部测试
 cargo test
-```
 
-运行带 SQLite 特性的测试：
+# 代码检查（零警告）
+cargo clippy --all-targets -- -D warnings
 
-```powershell
-cargo test --features sqlite
-```
+# 格式化
+cargo fmt
 
-运行性能基准测试：
+# 测试覆盖率（需安装 cargo-llvm-cov）
+cargo llvm-cov --summary-only
 
-```powershell
+# 性能基准测试
 cargo bench
 ```
+
+CI 在每次 PR 时自动检查：
+- `cargo test`（多平台）
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo bench --no-run`（确保 bench 可编译）
+- `cargo llvm-cov --fail-under-lines 70`（行覆盖率 ≥ 70%）
+- `cargo test --release --test integration test_csv_throughput_baseline`（release 模式性能基准 ≥ 500k 条/秒）
 
 ---
 
 ## 性能与体积
 
-### 性能测试结果
+### 基准测试结果（本地 Apple M 系列，50k 条合成数据）
 
-**测试环境**: ~1.1GB SQL 日志文件，约 300 万条记录（单线程模式）
+| 导出器 | 吞吐量 | 备注 |
+|--------|--------|------|
+| CSV | ~2.13M 条/秒 | 16MB 缓冲 + `itoa` 零分配 |
+| JSONL | ~1.67M 条/秒 | 自定义 RFC 8259 转义，`ryu` 浮点格式化 |
+| SQLite | ~1.11M 条/秒 | 单事务批量写入 + `PRAGMA` 调优 |
+| Filters（预扫描） | ~2.25M 条/秒 | `rayon` 并行预扫描 |
 
-| 配置 | 平均用时 | 吞吐量 | 备注 |
-|------|---------|--------|------|
-| **默认配置 (极致优化)** | **1.94s** | **~1,550K 条/秒** | 零拷贝、缓冲区复用、快速整数转换 |
+**真实场景**（~1.1GB，约 300 万条记录，NVMe SSD）：~1.55M 条/秒
 
-**性能瓶颈分析**（NVMe SSD 测试）：
-- 解析：主要瓶颈
-- CSV 格式化：极低开销（已优化）
-- 文件写入：极低开销（16MB 缓冲）
-
-运行性能测试：
+运行基准测试：
 ```bash
-cargo bench --bench performance
+cargo bench
 ```
 
 ### 二进制体积
 
-- Release 构建已启用：`opt-level = "z"`, `lto = true`, `codegen-units = 1`, `strip = true`, `panic = "abort"`
-- 建议仅启用所需特性以获得更小二进制体积
-- 单导出器模式移除了多线程开销（已移除 `crossbeam`、`rayon` 依赖）
+Release 构建已启用：`opt-level = "z"`, `lto = true`, `codegen-units = 1`, `strip = true`, `panic = "abort"`
 
 ---
 
 ## 常见问题 (FAQ)
 
-**Q: 支持哪些数据库导出格式？**
-A: CSV（默认）、JSONL、SQLite。除 CSV 外其他需编译时启用对应 feature。
+**Q: 支持哪些导出格式？**
+A: CSV、JSONL、SQLite，三种格式均内置，无需额外编译开关，通过配置文件选择即可。
 
 **Q: 为什么只支持单个导出器？**
 A: 单导出器架构更简单、性能可预测、内存占用低。如需多格式可分多次运行。
 
 **Q: 性能瓶颈在哪里？**
-A: 主要在解析（69%），CSV 格式化和写入占比很小。建议使用 NVMe SSD。
+A: 主要在解析层，CSV 格式化和写入占比很小。建议使用 NVMe SSD。
 
 **Q: 如何处理超大日志文件？**
-A: 工具采用流式处理，内存占用稳定在约 179MB，理论上可处理任意大小文件。
+A: 工具采用流式处理，内存占用稳定，理论上可处理任意大小文件。
 
 **Q: 错误日志格式是什么？**
-A: 纯文本，每行格式为 `文件路径 | 错误原因 | 原始内容 | 行号`，便于 grep 和统计。
+A: 纯文本，每行格式为 `文件路径 | 错误原因`，便于 grep 和统计。
 
 **Q: 支持增量导出吗？**
-A: 当前版本不支持，需要自行管理已处理文件。未来版本可能添加。
+A: 当前版本不支持，需要自行管理已处理文件。
 
 **Q: 如何提高导出速度？**
-A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）。
+A: 1) 使用 NVMe SSD；2) 静默模式（`-q`）减少终端 I/O。
 
 ---
 
@@ -369,18 +325,14 @@ A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）。
 
 - **程序无法启动 / 配置解析失败**：
   - 使用 `sqllog2db validate -c config.toml` 检查配置
-  - 确保使用新的字段名称（v0.1.2+）：`directory` 和 `file` 而非 `path`
   - 确保 `logging.file` 为合法的文件路径，其父目录可创建
 - **未生成导出文件**：
   - 确认 `sqllog.directory` 下是否存在 `.log` 文件
-  - 查看应用日志与 `errors.json` 定位问题
-  - 检查是否配置了导出器（至少配置一个：CSV 或 SQLite）
-- **数据库导出失败**：
-  - 确保编译时已启用 `sqlite` 特性
-  - 验证数据库文件路径及父目录可写
-- **配置迁移问题**：
-  - v0.1.2 更新了字段命名，但保持向后兼容
-  - 旧配置文件仍可使用，但建议更新到新字段名
+  - 查看应用日志与错误日志定位问题
+  - 检查是否配置了导出器（至少配置一个）
+- **SQLite 导出失败**：
+  - 验证 `database_url` 路径及父目录可写
+  - 检查是否有其他进程持有数据库文件锁
 
 ---
 
@@ -397,6 +349,6 @@ A: 1) 使用 NVMe SSD；2) 关闭不必要的日志级别（`-q`）。
 - CLI 框架：[clap](https://crates.io/crates/clap)
 - 日志系统：[log](https://crates.io/crates/log)
 - 序列化：[serde](https://crates.io/crates/serde)
-- 数据库（可选）：[rusqlite](https://crates.io/crates/rusqlite)
+- 数据库：[rusqlite](https://crates.io/crates/rusqlite)
 
 感谢 Rust 社区提供的优秀生态系统。

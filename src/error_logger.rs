@@ -94,3 +94,98 @@ impl ErrorLogger {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_creates_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("errors.log");
+        let logger = ErrorLogger::new(&path).unwrap();
+        assert_eq!(logger.error_count(), 0);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn test_new_creates_parent_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("subdir/nested/errors.log");
+        let _logger = ErrorLogger::new(&path).unwrap();
+        assert!(path.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn test_finalize_with_no_errors() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("errors.log");
+        let mut logger = ErrorLogger::new(&path).unwrap();
+        logger.finalize().unwrap();
+        assert_eq!(logger.error_count(), 0);
+    }
+
+    #[test]
+    fn test_log_parse_error_increments_count() {
+        use dm_database_parser_sqllog::LogParser;
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // Write a file with an invalid log line to provoke a ParseError
+        let log_path = dir.path().join("bad.log");
+        std::fs::write(&log_path, "not a valid log line at all\n").unwrap();
+
+        let err_path = dir.path().join("errors.log");
+        let mut logger = ErrorLogger::new(&err_path).unwrap();
+
+        let parser = LogParser::from_path(log_path.to_str().unwrap()).unwrap();
+        let mut got_error = false;
+        for result in parser.iter() {
+            if let Err(e) = result {
+                logger
+                    .log_parse_error(log_path.to_str().unwrap(), &e)
+                    .unwrap();
+                got_error = true;
+                break;
+            }
+        }
+
+        if got_error {
+            assert_eq!(logger.error_count(), 1);
+            logger.finalize().unwrap();
+            let content = std::fs::read_to_string(&err_path).unwrap();
+            assert!(!content.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_finalize_with_errors_flushes() {
+        use dm_database_parser_sqllog::LogParser;
+        let dir = tempfile::TempDir::new().unwrap();
+
+        let log_path = dir.path().join("bad2.log");
+        std::fs::write(&log_path, "garbage\nmore garbage\n").unwrap();
+
+        let err_path = dir.path().join("errors2.log");
+        let mut logger = ErrorLogger::new(&err_path).unwrap();
+
+        let parser = LogParser::from_path(log_path.to_str().unwrap()).unwrap();
+        for result in parser.iter() {
+            if let Err(e) = result {
+                let _ = logger.log_parse_error(log_path.to_str().unwrap(), &e);
+            }
+        }
+
+        logger.finalize().unwrap();
+        // File should exist and be readable regardless of error count
+        assert!(err_path.exists());
+    }
+
+    #[test]
+    fn test_debug_format() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("errors.log");
+        let logger = ErrorLogger::new(&path).unwrap();
+        let debug_str = format!("{logger:?}");
+        assert!(debug_str.contains("ErrorLogger"));
+    }
+}

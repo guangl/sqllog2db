@@ -19,18 +19,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - name: Free Disk Space (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - uses: actions/checkout@v4
 
       - name: Install Rust
@@ -39,11 +27,12 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Run tests (default features)
+      - name: Run tests
         run: cargo test --verbose
 
-      - name: Run tests (all features)
-        run: cargo test --all-features --verbose
+      - name: Run performance baseline (release)
+        if: runner.os == 'Linux'
+        run: cargo test --release --test integration test_csv_throughput_baseline
 
   lint:
     name: Lint
@@ -73,20 +62,53 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run clippy (default features)
+      - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Run clippy (all features)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Check documentation
-        run: cargo doc --all-features --no-deps
+        run: cargo doc --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
 
+      - name: Compile benchmarks
+        run: cargo bench --no-run
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check coverage (≥ 70 % lines)
+        run: cargo llvm-cov --fail-under-lines 70
+
   release:
     name: Release ${{ matrix.artifact }}
-    needs: [test, lint]
+    needs: [test, lint, coverage]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     permissions:
@@ -143,9 +165,9 @@ jobs:
       - name: Build
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --all-features --target ${{ matrix.target }}
+            cross build --release --target ${{ matrix.target }}
           else
-            cargo build --release --all-features --target ${{ matrix.target }}
+            cargo build --release --target ${{ matrix.target }}
           fi
         shell: bash
 
@@ -180,7 +202,7 @@ jobs:
 
   publish:
     name: Publish to crates.io
-    needs: [test, lint]
+    needs: [test, lint, coverage]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

@@ -68,3 +68,62 @@ pub fn dim(s: impl std::fmt::Display) -> String {
         s.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // In test environments (no terminal), use_color() returns false.
+    // All color functions fall through to the plain `s.to_string()` branch.
+
+    #[test]
+    fn test_green_contains_input() {
+        let result = green("hello");
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn test_yellow_contains_input() {
+        let result = yellow("world");
+        assert!(result.contains("world"));
+    }
+
+    #[test]
+    fn test_cyan_contains_input() {
+        let result = cyan("foo");
+        assert!(result.contains("foo"));
+    }
+
+    #[test]
+    fn test_red_contains_input() {
+        let result = red("error_msg");
+        assert!(result.contains("error_msg"));
+    }
+
+    #[test]
+    fn test_bold_contains_input() {
+        let result = bold("important");
+        assert!(result.contains("important"));
+    }
+
+    #[test]
+    fn test_dim_contains_input() {
+        let result = dim("quiet");
+        assert!(result.contains("quiet"));
+    }
+
+    #[test]
+    fn test_init_no_color_silently_succeeds() {
+        // OnceLock may already be set by a prior test; init must not panic
+        init(true);
+        init(false);
+        // Functions still work regardless of lock state
+        assert!(!green("ok").is_empty());
+    }
+
+    #[test]
+    fn test_color_functions_with_numeric_display() {
+        let result = green(42);
+        assert!(result.contains("42"));
+    }
+}

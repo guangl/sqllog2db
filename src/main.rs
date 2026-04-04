@@ -67,8 +67,7 @@ fn apply_cli_flags_to_config(cfg: &mut Config, verbose: bool, quiet: bool) {
     }
 }
 
-/// Apply --from / --to date range to filters config (requires filters feature)
-#[cfg(feature = "filters")]
+/// Apply --from / --to date range to filters config
 fn apply_date_range(cfg: &mut Config, from: Option<&str>, to: Option<&str>) {
     if from.is_none() && to.is_none() {
         return;
@@ -147,15 +146,7 @@ fn run() -> Result<()> {
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
-
-            #[cfg(feature = "filters")]
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
-
-            #[cfg(not(feature = "filters"))]
-            if from.is_some() || to.is_some() {
-                warn!("--from/--to require the 'filters' feature (ignored)");
-            }
-
             cfg.validate()?;
             info!("Configuration validation passed");
 
@@ -197,7 +188,6 @@ fn run() -> Result<()> {
             info!("日志文件: {}", cfg.logging.file);
             info!("日志保留: {} 天", cfg.logging.retention_days);
             info!("错误日志: {}", cfg.error.file);
-            #[cfg(feature = "filters")]
             if let Some(f) = &cfg.features.filters {
                 info!(
                     "Feature flags - filters: {}",
@@ -208,7 +198,6 @@ fn run() -> Result<()> {
                     }
                 );
             }
-            #[cfg(feature = "csv")]
             if let Some(csv) = &cfg.exporter.csv {
                 info!(
                     "CSV export: {} (overwrite: {})",

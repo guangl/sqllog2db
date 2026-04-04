@@ -4,46 +4,34 @@ use crate::error::ParserError;
 use crate::error::{Error, Result};
 use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
-use crate::features::Pipeline;
+use crate::features::{LogProcessor, Pipeline};
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::LogParser;
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use log::{info, warn};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "filters")]
-use std::collections::HashSet;
-
-#[cfg(feature = "filters")]
-use crate::features::LogProcessor;
-
 /// 构建处理器管线
 fn build_pipeline(cfg: &Config) -> Pipeline {
-    #[allow(unused_mut)]
     let mut pipeline = Pipeline::new();
 
-    #[cfg(feature = "filters")]
     if let Some(f) = &cfg.features.filters {
         if f.has_filters() {
             pipeline.add(Box::new(FilterProcessor { filter: f.clone() }));
         }
     }
 
-    #[cfg(not(feature = "filters"))]
-    let _ = cfg;
-
     pipeline
 }
 
-#[cfg(feature = "filters")]
 #[derive(Debug)]
 struct FilterProcessor {
     filter: crate::features::FiltersFeature,
 }
 
-#[cfg(feature = "filters")]
 impl LogProcessor for FilterProcessor {
     fn process(&self, record: &dm_database_parser_sqllog::Sqllog) -> bool {
         let meta = record.parse_meta();
@@ -74,8 +62,8 @@ fn process_log_file(
     pb: &ProgressBar,
     limit: Option<usize>,
     interrupted: &Arc<AtomicBool>,
-    #[cfg(feature = "replace_parameters")] do_normalize: bool,
-    #[cfg(feature = "replace_parameters")] placeholder_override: Option<bool>,
+    do_normalize: bool,
+    placeholder_override: Option<bool>,
 ) -> Result<usize> {
     let file_start = Instant::now();
 
@@ -99,9 +87,7 @@ fn process_log_file(
     let mut errors_in_file = 0usize;
     let mut batch = Vec::with_capacity(5000);
 
-    #[cfg(feature = "replace_parameters")]
     let mut params_buffer = std::collections::HashMap::new();
-    #[cfg(feature = "replace_parameters")]
     let mut batch_normalized: Vec<Option<String>> = Vec::with_capacity(5000);
 
     macro_rules! flush_batch {
@@ -111,15 +97,12 @@ fn process_log_file(
                 records_in_file += batch_len;
                 pb.inc(batch_len as u64);
 
-                #[cfg(feature = "replace_parameters")]
                 if do_normalize {
                     exporter_manager.export_batch_with_normalized(&batch, &batch_normalized)?;
                     batch_normalized.clear();
                 } else {
                     exporter_manager.export_batch(&batch)?;
                 }
-                #[cfg(not(feature = "replace_parameters"))]
-                exporter_manager.export_batch(&batch)?;
 
                 batch.clear();
             }
@@ -135,7 +118,6 @@ fn process_log_file(
 
         match result {
             Ok(record) => {
-                #[cfg(feature = "replace_parameters")]
                 let ns = if do_normalize {
                     crate::features::compute_normalized(
                         &record,
@@ -156,7 +138,6 @@ fn process_log_file(
                         }
                     }
 
-                    #[cfg(feature = "replace_parameters")]
                     if do_normalize {
                         batch_normalized.push(ns);
                     }
@@ -197,7 +178,6 @@ fn process_log_file(
     Ok(records_in_file)
 }
 
-#[cfg(feature = "filters")]
 fn scan_log_file_for_trxids(
     file_path: &str,
     cfg: &Config,
@@ -252,7 +232,6 @@ fn scan_log_file_for_trxids(
     }
 }
 
-#[cfg(feature = "filters")]
 fn scan_for_trxids_by_transaction_filters(
     log_files: &[std::path::PathBuf],
     cfg: &Config,
@@ -322,9 +301,7 @@ pub fn handle_run(
         return Ok(());
     }
 
-    #[cfg(feature = "filters")]
     let mut final_cfg = cfg.clone();
-    #[cfg(feature = "filters")]
     if cfg
         .features
         .filters
@@ -336,10 +313,7 @@ pub fn handle_run(
             f.merge_found_trxids(extra_trxids.into_iter().collect());
         }
     }
-    #[cfg(feature = "filters")]
     let final_cfg = &final_cfg;
-    #[cfg(not(feature = "filters"))]
-    let final_cfg = cfg;
 
     let pipeline = build_pipeline(final_cfg);
     let mut exporter_manager = if dry_run {
@@ -350,14 +324,12 @@ pub fn handle_run(
     let mut error_logger = ErrorLogger::new(&final_cfg.error.file)?;
     exporter_manager.initialize()?;
 
-    #[cfg(feature = "replace_parameters")]
     let do_normalize = final_cfg
         .features
         .replace_parameters
         .as_ref()
         .is_none_or(|r| r.enable);
 
-    #[cfg(feature = "replace_parameters")]
     let placeholder_override = final_cfg
         .features
         .replace_parameters
@@ -393,9 +365,7 @@ pub fn handle_run(
             &pb,
             remaining,
             interrupted,
-            #[cfg(feature = "replace_parameters")]
             do_normalize,
-            #[cfg(feature = "replace_parameters")]
             placeholder_override,
         )?;
 

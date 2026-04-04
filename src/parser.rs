@@ -91,3 +91,59 @@ impl SqllogParser {
         Ok(log_files)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_files_nonexistent_path() {
+        let p = SqllogParser::new("/this/does/not/exist/at/all");
+        assert!(p.log_files().is_err());
+    }
+
+    #[test]
+    fn test_log_files_empty_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let p = SqllogParser::new(dir.path());
+        let files = p.log_files().unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_log_files_with_log_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.log"), "").unwrap();
+        let p = SqllogParser::new(dir.path());
+        let files = p.log_files().unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn test_log_files_ignores_non_log_files() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.log"), "").unwrap();
+        std::fs::write(dir.path().join("test.txt"), "").unwrap();
+        std::fs::write(dir.path().join("test.csv"), "").unwrap();
+        let p = SqllogParser::new(dir.path());
+        let files = p.log_files().unwrap();
+        assert_eq!(files.len(), 1);
+    }
+
+    #[test]
+    fn test_log_files_single_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("single.log");
+        std::fs::write(&file_path, "").unwrap();
+        let p = SqllogParser::new(&file_path);
+        let files = p.log_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], file_path);
+    }
+
+    #[test]
+    fn test_path_accessor() {
+        let p = SqllogParser::new("/tmp");
+        assert_eq!(p.path(), std::path::Path::new("/tmp"));
+    }
+}

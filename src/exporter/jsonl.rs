@@ -60,7 +60,6 @@ pub struct JsonlExporter {
     line_buf: Vec<u8>,
     itoa_buf: itoa::Buffer,
     float_buf: ryu::Buffer,
-    #[cfg(feature = "replace_parameters")]
     pub(super) normalize: bool,
 }
 
@@ -85,7 +84,6 @@ impl JsonlExporter {
             line_buf: Vec::with_capacity(512),
             itoa_buf: itoa::Buffer::new(),
             float_buf: ryu::Buffer::new(),
-            #[cfg(feature = "replace_parameters")]
             normalize: true,
         }
     }
@@ -110,8 +108,8 @@ impl JsonlExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
-        #[cfg(feature = "replace_parameters")] normalize: bool,
-        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
+        normalize: bool,
+        normalized_sql: Option<&str>,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -160,7 +158,6 @@ impl JsonlExporter {
             line_buf.extend_from_slice(itoa_buf.format(ind.exec_id).as_bytes());
         }
 
-        #[cfg(feature = "replace_parameters")]
         if normalize {
             if let Some(ns) = normalized_sql {
                 line_buf.extend_from_slice(b",\"normalized_sql\":");
@@ -228,9 +225,7 @@ impl Exporter for JsonlExporter {
             sqllog,
             writer,
             &self.path,
-            #[cfg(feature = "replace_parameters")]
             self.normalize,
-            #[cfg(feature = "replace_parameters")]
             None,
         )?;
         self.stats.record_success();
@@ -247,7 +242,6 @@ impl Exporter for JsonlExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
-        #[cfg(feature = "replace_parameters")]
         let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
@@ -257,9 +251,7 @@ impl Exporter for JsonlExporter {
                 sqllog,
                 writer,
                 &self.path,
-                #[cfg(feature = "replace_parameters")]
                 normalize,
-                #[cfg(feature = "replace_parameters")]
                 None,
             )?;
         }
@@ -267,7 +259,6 @@ impl Exporter for JsonlExporter {
         Ok(())
     }
 
-    #[cfg(feature = "replace_parameters")]
     fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -335,5 +326,111 @@ impl Drop for JsonlExporter {
         {
             warn!("JSONL exporter finalization on Drop failed: {e}");
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::redundant_closure_for_method_calls)]
+mod tests {
+    use super::*;
+    use dm_database_parser_sqllog::LogParser;
+
+    fn write_test_log(path: &std::path::Path, count: usize) {
+        use std::fmt::Write as _;
+        let mut buf = String::with_capacity(count * 170);
+        for i in 0..count {
+            writeln!(
+                buf,
+                "2025-01-15 10:30:28.001 (EP[0] sess:0x{i:04x} user:TESTUSER trxid:{i} stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT * FROM t WHERE id={i}. EXECTIME: {exec}(ms) ROWCOUNT: {rows}(rows) EXEC_ID: {i}.",
+                exec = (i * 13) % 1000,
+                rows = i % 100,
+            ).unwrap();
+        }
+        std::fs::write(path, buf).unwrap();
+    }
+
+    #[test]
+    fn test_jsonl_basic_export() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.jsonl");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+
+        let mut exporter = JsonlExporter::new(&outfile, true);
+        exporter.initialize().unwrap();
+        exporter.export_batch(&records).unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        let lines: Vec<_> = content.lines().collect();
+        assert_eq!(lines.len(), 3);
+        for line in &lines {
+            let val: serde_json::Value = serde_json::from_str(line).expect("valid JSON");
+            assert!(val.get("ts").is_some());
+            assert!(val.get("sql").is_some());
+        }
+    }
+
+    #[test]
+    fn test_jsonl_with_normalized() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.jsonl");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let normalized: Vec<Option<String>> = records
+            .iter()
+            .map(|_| Some("SELECT * FROM t WHERE id=?".into()))
+            .collect();
+
+        let mut exporter = JsonlExporter::new(&outfile, true);
+        exporter.normalize = true;
+        exporter.initialize().unwrap();
+        exporter
+            .export_batch_with_normalized(&records, &normalized)
+            .unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert!(content.contains("normalized_sql"));
+    }
+
+    #[test]
+    fn test_jsonl_no_normalize() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.jsonl");
+        write_test_log(&logfile, 1);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let normalized: Vec<Option<String>> = records.iter().map(|_| Some("norm".into())).collect();
+
+        let mut exporter = JsonlExporter::new(&outfile, true);
+        exporter.normalize = false;
+        exporter.initialize().unwrap();
+        exporter
+            .export_batch_with_normalized(&records, &normalized)
+            .unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert!(!content.contains("normalized_sql"));
+    }
+
+    #[test]
+    fn test_jsonl_empty_batch() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outfile = dir.path().join("out.jsonl");
+        let mut exporter = JsonlExporter::new(&outfile, true);
+        exporter.initialize().unwrap();
+        exporter.export_batch(&[]).unwrap();
+        exporter.finalize().unwrap();
+        assert_eq!(std::fs::read_to_string(&outfile).unwrap(), "");
     }
 }

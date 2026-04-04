@@ -259,3 +259,308 @@ impl SqlFilters {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_feature(enable: bool) -> FiltersFeature {
+        FiltersFeature {
+            enable,
+            meta: MetaFilters::default(),
+            indicators: IndicatorFilters::default(),
+            sql: SqlFilters::default(),
+        }
+    }
+
+    // ── has_filters ────────────────────────────────────────────
+    #[test]
+    fn test_has_filters_disabled_returns_false() {
+        let mut f = make_feature(false);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        assert!(!f.has_filters());
+    }
+
+    #[test]
+    fn test_has_filters_empty() {
+        assert!(!make_feature(true).has_filters());
+    }
+
+    #[test]
+    fn test_has_filters_with_username() {
+        let mut f = make_feature(true);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        assert!(f.has_filters());
+    }
+
+    #[test]
+    fn test_has_filters_with_start_ts() {
+        let mut f = make_feature(true);
+        f.meta.start_ts = Some("2025-01-01".into());
+        assert!(f.has_filters());
+    }
+
+    #[test]
+    fn test_has_filters_with_indicator() {
+        let mut f = make_feature(true);
+        f.indicators.min_runtime_ms = Some(1000);
+        assert!(f.has_filters());
+    }
+
+    // ── has_transaction_filters ────────────────────────────────
+    #[test]
+    fn test_has_transaction_filters_disabled() {
+        let mut f = make_feature(false);
+        f.indicators.min_runtime_ms = Some(1000);
+        assert!(!f.has_transaction_filters());
+    }
+
+    #[test]
+    fn test_has_transaction_filters_no_indicators() {
+        let mut f = make_feature(true);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        assert!(!f.has_transaction_filters());
+    }
+
+    #[test]
+    fn test_has_transaction_filters_with_min_runtime() {
+        let mut f = make_feature(true);
+        f.indicators.min_runtime_ms = Some(500);
+        assert!(f.has_transaction_filters());
+    }
+
+    #[test]
+    fn test_has_transaction_filters_with_exec_ids() {
+        let mut f = make_feature(true);
+        f.indicators.exec_ids = Some(vec![1, 2, 3]);
+        assert!(f.has_transaction_filters());
+    }
+
+    // ── should_keep: time range ────────────────────────────────
+    #[test]
+    fn test_should_keep_no_filters_passes_all() {
+        let f = make_feature(true);
+        assert!(f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "USER",
+            "stmt",
+            "app",
+            None
+        ));
+    }
+
+    #[test]
+    fn test_should_keep_start_ts_before_record() {
+        let mut f = make_feature(true);
+        f.meta.start_ts = Some("2025-01-15 11:00:00".into());
+        // record ts is before start → reject
+        assert!(!f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "USER",
+            "stmt",
+            "app",
+            None
+        ));
+    }
+
+    #[test]
+    fn test_should_keep_start_ts_equal_record() {
+        let mut f = make_feature(true);
+        f.meta.start_ts = Some("2025-01-15".into());
+        // record ts starts with start → pass
+        assert!(f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "USER",
+            "stmt",
+            "app",
+            None
+        ));
+    }
+
+    #[test]
+    fn test_should_keep_end_ts_after_record() {
+        let mut f = make_feature(true);
+        f.meta.end_ts = Some("2025-01-15 09:00:00".into());
+        // record ts is after end → reject
+        assert!(!f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "USER",
+            "stmt",
+            "app",
+            None
+        ));
+    }
+
+    #[test]
+    fn test_should_keep_meta_username_match() {
+        let mut f = make_feature(true);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        assert!(f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "USER",
+            "stmt",
+            "app",
+            None
+        ));
+        assert!(!f.should_keep(
+            "2025-01-15 10:00:00",
+            "tx1",
+            "1.2.3.4",
+            "s1",
+            "t1",
+            "OTHER",
+            "stmt",
+            "app",
+            None
+        ));
+    }
+
+    #[test]
+    fn test_should_keep_meta_trxid_exact_match() {
+        let mut f = make_feature(true);
+        let mut set = HashSet::new();
+        set.insert("TX123".to_string());
+        f.meta.trxids = Some(set);
+        assert!(f.should_keep("ts", "TX123", "ip", "s", "t", "u", "st", "a", None));
+        assert!(!f.should_keep("ts", "TX999", "ip", "s", "t", "u", "st", "a", None));
+    }
+
+    #[test]
+    fn test_should_keep_meta_tag_match() {
+        let mut f = make_feature(true);
+        f.meta.tags = Some(vec!["SEL".into()]);
+        assert!(f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", Some("[SEL]")));
+        assert!(!f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", Some("[INS]")));
+        assert!(!f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", None));
+    }
+
+    #[test]
+    fn test_should_keep_meta_client_ip_substring() {
+        let mut f = make_feature(true);
+        f.meta.client_ips = Some(vec!["192.168".into()]);
+        assert!(f.should_keep("ts", "tx", "192.168.1.1", "s", "t", "u", "st", "a", None));
+        assert!(!f.should_keep("ts", "tx", "10.0.0.1", "s", "t", "u", "st", "a", None));
+    }
+
+    // ── merge_found_trxids ─────────────────────────────────────
+    #[test]
+    fn test_merge_found_trxids_empty_list() {
+        let mut f = make_feature(true);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        f.merge_found_trxids(vec![]);
+        assert!(f.meta.trxids.is_none());
+    }
+
+    #[test]
+    fn test_merge_found_trxids_adds_to_set() {
+        let mut f = make_feature(true);
+        f.meta.usernames = Some(vec!["USER".into()]);
+        f.merge_found_trxids(vec!["TX1".into(), "TX2".into()]);
+        let trxids = f.meta.trxids.unwrap();
+        assert!(trxids.contains("TX1"));
+        assert!(trxids.contains("TX2"));
+    }
+
+    // ── IndicatorFilters ───────────────────────────────────────
+    #[test]
+    fn test_indicator_has_filters_empty() {
+        assert!(!IndicatorFilters::default().has_filters());
+    }
+
+    #[test]
+    fn test_indicator_matches_exec_id() {
+        let f = IndicatorFilters {
+            exec_ids: Some(vec![42]),
+            min_runtime_ms: None,
+            min_row_count: None,
+        };
+        assert!(f.matches(42, 0, 0));
+        assert!(!f.matches(99, 0, 0));
+    }
+
+    #[test]
+    fn test_indicator_matches_min_runtime() {
+        let f = IndicatorFilters {
+            exec_ids: None,
+            min_runtime_ms: Some(1000),
+            min_row_count: None,
+        };
+        assert!(f.matches(0, 1000, 0));
+        assert!(f.matches(0, 2000, 0));
+        assert!(!f.matches(0, 999, 0));
+    }
+
+    #[test]
+    fn test_indicator_matches_min_row_count() {
+        let f = IndicatorFilters {
+            exec_ids: None,
+            min_runtime_ms: None,
+            min_row_count: Some(100),
+        };
+        assert!(f.matches(0, 0, 100));
+        assert!(!f.matches(0, 0, 99));
+    }
+
+    #[test]
+    fn test_indicator_no_filters_always_false() {
+        assert!(!IndicatorFilters::default().matches(1, 9999, 9999));
+    }
+
+    // ── SqlFilters ─────────────────────────────────────────────
+    #[test]
+    fn test_sql_filters_empty() {
+        assert!(!SqlFilters::default().has_filters());
+        assert!(!SqlFilters::default().matches("SELECT 1"));
+    }
+
+    #[test]
+    fn test_sql_filters_include_pattern() {
+        let f = SqlFilters {
+            include_patterns: Some(vec!["SELECT".into()]),
+            exclude_patterns: None,
+        };
+        assert!(f.matches("SELECT * FROM t"));
+        assert!(!f.matches("INSERT INTO t VALUES (1)"));
+    }
+
+    #[test]
+    fn test_sql_filters_exclude_pattern() {
+        let f = SqlFilters {
+            include_patterns: None,
+            exclude_patterns: Some(vec!["DROP".into()]),
+        };
+        assert!(f.matches("SELECT * FROM t"));
+        assert!(!f.matches("DROP TABLE t"));
+    }
+
+    #[test]
+    fn test_sql_filters_include_and_exclude() {
+        let f = SqlFilters {
+            include_patterns: Some(vec!["FROM t".into()]),
+            exclude_patterns: Some(vec!["WHERE id=0".into()]),
+        };
+        assert!(f.matches("SELECT * FROM t WHERE id=1"));
+        assert!(!f.matches("SELECT * FROM t WHERE id=0"));
+        assert!(!f.matches("SELECT * FROM other"));
+    }
+}

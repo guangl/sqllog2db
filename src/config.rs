@@ -2,14 +2,10 @@ use crate::error::{ConfigError, Error, Result};
 
 pub const LOG_LEVELS: &[&str] = &["trace", "debug", "info", "warn", "error"];
 pub use crate::features::FeaturesConfig;
-#[cfg(feature = "filters")]
-#[allow(unused_imports)]
-pub use crate::features::FiltersFeature;
 use serde::Deserialize;
 use std::path::Path;
 
-#[cfg_attr(feature = "csv", derive(Default))]
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(default)]
     pub sqllog: SqllogConfig,
@@ -18,10 +14,6 @@ pub struct Config {
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
-    #[cfg_attr(
-        not(any(feature = "filters", feature = "replace_parameters")),
-        allow(dead_code)
-    )]
     pub features: FeaturesConfig,
     #[serde(default)]
     pub exporter: ExporterConfig,
@@ -99,18 +91,15 @@ impl Config {
                 })?;
             }
 
-            #[cfg(feature = "csv")]
             "exporter.csv.file" => {
                 self.exporter.csv.get_or_insert_with(Default::default).file = value.to_string();
             }
-            #[cfg(feature = "csv")]
             "exporter.csv.overwrite" => {
                 self.exporter
                     .csv
                     .get_or_insert_with(Default::default)
                     .overwrite = parse_bool(value)?;
             }
-            #[cfg(feature = "csv")]
             "exporter.csv.append" => {
                 self.exporter
                     .csv
@@ -118,21 +107,18 @@ impl Config {
                     .append = parse_bool(value)?;
             }
 
-            #[cfg(feature = "jsonl")]
             "exporter.jsonl.file" => {
                 self.exporter
                     .jsonl
                     .get_or_insert_with(Default::default)
                     .file = value.to_string();
             }
-            #[cfg(feature = "jsonl")]
             "exporter.jsonl.overwrite" => {
                 self.exporter
                     .jsonl
                     .get_or_insert_with(Default::default)
                     .overwrite = parse_bool(value)?;
             }
-            #[cfg(feature = "jsonl")]
             "exporter.jsonl.append" => {
                 self.exporter
                     .jsonl
@@ -140,28 +126,24 @@ impl Config {
                     .append = parse_bool(value)?;
             }
 
-            #[cfg(feature = "sqlite")]
             "exporter.sqlite.database_url" => {
                 self.exporter
                     .sqlite
                     .get_or_insert_with(Default::default)
                     .database_url = value.to_string();
             }
-            #[cfg(feature = "sqlite")]
             "exporter.sqlite.table_name" => {
                 self.exporter
                     .sqlite
                     .get_or_insert_with(Default::default)
                     .table_name = value.to_string();
             }
-            #[cfg(feature = "sqlite")]
             "exporter.sqlite.overwrite" => {
                 self.exporter
                     .sqlite
                     .get_or_insert_with(Default::default)
                     .overwrite = parse_bool(value)?;
             }
-            #[cfg(feature = "sqlite")]
             "exporter.sqlite.append" => {
                 self.exporter
                     .sqlite
@@ -273,29 +255,14 @@ impl LoggingConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExporterConfig {
-    #[cfg(feature = "csv")]
     pub csv: Option<CsvExporter>,
-    #[cfg(feature = "jsonl")]
     pub jsonl: Option<JsonlExporter>,
-    #[cfg(feature = "sqlite")]
     pub sqlite: Option<SqliteExporter>,
 }
 
 impl ExporterConfig {
     fn has_any(&self) -> bool {
-        #[cfg(feature = "csv")]
-        if self.csv.is_some() {
-            return true;
-        }
-        #[cfg(feature = "jsonl")]
-        if self.jsonl.is_some() {
-            return true;
-        }
-        #[cfg(feature = "sqlite")]
-        if self.sqlite.is_some() {
-            return true;
-        }
-        false
+        self.csv.is_some() || self.jsonl.is_some() || self.sqlite.is_some()
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -309,17 +276,13 @@ impl ExporterConfig {
 impl Default for ExporterConfig {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "csv")]
             csv: Some(CsvExporter::default()),
-            #[cfg(feature = "jsonl")]
             jsonl: None,
-            #[cfg(feature = "sqlite")]
             sqlite: None,
         }
     }
 }
 
-#[cfg(feature = "csv")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct CsvExporter {
     pub file: String,
@@ -329,7 +292,6 @@ pub struct CsvExporter {
     pub append: bool,
 }
 
-#[cfg(feature = "csv")]
 impl Default for CsvExporter {
     fn default() -> Self {
         Self {
@@ -340,7 +302,6 @@ impl Default for CsvExporter {
     }
 }
 
-#[cfg(feature = "jsonl")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct JsonlExporter {
     pub file: String,
@@ -350,7 +311,6 @@ pub struct JsonlExporter {
     pub append: bool,
 }
 
-#[cfg(feature = "jsonl")]
 impl Default for JsonlExporter {
     fn default() -> Self {
         Self {
@@ -361,7 +321,6 @@ impl Default for JsonlExporter {
     }
 }
 
-#[cfg(feature = "sqlite")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqliteExporter {
     pub database_url: String,
@@ -373,12 +332,10 @@ pub struct SqliteExporter {
     pub append: bool,
 }
 
-#[cfg(feature = "sqlite")]
 fn default_table_name() -> String {
     "sqllog_records".to_string()
 }
 
-#[cfg(feature = "sqlite")]
 impl Default for SqliteExporter {
     fn default() -> Self {
         Self {
@@ -392,4 +349,173 @@ impl Default for SqliteExporter {
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_config() -> Config {
+        Config::default()
+    }
+
+    // ── validate ───────────────────────────────────────────────
+    #[test]
+    fn test_validate_default_config_passes() {
+        assert!(default_config().validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_log_level() {
+        let mut cfg = default_config();
+        cfg.logging.level = "invalid".into();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_retention_days_zero() {
+        let mut cfg = default_config();
+        cfg.logging.retention_days = 0;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_retention_days_over_365() {
+        let mut cfg = default_config();
+        cfg.logging.retention_days = 366;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_empty_sqllog_directory() {
+        let mut cfg = default_config();
+        cfg.sqllog.directory = "  ".into();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_no_exporters() {
+        let mut cfg = default_config();
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_err());
+    }
+
+    // ── apply_overrides ────────────────────────────────────────
+    #[test]
+    fn test_apply_overrides_sqllog_directory() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["sqllog.directory=/tmp/logs".into()])
+            .unwrap();
+        assert_eq!(cfg.sqllog.directory, "/tmp/logs");
+    }
+
+    #[test]
+    fn test_apply_overrides_logging_level() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["logging.level=debug".into()])
+            .unwrap();
+        assert_eq!(cfg.logging.level, "debug");
+    }
+
+    #[test]
+    fn test_apply_overrides_csv_file() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.csv.file=/tmp/out.csv".into()])
+            .unwrap();
+        assert_eq!(cfg.exporter.csv.unwrap().file, "/tmp/out.csv");
+    }
+
+    #[test]
+    fn test_apply_overrides_csv_overwrite_false() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.csv.overwrite=false".into()])
+            .unwrap();
+        assert!(!cfg.exporter.csv.unwrap().overwrite);
+    }
+
+    #[test]
+    fn test_apply_overrides_jsonl_file() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.jsonl.file=/tmp/out.jsonl".into()])
+            .unwrap();
+        assert_eq!(cfg.exporter.jsonl.unwrap().file, "/tmp/out.jsonl");
+    }
+
+    #[test]
+    fn test_apply_overrides_sqlite_database_url() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.sqlite.database_url=/tmp/out.db".into()])
+            .unwrap();
+        assert_eq!(cfg.exporter.sqlite.unwrap().database_url, "/tmp/out.db");
+    }
+
+    #[test]
+    fn test_apply_overrides_unknown_key_returns_error() {
+        let mut cfg = default_config();
+        assert!(cfg.apply_overrides(&["unknown.key=value".into()]).is_err());
+    }
+
+    #[test]
+    fn test_apply_overrides_bad_format_returns_error() {
+        let mut cfg = default_config();
+        assert!(cfg.apply_overrides(&["nodeleimiter".into()]).is_err());
+    }
+
+    #[test]
+    fn test_apply_overrides_invalid_bool() {
+        let mut cfg = default_config();
+        assert!(
+            cfg.apply_overrides(&["exporter.csv.overwrite=maybe".into()])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_apply_overrides_retention_days_invalid() {
+        let mut cfg = default_config();
+        assert!(
+            cfg.apply_overrides(&["logging.retention_days=abc".into()])
+                .is_err()
+        );
+    }
+
+    // ── ExporterConfig ─────────────────────────────────────────
+    #[test]
+    fn test_exporter_config_has_any_csv() {
+        let cfg = ExporterConfig::default();
+        assert!(cfg.csv.is_some());
+    }
+
+    #[test]
+    fn test_exporter_config_default_no_jsonl_sqlite() {
+        let cfg = ExporterConfig::default();
+        assert!(cfg.jsonl.is_none());
+        assert!(cfg.sqlite.is_none());
+    }
+
+    // ── from_file ──────────────────────────────────────────────
+    #[test]
+    fn test_from_file_not_found() {
+        let result = Config::from_file("/nonexistent/path/config.toml");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_file_valid_toml() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[sqllog]
+directory = "sqllogs"
+[exporter.csv]
+file = "out.csv"
+"#,
+        )
+        .unwrap();
+        let cfg = Config::from_file(&path).unwrap();
+        assert_eq!(cfg.sqllog.directory, "sqllogs");
+        assert_eq!(cfg.exporter.csv.unwrap().file, "out.csv");
+    }
 }

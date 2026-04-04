@@ -42,23 +42,18 @@ fn check_log_dir(directory: &str, result: &mut PreflightResult) {
 
 #[allow(clippy::needless_return)]
 fn check_output_writable(cfg: &Config, result: &mut PreflightResult) {
-    #[cfg(feature = "csv")]
     if let Some(csv) = &cfg.exporter.csv {
         check_path_writable(&csv.file, result);
         return;
     }
-    #[cfg(feature = "jsonl")]
     if let Some(jsonl) = &cfg.exporter.jsonl {
         check_path_writable(&jsonl.file, result);
         return;
     }
-    #[cfg(feature = "sqlite")]
     if let Some(sqlite) = &cfg.exporter.sqlite {
         check_path_writable(&sqlite.database_url, result);
         return;
     }
-    #[cfg(not(any(feature = "csv", feature = "jsonl", feature = "sqlite")))]
-    let _ = cfg;
 }
 
 fn check_path_writable(file_path: &str, result: &mut PreflightResult) {
@@ -117,5 +112,124 @@ impl PreflightResult {
             eprintln!("{} {err}", color::red("Error:"));
         }
         self.has_errors()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, CsvExporter, ExporterConfig, SqllogConfig};
+
+    fn config_with_log_dir(dir: &str) -> Config {
+        Config {
+            sqllog: SqllogConfig {
+                directory: dir.to_string(),
+            },
+            ..Default::default()
+        }
+    }
+
+    // ── PreflightResult ───────────────────────────────────────────
+
+    #[test]
+    fn test_preflight_result_no_errors() {
+        let result = PreflightResult::default();
+        assert!(!result.has_errors());
+        assert!(!result.print_and_check());
+    }
+
+    #[test]
+    fn test_preflight_result_with_errors() {
+        let mut result = PreflightResult::default();
+        result.errors.push("some error".to_string());
+        assert!(result.has_errors());
+        assert!(result.print_and_check());
+    }
+
+    #[test]
+    fn test_preflight_result_warnings_no_error() {
+        let mut result = PreflightResult::default();
+        result.warnings.push("some warning".to_string());
+        assert!(!result.has_errors());
+        assert!(!result.print_and_check());
+    }
+
+    // ── check: log dir ────────────────────────────────────────────
+
+    #[test]
+    fn test_check_nonexistent_log_dir_produces_error() {
+        let cfg = config_with_log_dir("/this/path/definitely/does/not/exist");
+        let result = check(&cfg);
+        assert!(result.has_errors());
+        assert!(result.errors[0].contains("不存在"));
+    }
+
+    #[test]
+    fn test_check_log_dir_not_a_directory() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("notadir.txt");
+        std::fs::write(&file_path, "data").unwrap();
+        let cfg = config_with_log_dir(file_path.to_str().unwrap());
+        let result = check(&cfg);
+        assert!(result.has_errors());
+    }
+
+    #[test]
+    fn test_check_log_dir_empty_produces_warning() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let cfg = config_with_log_dir(dir.path().to_str().unwrap());
+        let result = check(&cfg);
+        // No error, but warning that no .log files found
+        assert!(!result.has_errors());
+        assert!(!result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_check_log_dir_with_log_files_no_warning() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.log"), "").unwrap();
+        let cfg = config_with_log_dir(dir.path().to_str().unwrap());
+        let result = check(&cfg);
+        assert!(!result.has_errors());
+        assert!(result.warnings.is_empty());
+    }
+
+    // ── check: output writable ────────────────────────────────────
+
+    #[test]
+    fn test_check_csv_output_in_existing_dir() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.log"), "").unwrap();
+        let out_file = dir.path().join("out.csv");
+        let mut cfg = config_with_log_dir(dir.path().to_str().unwrap());
+        cfg.exporter = ExporterConfig {
+            csv: Some(CsvExporter {
+                file: out_file.to_str().unwrap().to_string(),
+                overwrite: false,
+                append: false,
+            }),
+            ..Default::default()
+        };
+        let result = check(&cfg);
+        assert!(!result.has_errors());
+    }
+
+    #[test]
+    fn test_check_csv_existing_writable_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("test.log"), "").unwrap();
+        let out_file = dir.path().join("out.csv");
+        std::fs::write(&out_file, "").unwrap(); // pre-create file
+        let mut cfg = config_with_log_dir(dir.path().to_str().unwrap());
+        cfg.exporter = ExporterConfig {
+            csv: Some(CsvExporter {
+                file: out_file.to_str().unwrap().to_string(),
+                overwrite: false,
+                append: false,
+            }),
+            ..Default::default()
+        };
+        let result = check(&cfg);
+        assert!(!result.has_errors());
     }
 }

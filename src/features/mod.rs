@@ -1,20 +1,13 @@
-#[cfg(feature = "filters")]
 pub mod filters;
-#[cfg(feature = "filters")]
-#[allow(unused_imports)]
-pub use filters::{FiltersFeature, IndicatorFilters, MetaFilters, SqlFilters};
+pub use filters::FiltersFeature;
 
-#[cfg(feature = "replace_parameters")]
 pub mod replace_parameters;
-#[cfg(feature = "replace_parameters")]
-#[allow(unused_imports)]
-pub use replace_parameters::{ParamValue, apply_params, compute_normalized, parse_params};
+pub use replace_parameters::compute_normalized;
 
 use dm_database_parser_sqllog::Sqllog;
 use serde::Deserialize;
 
 /// `[features.replace_parameters]` 配置段
-#[cfg(feature = "replace_parameters")]
 #[derive(Debug, Deserialize, Clone)]
 pub struct ReplaceParametersConfig {
     /// 是否在导出结果中写入 `normalized_sql` 列（默认 true）
@@ -28,7 +21,6 @@ pub struct ReplaceParametersConfig {
     pub placeholders: Vec<String>,
 }
 
-#[cfg(feature = "replace_parameters")]
 impl Default for ReplaceParametersConfig {
     fn default() -> Self {
         Self {
@@ -38,7 +30,6 @@ impl Default for ReplaceParametersConfig {
     }
 }
 
-#[cfg(feature = "replace_parameters")]
 impl ReplaceParametersConfig {
     /// 将 `placeholders` 列表转换为 `compute_normalized` 所需的 `placeholder_override`：
     /// - `None`        → 自动检测
@@ -58,7 +49,6 @@ impl ReplaceParametersConfig {
     }
 }
 
-#[cfg(feature = "replace_parameters")]
 fn default_true() -> bool {
     true
 }
@@ -66,15 +56,12 @@ fn default_true() -> bool {
 /// 功能开关配置
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FeaturesConfig {
-    #[cfg(feature = "filters")]
     pub filters: Option<FiltersFeature>,
-    #[cfg(feature = "replace_parameters")]
     pub replace_parameters: Option<ReplaceParametersConfig>,
 }
 
 impl FeaturesConfig {
     pub fn validate() {
-        #[cfg(feature = "filters")]
         FiltersFeature::validate();
     }
 }
@@ -98,7 +85,6 @@ impl Pipeline {
     }
 
     /// 添加处理器到管线末尾
-    #[cfg(feature = "filters")]
     pub fn add(&mut self, processor: Box<dyn LogProcessor>) {
         self.processors.push(processor);
     }
@@ -114,5 +100,84 @@ impl Pipeline {
     #[must_use]
     pub fn run(&self, record: &Sqllog) -> bool {
         self.processors.iter().all(|p| p.process(record))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Pipeline ───────────────────────────────────────────────
+    #[test]
+    fn test_pipeline_empty() {
+        let p = Pipeline::new();
+        assert!(p.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_add() {
+        let mut p = Pipeline::new();
+
+        #[derive(Debug)]
+        struct AlwaysPass;
+        impl LogProcessor for AlwaysPass {
+            fn process(&self, _: &dm_database_parser_sqllog::Sqllog) -> bool {
+                true
+            }
+        }
+
+        p.add(Box::new(AlwaysPass));
+        assert!(!p.is_empty());
+    }
+
+    // ── ReplaceParametersConfig ────────────────────────────────
+    #[test]
+    fn test_placeholder_override_question() {
+        let cfg = ReplaceParametersConfig {
+            enable: true,
+            placeholders: vec!["?".into()],
+        };
+        assert_eq!(cfg.placeholder_override(), Some(false));
+    }
+
+    #[test]
+    fn test_placeholder_override_colon() {
+        let cfg = ReplaceParametersConfig {
+            enable: true,
+            placeholders: vec![":1".into()],
+        };
+        assert_eq!(cfg.placeholder_override(), Some(true));
+    }
+
+    #[test]
+    fn test_placeholder_override_auto() {
+        let cfg = ReplaceParametersConfig {
+            enable: true,
+            placeholders: vec![],
+        };
+        assert_eq!(cfg.placeholder_override(), None);
+    }
+
+    #[test]
+    fn test_placeholder_override_both_is_auto() {
+        let cfg = ReplaceParametersConfig {
+            enable: true,
+            placeholders: vec!["?".into(), ":1".into()],
+        };
+        // Both → ambiguous → None
+        assert_eq!(cfg.placeholder_override(), None);
+    }
+
+    // ── FeaturesConfig ─────────────────────────────────────────
+    #[test]
+    fn test_features_config_validate_no_panic() {
+        FeaturesConfig::validate();
+    }
+
+    #[test]
+    fn test_features_config_default() {
+        let cfg = FeaturesConfig::default();
+        assert!(cfg.filters.is_none());
+        assert!(cfg.replace_parameters.is_none());
     }
 }

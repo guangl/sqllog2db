@@ -14,7 +14,6 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
-    #[cfg(feature = "replace_parameters")]
     pub(super) normalize: bool,
 }
 
@@ -31,10 +30,6 @@ impl std::fmt::Debug for SqliteExporter {
 impl SqliteExporter {
     #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
-        #[cfg(not(feature = "replace_parameters"))]
-        let insert_sql =
-            format!("INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        #[cfg(feature = "replace_parameters")]
         let insert_sql = format!(
             "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
@@ -46,7 +41,6 @@ impl SqliteExporter {
             append,
             conn: None,
             stats: ExportStats::new(),
-            #[cfg(feature = "replace_parameters")]
             normalize: true,
         }
     }
@@ -70,7 +64,7 @@ impl SqliteExporter {
     fn do_insert(
         stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
-        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
+        normalized_sql: Option<&str>,
     ) -> std::result::Result<(), rusqlite::Error> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -79,25 +73,6 @@ impl SqliteExporter {
             (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
         });
 
-        #[cfg(not(feature = "replace_parameters"))]
-        stmt.execute(params![
-            sqllog.ts.as_ref(),
-            meta.ep,
-            meta.sess_id.as_ref(),
-            meta.thrd_id.as_ref(),
-            meta.username.as_ref(),
-            meta.trxid.as_ref(),
-            meta.statement.as_ref(),
-            meta.appname.as_ref(),
-            strip_ip_prefix(meta.client_ip.as_ref()),
-            sqllog.tag.as_deref(),
-            pm.sql.as_ref(),
-            exec_time,
-            row_count,
-            exec_id
-        ])?;
-
-        #[cfg(feature = "replace_parameters")]
         stmt.execute(params![
             sqllog.ts.as_ref(),
             meta.ep,
@@ -158,19 +133,6 @@ impl Exporter for SqliteExporter {
         }
 
         let conn = self.conn.as_ref().unwrap();
-        #[cfg(not(feature = "replace_parameters"))]
-        let create_sql = format!(
-            "CREATE TABLE IF NOT EXISTS {} (
-                ts TEXT NOT NULL, ep INTEGER NOT NULL,
-                sess_id TEXT NOT NULL, thrd_id TEXT NOT NULL,
-                username TEXT NOT NULL, trx_id TEXT NOT NULL,
-                statement TEXT, appname TEXT, client_ip TEXT, tag TEXT,
-                sql TEXT NOT NULL,
-                exec_time_ms REAL, row_count INTEGER, exec_id INTEGER
-            )",
-            self.table_name
-        );
-        #[cfg(feature = "replace_parameters")]
         let create_sql = format!(
             "CREATE TABLE IF NOT EXISTS {} (
                 ts TEXT NOT NULL, ep INTEGER NOT NULL,
@@ -201,13 +163,8 @@ impl Exporter for SqliteExporter {
         let mut stmt = conn
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        Self::do_insert(
-            &mut stmt,
-            sqllog,
-            #[cfg(feature = "replace_parameters")]
-            None,
-        )
-        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        Self::do_insert(&mut stmt, sqllog, None)
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
     }
@@ -224,19 +181,13 @@ impl Exporter for SqliteExporter {
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         for sqllog in sqllogs {
-            Self::do_insert(
-                &mut stmt,
-                sqllog,
-                #[cfg(feature = "replace_parameters")]
-                None,
-            )
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+            Self::do_insert(&mut stmt, sqllog, None)
+                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         }
         self.stats.record_success_batch(sqllogs.len());
         Ok(())
     }
 
-    #[cfg(feature = "replace_parameters")]
     fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -280,5 +231,123 @@ impl Exporter for SqliteExporter {
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
         Some(self.stats.clone())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::redundant_closure_for_method_calls)]
+mod tests {
+    use super::*;
+    use dm_database_parser_sqllog::LogParser;
+
+    fn write_test_log(path: &std::path::Path, count: usize) {
+        use std::fmt::Write as _;
+        let mut buf = String::with_capacity(count * 170);
+        for i in 0..count {
+            writeln!(
+                buf,
+                "2025-01-15 10:30:28.001 (EP[0] sess:0x{i:04x} user:TESTUSER trxid:{i} stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT * FROM t WHERE id={i}. EXECTIME: {exec}(ms) ROWCOUNT: {rows}(rows) EXEC_ID: {i}.",
+                exec = (i * 13) % 1000,
+                rows = i % 100,
+            ).unwrap();
+        }
+        std::fs::write(path, buf).unwrap();
+    }
+
+    #[test]
+    fn test_sqlite_basic_export() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("out.db");
+        write_test_log(&logfile, 5);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.export_batch(&records).unwrap();
+            exporter.finalize().unwrap();
+        } // exporter drops here, releasing EXCLUSIVE lock
+
+        // Verify rows inserted
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqllog_records", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn test_sqlite_overwrite_drops_existing_table() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("out.db");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+
+        // First run: insert 3 rows
+        {
+            let mut e =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), false, false);
+            e.initialize().unwrap();
+            e.export_batch(&records).unwrap();
+            e.finalize().unwrap();
+        }
+
+        // Second run with overwrite: should have only 3 rows again (not 6)
+        {
+            let mut e =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            e.initialize().unwrap();
+            e.export_batch(&records).unwrap();
+            e.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_sqlite_with_normalized() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("out.db");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let normalized: Vec<Option<String>> = records
+            .iter()
+            .map(|_| Some("SELECT * FROM t WHERE id=?".into()))
+            .collect();
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            exporter.normalize = true;
+            exporter.initialize().unwrap();
+            exporter
+                .export_batch_with_normalized(&records, &normalized)
+                .unwrap();
+            exporter.finalize().unwrap();
+        } // exporter drops here, releasing EXCLUSIVE lock
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let ns: Option<String> = conn
+            .query_row("SELECT normalized_sql FROM tbl LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ns, Some("SELECT * FROM t WHERE id=?".to_string()));
     }
 }

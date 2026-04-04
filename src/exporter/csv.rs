@@ -15,7 +15,6 @@ pub struct CsvExporter {
     stats: ExportStats,
     itoa_buf: itoa::Buffer,
     line_buf: Vec<u8>,
-    #[cfg(feature = "replace_parameters")]
     pub(super) normalize: bool,
 }
 
@@ -39,7 +38,6 @@ impl CsvExporter {
             stats: ExportStats::new(),
             itoa_buf: itoa::Buffer::new(),
             line_buf: Vec::with_capacity(512),
-            #[cfg(feature = "replace_parameters")]
             normalize: true,
         }
     }
@@ -64,8 +62,8 @@ impl CsvExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
-        #[cfg(feature = "replace_parameters")] normalize: bool,
-        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
+        normalize: bool,
+        normalized_sql: Option<&str>,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -113,7 +111,6 @@ impl CsvExporter {
             line_buf.extend_from_slice(b",,");
         }
 
-        #[cfg(feature = "replace_parameters")]
         if normalize {
             line_buf.push(b',');
             if let Some(ns) = normalized_sql {
@@ -173,9 +170,6 @@ impl Exporter for CsvExporter {
         let mut writer = BufWriter::with_capacity(16 * 1024 * 1024, file);
 
         if !append_mode || !file_exists {
-            #[cfg(not(feature = "replace_parameters"))]
-            let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n".as_ref();
-            #[cfg(feature = "replace_parameters")]
             let header: &[u8] = if self.normalize {
                 b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n"
             } else {
@@ -206,9 +200,7 @@ impl Exporter for CsvExporter {
             sqllog,
             writer,
             &self.path,
-            #[cfg(feature = "replace_parameters")]
             self.normalize,
-            #[cfg(feature = "replace_parameters")]
             None,
         )?;
         self.stats.record_success();
@@ -225,7 +217,6 @@ impl Exporter for CsvExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
-        #[cfg(feature = "replace_parameters")]
         let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
@@ -234,9 +225,7 @@ impl Exporter for CsvExporter {
                 sqllog,
                 writer,
                 &self.path,
-                #[cfg(feature = "replace_parameters")]
                 normalize,
-                #[cfg(feature = "replace_parameters")]
                 None,
             )?;
         }
@@ -244,7 +233,6 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    #[cfg(feature = "replace_parameters")]
     fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -301,5 +289,148 @@ impl Drop for CsvExporter {
         if self.writer.is_some() {
             let _ = self.finalize();
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::redundant_closure_for_method_calls)]
+mod tests {
+    use super::*;
+    use dm_database_parser_sqllog::LogParser;
+
+    fn write_test_log(path: &std::path::Path, count: usize) {
+        use std::fmt::Write as _;
+        let mut buf = String::with_capacity(count * 170);
+        for i in 0..count {
+            writeln!(
+                buf,
+                "2025-01-15 10:30:28.001 (EP[0] sess:0x{i:04x} user:TESTUSER trxid:{i} stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT * FROM t WHERE id={i}. EXECTIME: {exec}(ms) ROWCOUNT: {rows}(rows) EXEC_ID: {i}.",
+                exec = (i * 13) % 1000,
+                rows = i % 100,
+            ).unwrap();
+        }
+        std::fs::write(path, buf).unwrap();
+    }
+
+    #[test]
+    fn test_csv_basic_export() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 5);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        assert!(!records.is_empty());
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.initialize().unwrap();
+        exporter.export_batch(&records).unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert!(content.starts_with("ts,ep,"));
+        assert!(content.contains("normalized_sql"));
+        // Should have header + 5 data rows
+        assert_eq!(content.lines().count(), 6);
+    }
+
+    #[test]
+    fn test_csv_no_normalize() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.normalize = false;
+        exporter.initialize().unwrap();
+        exporter.export_batch(&records).unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert!(!content.contains("normalized_sql"));
+    }
+
+    #[test]
+    fn test_csv_export_batch_with_normalized() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let normalized: Vec<Option<String>> = records
+            .iter()
+            .enumerate()
+            .map(|(i, _)| Some(format!("SELECT * FROM t WHERE id=?_{i}")))
+            .collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.normalize = true;
+        exporter.initialize().unwrap();
+        exporter
+            .export_batch_with_normalized(&records, &normalized)
+            .unwrap();
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert!(content.contains("SELECT * FROM t WHERE id=?_0"));
+    }
+
+    #[test]
+    fn test_csv_append_mode() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+
+        // First write
+        {
+            let mut exporter = CsvExporter::from_config(&crate::config::CsvExporter {
+                file: outfile.to_string_lossy().into(),
+                overwrite: true,
+                append: false,
+            });
+            exporter.initialize().unwrap();
+            exporter.export_batch(&records).unwrap();
+            exporter.finalize().unwrap();
+        }
+        let first_count = std::fs::read_to_string(&outfile).unwrap().lines().count();
+
+        // Append second write
+        {
+            let mut exporter = CsvExporter::from_config(&crate::config::CsvExporter {
+                file: outfile.to_string_lossy().into(),
+                overwrite: false,
+                append: true,
+            });
+            exporter.initialize().unwrap();
+            exporter.export_batch(&records).unwrap();
+            exporter.finalize().unwrap();
+        }
+        let second_count = std::fs::read_to_string(&outfile).unwrap().lines().count();
+        // Append adds rows (no header on second write)
+        assert!(second_count > first_count);
+    }
+
+    #[test]
+    fn test_csv_empty_batch_is_noop() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outfile = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.initialize().unwrap();
+        exporter.export_batch(&[]).unwrap(); // should not error
+        exporter.finalize().unwrap();
+        // Only header
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        assert_eq!(content.lines().count(), 1);
     }
 }

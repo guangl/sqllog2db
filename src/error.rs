@@ -94,7 +94,6 @@ pub enum ExportError {
     WriteError { path: PathBuf, reason: String },
 
     /// `SQLite` 操作失败
-    #[cfg(feature = "sqlite")]
     #[error("Database error: {reason}")]
     DatabaseError { reason: String },
 }

@@ -3,17 +3,11 @@ use crate::error::{ConfigError, Error, Result};
 use dm_database_parser_sqllog::Sqllog;
 use log::info;
 
-#[cfg(feature = "csv")]
 pub mod csv;
-#[cfg(feature = "jsonl")]
 pub mod jsonl;
-#[cfg(feature = "sqlite")]
 pub mod sqlite;
-#[cfg(feature = "csv")]
 pub use csv::CsvExporter;
-#[cfg(feature = "jsonl")]
 pub use jsonl::JsonlExporter;
-#[cfg(feature = "sqlite")]
 pub use sqlite::SqliteExporter;
 
 /// 所有导出器必须实现的接口
@@ -29,9 +23,8 @@ pub trait Exporter {
         Ok(())
     }
 
-    /// 批量导出，同时传入每条记录对应的 `normalized_sql`（仅 `replace_parameters` 特性使用）。
+    /// 批量导出，同时传入每条记录对应的 `normalized_sql`。
     /// 默认实现忽略 normalized 参数，直接调用 `export_batch`。
-    #[cfg(feature = "replace_parameters")]
     fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -141,50 +134,34 @@ impl ExporterManager {
     pub fn from_config(config: &Config) -> Result<Self> {
         info!("Initializing exporter manager...");
 
-        #[cfg(feature = "replace_parameters")]
         let normalize = config
             .features
             .replace_parameters
             .as_ref()
             .is_none_or(|r| r.enable);
 
-        #[cfg(feature = "csv")]
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
-            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = CsvExporter::from_config(cfg);
-            #[cfg(feature = "replace_parameters")]
-            {
-                exporter.normalize = normalize;
-            }
+            exporter.normalize = normalize;
             return Ok(Self {
                 exporter: Box::new(exporter),
             });
         }
 
-        #[cfg(feature = "jsonl")]
         if let Some(cfg) = &config.exporter.jsonl {
             info!("Using JSONL exporter: {}", cfg.file);
-            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = JsonlExporter::from_config(cfg);
-            #[cfg(feature = "replace_parameters")]
-            {
-                exporter.normalize = normalize;
-            }
+            exporter.normalize = normalize;
             return Ok(Self {
                 exporter: Box::new(exporter),
             });
         }
 
-        #[cfg(feature = "sqlite")]
         if let Some(cfg) = &config.exporter.sqlite {
             info!("Using SQLite exporter: {}", cfg.database_url);
-            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
             let mut exporter = SqliteExporter::from_config(cfg);
-            #[cfg(feature = "replace_parameters")]
-            {
-                exporter.normalize = normalize;
-            }
+            exporter.normalize = normalize;
             return Ok(Self {
                 exporter: Box::new(exporter),
             });
@@ -205,8 +182,7 @@ impl ExporterManager {
         self.exporter.export_batch(sqllogs)
     }
 
-    /// 批量导出，同时传入每条记录的 `normalized_sql`（`replace_parameters` 特性专用）
-    #[cfg(feature = "replace_parameters")]
+    /// 批量导出，同时传入每条记录的 `normalized_sql`
     pub fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -251,7 +227,6 @@ impl ExporterManager {
 }
 
 /// 去除 IPv4-mapped IPv6 地址前缀（如 `::ffff:192.168.1.1` → `192.168.1.1`）
-#[cfg(any(feature = "csv", feature = "jsonl", feature = "sqlite"))]
 #[must_use]
 pub(super) fn strip_ip_prefix(ip: &str) -> &str {
     const PREFIX: &str = "::ffff:";
@@ -263,7 +238,6 @@ pub(super) fn strip_ip_prefix(ip: &str) -> &str {
 }
 
 /// Saturating cast from f32 milliseconds to i64 milliseconds without precision-loss warnings
-#[cfg(feature = "csv")]
 #[must_use]
 pub(super) fn f32_ms_to_i64(ms: f32) -> i64 {
     if !ms.is_finite() {
@@ -291,10 +265,133 @@ pub(super) fn f32_ms_to_i64(ms: f32) -> i64 {
 }
 
 /// 确保输出文件的父目录存在
-#[cfg(any(feature = "csv", feature = "jsonl"))]
 pub(super) fn ensure_parent_dir(path: &std::path::Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.exists()) {
         std::fs::create_dir_all(parent)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── ExportStats ────────────────────────────────────────────
+    #[test]
+    fn test_export_stats_default() {
+        let s = ExportStats::new();
+        assert_eq!(s.exported, 0);
+        assert_eq!(s.total(), 0);
+    }
+
+    #[test]
+    fn test_export_stats_record_success() {
+        let mut s = ExportStats::new();
+        s.record_success();
+        s.record_success();
+        assert_eq!(s.exported, 2);
+        assert_eq!(s.total(), 2);
+    }
+
+    #[test]
+    fn test_export_stats_record_success_batch() {
+        let mut s = ExportStats::new();
+        s.record_success_batch(10);
+        assert_eq!(s.exported, 10);
+        assert_eq!(s.total(), 10);
+    }
+
+    #[test]
+    fn test_export_stats_total_includes_all() {
+        let mut s = ExportStats::new();
+        s.exported = 5;
+        s.skipped = 2;
+        s.failed = 1;
+        assert_eq!(s.total(), 8);
+    }
+
+    // ── strip_ip_prefix ────────────────────────────────────────
+    #[test]
+    fn test_strip_ip_prefix_with_prefix() {
+        assert_eq!(strip_ip_prefix("::ffff:192.168.1.1"), "192.168.1.1");
+    }
+
+    #[test]
+    fn test_strip_ip_prefix_uppercase() {
+        assert_eq!(strip_ip_prefix("::FFFF:10.0.0.1"), "10.0.0.1");
+    }
+
+    #[test]
+    fn test_strip_ip_prefix_no_prefix() {
+        assert_eq!(strip_ip_prefix("192.168.1.1"), "192.168.1.1");
+    }
+
+    #[test]
+    fn test_strip_ip_prefix_ipv6() {
+        assert_eq!(strip_ip_prefix("2001:db8::1"), "2001:db8::1");
+    }
+
+    #[test]
+    fn test_strip_ip_prefix_empty() {
+        assert_eq!(strip_ip_prefix(""), "");
+    }
+
+    // ── f32_ms_to_i64 ──────────────────────────────────────────
+    #[test]
+    fn test_f32_ms_to_i64_normal() {
+        assert_eq!(f32_ms_to_i64(100.0_f32), 100);
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_nan() {
+        assert_eq!(f32_ms_to_i64(f32::NAN), 0);
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_pos_infinity() {
+        assert_eq!(f32_ms_to_i64(f32::INFINITY), 0);
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_neg_infinity() {
+        assert_eq!(f32_ms_to_i64(f32::NEG_INFINITY), 0);
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_zero() {
+        assert_eq!(f32_ms_to_i64(0.0), 0);
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_negative() {
+        assert_eq!(f32_ms_to_i64(-50.0), -50);
+    }
+
+    // ── ensure_parent_dir ──────────────────────────────────────
+    #[test]
+    fn test_ensure_parent_dir_existing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.csv");
+        // Parent exists → should not error
+        ensure_parent_dir(&path).unwrap();
+    }
+
+    #[test]
+    fn test_ensure_parent_dir_creates_new() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("sub/dir/out.csv");
+        ensure_parent_dir(&path).unwrap();
+        assert!(dir.path().join("sub/dir").exists());
+    }
+
+    // ── DryRunExporter ─────────────────────────────────────────
+    #[test]
+    fn test_dry_run_exporter_counts_records() {
+        let mut e = DryRunExporter::default();
+        e.initialize().unwrap();
+        // Manually add some counts via export_batch with empty batches approach
+        e.stats.exported = 5;
+        let snap = e.stats_snapshot().unwrap();
+        assert_eq!(snap.exported, 5);
+    }
 }

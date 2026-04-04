@@ -25,7 +25,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
     println!();
 
     // [exporter.*]
-    #[cfg(feature = "csv")]
     if let Some(csv) = &cfg.exporter.csv {
         println!("{}", color::cyan("[exporter.csv]"));
         kv("file", &csv.file);
@@ -34,7 +33,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
         println!();
     }
 
-    #[cfg(feature = "jsonl")]
     if let Some(jsonl) = &cfg.exporter.jsonl {
         println!("{}", color::cyan("[exporter.jsonl]"));
         kv("file", &jsonl.file);
@@ -43,7 +41,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
         println!();
     }
 
-    #[cfg(feature = "sqlite")]
     if let Some(sqlite) = &cfg.exporter.sqlite {
         println!("{}", color::cyan("[exporter.sqlite]"));
         kv("database_url", &sqlite.database_url);
@@ -54,7 +51,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
     }
 
     // [features]
-    #[cfg(feature = "replace_parameters")]
     if let Some(rp) = &cfg.features.replace_parameters {
         println!("{}", color::cyan("[features.replace_parameters]"));
         kv("enable", &rp.enable.to_string());
@@ -64,7 +60,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
         println!();
     }
 
-    #[cfg(feature = "filters")]
     if let Some(f) = &cfg.features.filters {
         println!("{}", color::cyan("[features.filters]"));
         kv("enable", &f.enable.to_string());
@@ -85,27 +80,87 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
         }
         println!();
     }
-
-    // Compiled features
-    let compiled: &[&str] = &[
-        #[cfg(feature = "csv")]
-        "csv",
-        #[cfg(feature = "jsonl")]
-        "jsonl",
-        #[cfg(feature = "sqlite")]
-        "sqlite",
-        #[cfg(feature = "filters")]
-        "filters",
-        #[cfg(feature = "replace_parameters")]
-        "replace_parameters",
-    ];
-    println!(
-        "{} {}",
-        color::dim("Compiled features:"),
-        color::dim(compiled.join(", "))
-    );
 }
 
 fn kv(key: &str, value: &str) {
     println!("  {:<20} = {}", key, color::green(format!("\"{value}\"")));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, ExporterConfig, JsonlExporter, SqliteExporter};
+    use crate::features::{FeaturesConfig, FiltersFeature, ReplaceParametersConfig};
+
+    #[test]
+    fn test_handle_show_config_default_does_not_panic() {
+        let cfg = Config::default();
+        // Just verify no panic — output goes to stdout which is fine in tests
+        handle_show_config(&cfg, "config.toml");
+    }
+
+    #[test]
+    fn test_handle_show_config_with_jsonl_exporter() {
+        let cfg = Config {
+            exporter: ExporterConfig {
+                csv: None,
+                jsonl: Some(JsonlExporter {
+                    file: "out.jsonl".to_string(),
+                    overwrite: true,
+                    append: false,
+                }),
+                sqlite: None,
+            },
+            ..Default::default()
+        };
+        handle_show_config(&cfg, "test_config.toml");
+    }
+
+    #[test]
+    fn test_handle_show_config_with_sqlite_exporter() {
+        let cfg = Config {
+            exporter: ExporterConfig {
+                csv: None,
+                jsonl: None,
+                sqlite: Some(SqliteExporter {
+                    database_url: "out.db".to_string(),
+                    table_name: "logs".to_string(),
+                    overwrite: false,
+                    append: true,
+                }),
+            },
+            ..Default::default()
+        };
+        handle_show_config(&cfg, "sqlite_config.toml");
+    }
+
+    #[test]
+    fn test_handle_show_config_with_replace_parameters() {
+        let cfg = Config {
+            features: FeaturesConfig {
+                replace_parameters: Some(ReplaceParametersConfig {
+                    enable: true,
+                    placeholders: vec!["?".to_string()],
+                }),
+                filters: None,
+            },
+            ..Default::default()
+        };
+        handle_show_config(&cfg, "rp_config.toml");
+    }
+
+    #[test]
+    fn test_handle_show_config_with_filters() {
+        let cfg = Config {
+            features: FeaturesConfig {
+                replace_parameters: None,
+                filters: Some(FiltersFeature {
+                    enable: true,
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        };
+        handle_show_config(&cfg, "filter_config.toml");
+    }
 }
