@@ -442,14 +442,15 @@ dependencies = [
 
 [[package]]
 name = "dm-database-parser-sqllog"
-version = "0.7.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6df89cfd8659874973a6035dcd5b4c7b0331166fa7384712c8820eca4747efcc"
+checksum = "268d63d37b37470eedb8c0dbb03fa5a356d32b21dbdc4a5e7d1ec96ac74ac4ab"
 dependencies = [
  "atoi",
  "encoding",
  "memchr",
  "memmap2",
+ "rayon",
  "simdutf8",
  "thiserror",
 ]
@@ -466,6 +467,7 @@ dependencies = [
  "env_logger",
  "itoa",
  "log",
+ "rayon",
  "rusqlite",
  "ryu",
  "self_update",

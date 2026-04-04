@@ -34,7 +34,7 @@ name = "sqllog2db"
 path = "src/main.rs"
 
 [dependencies]
-dm-database-parser-sqllog = "0.7.0"
+dm-database-parser-sqllog = "0.9.0"
 env_logger = "0.11.8"
 log = "0.4.29"
 thiserror = "2.0.17"
@@ -50,6 +50,7 @@ self_update = "0.43.1"
 # 可选功能依赖
 serde_json = { version = "1.0.145", optional = true }
 ryu = { version = "1", optional = true }
+rayon = { version = "1.10", optional = true }
 # 数据库依赖
 tempfile = { version = "3.23.0", optional = true }
 rusqlite = { version = "0.37.0", features = [
@@ -68,7 +69,7 @@ jsonl = ["dep:serde_json", "dep:ryu"]
 sqlite = ["dep:rusqlite", "dep:tempfile", "csv"]
 
 # 其他功能特性开关
-filters = []
+filters = ["dep:rayon"]
 
 # 全量特性 (方便测试或一键启用)
 full = ["csv", "jsonl", "sqlite", "filters"]

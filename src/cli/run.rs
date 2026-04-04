@@ -156,6 +156,8 @@ fn scan_log_file_for_trxids(
     remaining_exec_ids: &mut HashSet<i64>,
     found_trxids: &mut HashSet<String>,
 ) {
+    use rayon::prelude::*;
+
     let Ok(parser) = LogParser::from_path(file_path) else {
         return;
     };
@@ -164,32 +166,40 @@ fn scan_log_file_for_trxids(
         _ => return,
     };
 
-    for result in parser.iter().flatten() {
-        let mut matched = false;
-        if let Some(ind) = result.parse_indicators() {
-            #[allow(clippy::cast_possible_truncation)]
-            let runtime_ms = ind.exectime.round() as i64;
-            if filters
-                .indicators
-                .matches(ind.exec_id, runtime_ms, i64::from(ind.rowcount))
-            {
-                matched = true;
-                remaining_exec_ids.remove(&ind.exec_id);
+    // 并行扫描：各 CPU 核心独立处理文件分片，收集匹配的 (trxid, exec_id)
+    let matched: Vec<(String, Option<i64>)> = parser
+        .par_iter()
+        .filter_map(std::result::Result::ok)
+        .filter_map(|result| {
+            let mut matched_exec_id: Option<i64> = None;
+            let mut sql_matched = false;
+
+            if let Some(ind) = result.parse_indicators() {
+                #[allow(clippy::cast_possible_truncation)]
+                let runtime_ms = ind.exectime.round() as i64;
+                if filters
+                    .indicators
+                    .matches(ind.exec_id, runtime_ms, i64::from(ind.rowcount))
+                {
+                    matched_exec_id = Some(ind.exec_id);
+                }
             }
-        }
-        if !matched && filters.sql.has_filters() && filters.sql.matches(result.body().as_ref()) {
-            matched = true;
-        }
-        if matched {
-            let meta = result.parse_meta();
-            found_trxids.insert(meta.trxid.to_string());
-            if remaining_exec_ids.is_empty()
-                && filters.indicators.min_runtime_ms.is_none()
-                && filters.indicators.min_row_count.is_none()
-                && !filters.sql.has_filters()
-            {
-                break;
+            if matched_exec_id.is_none() && filters.sql.has_filters() {
+                sql_matched = filters.sql.matches(result.body().as_ref());
             }
+            if matched_exec_id.is_some() || sql_matched {
+                let meta = result.parse_meta();
+                Some((meta.trxid.to_string(), matched_exec_id))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for (trxid, exec_id) in matched {
+        found_trxids.insert(trxid);
+        if let Some(id) = exec_id {
+            remaining_exec_ids.remove(&id);
         }
     }
 }
