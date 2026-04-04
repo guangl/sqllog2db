@@ -31,6 +31,18 @@ pub trait Exporter {
         Ok(())
     }
 
+    /// 批量导出，同时传入每条记录对应的 `normalized_sql`（仅 `replace_parameters` 特性使用）。
+    /// 默认实现忽略 normalized 参数，直接调用 `export_batch`。
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        let _ = normalized;
+        self.export_batch(sqllogs)
+    }
+
     fn finalize(&mut self) -> Result<()>;
     fn name(&self) -> &str;
 
@@ -86,27 +98,52 @@ impl ExporterManager {
     pub fn from_config(config: &Config) -> Result<Self> {
         info!("Initializing exporter manager...");
 
+        #[cfg(feature = "replace_parameters")]
+        let normalize = config
+            .features
+            .replace_parameters
+            .as_ref()
+            .is_none_or(|r| r.enable);
+
         #[cfg(feature = "csv")]
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
+            let mut exporter = CsvExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(CsvExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 
         #[cfg(feature = "jsonl")]
         if let Some(cfg) = &config.exporter.jsonl {
             info!("Using JSONL exporter: {}", cfg.file);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
+            let mut exporter = JsonlExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(JsonlExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 
         #[cfg(feature = "sqlite")]
         if let Some(cfg) = &config.exporter.sqlite {
             info!("Using SQLite exporter: {}", cfg.database_url);
+            #[cfg_attr(not(feature = "replace_parameters"), allow(unused_mut))]
+            let mut exporter = SqliteExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(SqliteExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 
@@ -123,6 +160,17 @@ impl ExporterManager {
     /// 批量导出，直接传 slice，零额外分配
     pub fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
         self.exporter.export_batch(sqllogs)
+    }
+
+    /// 批量导出，同时传入每条记录的 `normalized_sql`（`replace_parameters` 特性专用）
+    #[cfg(feature = "replace_parameters")]
+    pub fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        self.exporter
+            .export_batch_with_normalized(sqllogs, normalized)
     }
 
     pub fn finalize(&mut self) -> Result<()> {

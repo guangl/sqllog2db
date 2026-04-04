@@ -64,6 +64,8 @@ fn process_log_file(
     exporter_manager: &mut ExporterManager,
     error_logger: &mut ErrorLogger,
     pipeline: &Pipeline,
+    #[cfg(feature = "replace_parameters")] do_normalize: bool,
+    #[cfg(feature = "replace_parameters")] placeholder_override: Option<bool>,
 ) -> Result<()> {
     let file_start = Instant::now();
     eprintln!("[{file_index}/{total_files}] Processing: {file_path}");
@@ -79,64 +81,66 @@ fn process_log_file(
     let mut errors_in_file = 0usize;
     let mut batch = Vec::with_capacity(5000);
 
-    if pipeline.is_empty() {
-        // 快速路径：无处理器，零开销循环
-        for result in parser.iter() {
-            match result {
-                Ok(record) => {
+    #[cfg(feature = "replace_parameters")]
+    let mut params_buffer = std::collections::HashMap::new();
+    #[cfg(feature = "replace_parameters")]
+    let mut batch_normalized: Vec<Option<String>> = Vec::with_capacity(5000);
+
+    macro_rules! flush_batch {
+        () => {
+            if !batch.is_empty() {
+                records_in_file += batch.len();
+                #[cfg(feature = "replace_parameters")]
+                if do_normalize {
+                    exporter_manager.export_batch_with_normalized(&batch, &batch_normalized)?;
+                    batch_normalized.clear();
+                } else {
+                    exporter_manager.export_batch(&batch)?;
+                }
+                #[cfg(not(feature = "replace_parameters"))]
+                exporter_manager.export_batch(&batch)?;
+                batch.clear();
+            }
+        };
+    }
+
+    for result in parser.iter() {
+        match result {
+            Ok(record) => {
+                #[cfg(feature = "replace_parameters")]
+                let ns = if do_normalize {
+                    crate::features::compute_normalized(
+                        &record,
+                        &mut params_buffer,
+                        placeholder_override,
+                    )
+                } else {
+                    None
+                };
+
+                let passes = pipeline.is_empty() || pipeline.run(&record);
+                if passes {
+                    #[cfg(feature = "replace_parameters")]
+                    if do_normalize {
+                        batch_normalized.push(ns);
+                    }
                     batch.push(record);
                     if batch.len() >= 5000 {
-                        records_in_file += batch.len();
-                        exporter_manager.export_batch(&batch)?;
-                        batch.clear();
-                    }
-                }
-                Err(e) => {
-                    errors_in_file += 1;
-                    if !batch.is_empty() {
-                        records_in_file += batch.len();
-                        exporter_manager.export_batch(&batch)?;
-                        batch.clear();
-                    }
-                    if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                        warn!("Failed to record parse error: {log_err}");
+                        flush_batch!();
                     }
                 }
             }
-        }
-    } else {
-        // 管线路径：每条记录经过处理器过滤
-        for result in parser.iter() {
-            match result {
-                Ok(record) => {
-                    if pipeline.run(&record) {
-                        batch.push(record);
-                        if batch.len() >= 5000 {
-                            records_in_file += batch.len();
-                            exporter_manager.export_batch(&batch)?;
-                            batch.clear();
-                        }
-                    }
-                }
-                Err(e) => {
-                    errors_in_file += 1;
-                    if !batch.is_empty() {
-                        records_in_file += batch.len();
-                        exporter_manager.export_batch(&batch)?;
-                        batch.clear();
-                    }
-                    if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                        warn!("Failed to record parse error: {log_err}");
-                    }
+            Err(e) => {
+                errors_in_file += 1;
+                flush_batch!();
+                if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
+                    warn!("Failed to record parse error: {log_err}");
                 }
             }
         }
     }
 
-    if !batch.is_empty() {
-        records_in_file += batch.len();
-        exporter_manager.export_batch(&batch)?;
-    }
+    flush_batch!();
 
     info!(
         "File {}: {} records, {} errors, total {:.2}s",
@@ -276,6 +280,20 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
     let mut error_logger = ErrorLogger::new(&final_cfg.error.file)?;
     exporter_manager.initialize()?;
 
+    #[cfg(feature = "replace_parameters")]
+    let do_normalize = final_cfg
+        .features
+        .replace_parameters
+        .as_ref()
+        .is_none_or(|r| r.enable);
+
+    #[cfg(feature = "replace_parameters")]
+    let placeholder_override = final_cfg
+        .features
+        .replace_parameters
+        .as_ref()
+        .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
+
     info!("Parsing and exporting SQL logs...");
     for (idx, log_file) in log_files.iter().enumerate() {
         process_log_file(
@@ -285,6 +303,10 @@ pub fn handle_run(cfg: &Config) -> Result<()> {
             &mut exporter_manager,
             &mut error_logger,
             &pipeline,
+            #[cfg(feature = "replace_parameters")]
+            do_normalize,
+            #[cfg(feature = "replace_parameters")]
+            placeholder_override,
         )?;
     }
 

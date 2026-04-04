@@ -15,6 +15,8 @@ pub struct CsvExporter {
     stats: ExportStats,
     itoa_buf: itoa::Buffer,
     line_buf: Vec<u8>,
+    #[cfg(feature = "replace_parameters")]
+    pub(super) normalize: bool,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -37,6 +39,8 @@ impl CsvExporter {
             stats: ExportStats::new(),
             itoa_buf: itoa::Buffer::new(),
             line_buf: Vec::with_capacity(512),
+            #[cfg(feature = "replace_parameters")]
+            normalize: true,
         }
     }
 
@@ -60,6 +64,8 @@ impl CsvExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
+        #[cfg(feature = "replace_parameters")] normalize: bool,
+        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -103,10 +109,26 @@ impl CsvExporter {
             line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
             line_buf.push(b',');
             line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
-            line_buf.push(b'\n');
         } else {
-            line_buf.extend_from_slice(b",,\n");
+            line_buf.extend_from_slice(b",,");
         }
+
+        #[cfg(feature = "replace_parameters")]
+        if normalize {
+            line_buf.push(b',');
+            if let Some(ns) = normalized_sql {
+                line_buf.push(b'"');
+                for &byte in ns.as_bytes() {
+                    if byte == b'"' {
+                        line_buf.push(b'"');
+                    }
+                    line_buf.push(byte);
+                }
+                line_buf.push(b'"');
+            }
+        }
+
+        line_buf.push(b'\n');
 
         writer.write_all(line_buf).map_err(|e| {
             Error::Export(ExportError::WriteError {
@@ -151,14 +173,20 @@ impl Exporter for CsvExporter {
         let mut writer = BufWriter::with_capacity(16 * 1024 * 1024, file);
 
         if !append_mode || !file_exists {
-            writer
-                .write_all(b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n")
-                .map_err(|e| {
-                    Error::Export(ExportError::WriteError {
-                        path: self.path.clone(),
-                        reason: format!("write header failed: {e}"),
-                    })
-                })?;
+            #[cfg(not(feature = "replace_parameters"))]
+            let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n".as_ref();
+            #[cfg(feature = "replace_parameters")]
+            let header: &[u8] = if self.normalize {
+                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n"
+            } else {
+                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n"
+            };
+            writer.write_all(header).map_err(|e| {
+                Error::Export(ExportError::WriteError {
+                    path: self.path.clone(),
+                    reason: format!("write header failed: {e}"),
+                })
+            })?;
         }
 
         self.writer = Some(writer);
@@ -178,6 +206,10 @@ impl Exporter for CsvExporter {
             sqllog,
             writer,
             &self.path,
+            #[cfg(feature = "replace_parameters")]
+            self.normalize,
+            #[cfg(feature = "replace_parameters")]
+            None,
         )?;
         self.stats.record_success();
         Ok(())
@@ -193,6 +225,8 @@ impl Exporter for CsvExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
+        #[cfg(feature = "replace_parameters")]
+        let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
                 &mut self.itoa_buf,
@@ -200,6 +234,41 @@ impl Exporter for CsvExporter {
                 sqllog,
                 writer,
                 &self.path,
+                #[cfg(feature = "replace_parameters")]
+                normalize,
+                #[cfg(feature = "replace_parameters")]
+                None,
+            )?;
+        }
+        self.stats.record_success_batch(sqllogs.len());
+        Ok(())
+    }
+
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::WriteError {
+                path: self.path.clone(),
+                reason: "not initialized".to_string(),
+            })
+        })?;
+        let normalize = self.normalize;
+        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
+            Self::write_record(
+                &mut self.itoa_buf,
+                &mut self.line_buf,
+                sqllog,
+                writer,
+                &self.path,
+                normalize,
+                ns.as_deref(),
             )?;
         }
         self.stats.record_success_batch(sqllogs.len());

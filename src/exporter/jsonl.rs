@@ -60,6 +60,8 @@ pub struct JsonlExporter {
     line_buf: Vec<u8>,
     itoa_buf: itoa::Buffer,
     float_buf: ryu::Buffer,
+    #[cfg(feature = "replace_parameters")]
+    pub(super) normalize: bool,
 }
 
 impl std::fmt::Debug for JsonlExporter {
@@ -83,6 +85,8 @@ impl JsonlExporter {
             line_buf: Vec::with_capacity(512),
             itoa_buf: itoa::Buffer::new(),
             float_buf: ryu::Buffer::new(),
+            #[cfg(feature = "replace_parameters")]
+            normalize: true,
         }
     }
 
@@ -106,6 +110,8 @@ impl JsonlExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
+        #[cfg(feature = "replace_parameters")] normalize: bool,
+        #[cfg(feature = "replace_parameters")] normalized_sql: Option<&str>,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -152,6 +158,14 @@ impl JsonlExporter {
             line_buf.extend_from_slice(itoa_buf.format(i64::from(ind.rowcount)).as_bytes());
             line_buf.extend_from_slice(b",\"exec_id\":");
             line_buf.extend_from_slice(itoa_buf.format(ind.exec_id).as_bytes());
+        }
+
+        #[cfg(feature = "replace_parameters")]
+        if normalize {
+            if let Some(ns) = normalized_sql {
+                line_buf.extend_from_slice(b",\"normalized_sql\":");
+                write_json_str(line_buf, ns);
+            }
         }
 
         line_buf.extend_from_slice(b"}\n");
@@ -214,6 +228,10 @@ impl Exporter for JsonlExporter {
             sqllog,
             writer,
             &self.path,
+            #[cfg(feature = "replace_parameters")]
+            self.normalize,
+            #[cfg(feature = "replace_parameters")]
+            None,
         )?;
         self.stats.record_success();
         Ok(())
@@ -229,6 +247,8 @@ impl Exporter for JsonlExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
+        #[cfg(feature = "replace_parameters")]
+        let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
                 &mut self.line_buf,
@@ -237,6 +257,42 @@ impl Exporter for JsonlExporter {
                 sqllog,
                 writer,
                 &self.path,
+                #[cfg(feature = "replace_parameters")]
+                normalize,
+                #[cfg(feature = "replace_parameters")]
+                None,
+            )?;
+        }
+        self.stats.record_success_batch(sqllogs.len());
+        Ok(())
+    }
+
+    #[cfg(feature = "replace_parameters")]
+    fn export_batch_with_normalized(
+        &mut self,
+        sqllogs: &[Sqllog<'_>],
+        normalized: &[Option<String>],
+    ) -> Result<()> {
+        if sqllogs.is_empty() {
+            return Ok(());
+        }
+        let writer = self.writer.as_mut().ok_or_else(|| {
+            Error::Export(ExportError::WriteError {
+                path: self.path.clone(),
+                reason: "not initialized".to_string(),
+            })
+        })?;
+        let normalize = self.normalize;
+        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
+            Self::write_record(
+                &mut self.line_buf,
+                &mut self.itoa_buf,
+                &mut self.float_buf,
+                sqllog,
+                writer,
+                &self.path,
+                normalize,
+                ns.as_deref(),
             )?;
         }
         self.stats.record_success_batch(sqllogs.len());
