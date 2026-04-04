@@ -55,8 +55,11 @@ fn run() -> Result<()> {
     use clap::Parser;
     let cli = cli::opts::Cli::parse();
 
-    // Initial logging for basic commands and startup phase
-    init_simple_logging(cli.verbose, cli.quiet);
+    // run 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
+    let is_run_command = matches!(&cli.command, Some(cli::opts::Commands::Run { .. }));
+    if !is_run_command {
+        init_simple_logging(cli.verbose, cli.quiet);
+    }
 
     // Check for updates at startup unless we are already running self-update or quiet
     if !cli.quiet
