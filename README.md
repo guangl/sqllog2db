@@ -11,7 +11,7 @@
 
 - **高性能**：单线程流式处理，~170万条/秒吞吐量（mmap + SIMD + 零分配优化）
 - **稳健可靠**：批量导出 + 解析错误逐行落盘（便于追踪原始日志）
-- **易于使用**：清晰的 TOML 配置，三步完成导出任务
+- **易于使用**：清晰的 TOML 配置，三步完成导出任务；进度条实时反馈
 - **体积优化**：默认仅 CSV 导出，可选启用其它导出器特性
 
 > 适用场景：日志归档、数据分析预处理、基于日志的问责/审计、异构系统导出。
@@ -91,25 +91,55 @@ cargo build --release --features "jsonl sqlite"
 
 1) 生成默认配置（如已存在可加 `--force` 覆盖）：
 
-```powershell
+```bash
 sqllog2db init -o config.toml --force
 ```
 
 2) 验证配置：
 
-```powershell
+```bash
 sqllog2db validate -c config.toml
 ```
 
-3) 运行导出（CLI 模式）：
+3) 运行导出：
 
-```powershell
+```bash
 sqllog2db run -c config.toml
 ```
 
-### Shell 补全
+### 常用 run 选项
 
-生成 shell 自动补全脚本：
+```bash
+# 限制最多导出 1000 条（快速抽样）
+sqllog2db run -c config.toml --limit 1000
+
+# 只解析不写文件（dry-run）
+sqllog2db run -c config.toml --dry-run
+
+# 命令行覆盖配置字段
+sqllog2db run -c config.toml --set exporter.csv.file=out.csv
+
+# 按时间范围过滤（需 filters feature）
+sqllog2db run -c config.toml --from "2025-01-01" --to "2025-12-31"
+
+# 静默模式
+sqllog2db -q run -c config.toml
+```
+
+### 查看当前生效配置
+
+```bash
+sqllog2db show-config -c config.toml
+sqllog2db show-config -c config.toml --set exporter.csv.file=out.csv
+```
+
+### 生成 man page
+
+```bash
+sqllog2db man > /usr/local/share/man/man1/sqllog2db.1
+```
+
+### Shell 补全
 
 ```bash
 # Bash
@@ -223,15 +253,27 @@ cargo build --release --features "sqlite filters replace_parameters"
 
 ### 日志级别控制
 
-使用全局选项覆盖配置文件中的日志级别：
-
 ```bash
 # 详细输出（debug 级别）
 sqllog2db -v run -c config.toml
 
-# 静默模式（仅错误）
+# 静默模式（仅错误输出，隐藏进度条和摘要）
 sqllog2db -q run -c config.toml
 ```
+
+### Ctrl+C 优雅退出
+
+运行时按 Ctrl+C，程序会在当前 batch 处理完毕后停止，已处理数据正常写入磁盘，退出码为 130。
+
+### 退出码说明
+
+| 退出码 | 含义 |
+|--------|------|
+| 0 | 成功 |
+| 2 | 配置错误 |
+| 3 | 文件/解析错误 |
+| 4 | 导出错误 |
+| 130 | 用户中断（Ctrl+C） |
 
 ## 开发与测试
 

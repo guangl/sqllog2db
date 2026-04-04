@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-04-04
+
+### Added
+
+- **进度条**：`run` 命令新增实时 spinner 进度条（`indicatif`），显示当前文件、已处理记录数及速率；`--quiet` 模式下自动隐藏
+- **`--limit N`**：跨文件限制最多导出 N 条记录，方便快速抽样验证
+- **`--dry-run`**：解析所有日志但不写任何文件，仅统计记录数，方便估算数量或调试配置
+- **`--set KEY=VALUE`**：命令行覆盖配置文件中的任意字段（点路径，如 `exporter.csv.file=out.csv`），无需修改配置文件即可临时调整参数
+- **`show-config` 子命令**：以着色结构体形式展示当前生效配置（含 `--set` 覆盖后的值），方便排查配置问题
+- **`--from / --to` 日期范围过滤**：在 `run` 命令中直接指定时间范围，等价于配置文件中的 `features.filters.meta.start_ts/end_ts`（需 `filters` feature）
+- **彩色输出**：终端环境下进度条和摘要使用 ANSI 颜色，支持 `NO_COLOR` 环境变量关闭
+- **Ctrl+C 优雅退出**：捕获 SIGINT 后在当前 batch 结束时停止，已处理数据正常 finalize，退出码 130（128+SIGINT）
+- **有意义的 exit code**：2=配置错误，3=I/O/解析错误，4=导出错误，130=用户中断
+- **man page 生成**：新增 `man` 子命令，将 man page 内容输出到 stdout（`sqllog2db man > sqllog2db.1`）
+
+### Changed
+
+- `run` 命令日志不再输出到 stdout，只写文件，防止与进度条交叉污染
+- `--quiet` 模式完整抑制所有非错误输出（进度条、摘要、统计行）
+
+### Testing
+
+- 新增 `tests/coverage_boost_tests.rs`，覆盖 SQLite exporter、JSONL 记录导出、show_config、config apply_overrides、color 模块
+- 测试覆盖率从 57% 提升至 80%
+
+---
+
 ## [0.5.0] - 2026-04-04
 
 ### Added
@@ -300,7 +327,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 多平台交叉编译支持
 - Release artifacts 附带 SHA256 校验文件
 
-[0.1.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.1.0
+[0.6.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.6.0
+[0.5.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.5.0
+[0.4.3]: https://github.com/guangl/sqllog2db/releases/tag/v0.4.3
+[0.4.1]: https://github.com/guangl/sqllog2db/releases/tag/v0.4.1
+[0.4.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.4.0
 [0.3.2]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.2
 [0.3.1]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.1
 [0.3.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.3.0
+[0.2.1]: https://github.com/guangl/sqllog2db/releases/tag/v0.2.1
+[0.2.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.2.0
+[0.1.2]: https://github.com/guangl/sqllog2db/releases/tag/v0.1.2
+[0.1.1]: https://github.com/guangl/sqllog2db/releases/tag/v0.1.1
+[0.1.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.1.0
