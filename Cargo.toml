@@ -45,7 +45,11 @@ clap_complete = "4.5"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = { version = "0.9.8", features = ["serde"] }
 chrono = { version = "0.4.42", features = ["clock"] }
-self_update = { version = "0.43.1", default-features = false, features = ["reqwest", "rustls", "compression-flate2"] }
+self_update = { version = "0.43.1", default-features = false, features = [
+  "reqwest",
+  "rustls",
+  "compression-flate2",
+] }
 indicatif = "0.17"
 ctrlc = "3"
 clap_mangen = "0.2"

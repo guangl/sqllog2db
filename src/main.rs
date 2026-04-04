@@ -1,7 +1,6 @@
 mod cli;
 mod color;
 mod config;
-mod constants;
 mod error;
 mod error_logger;
 mod exporter;
@@ -193,7 +192,30 @@ fn run() -> Result<()> {
             logging::init_logging(&cfg.logging, true)?;
             info!("Application started");
 
-            cli::validate::handle_validate(&cfg);
+            info!("SQL日志输入目录: {}", cfg.sqllog.directory);
+            info!("日志级别: {}", cfg.logging.level);
+            info!("日志文件: {}", cfg.logging.file);
+            info!("日志保留: {} 天", cfg.logging.retention_days);
+            info!("错误日志: {}", cfg.error.file);
+            #[cfg(feature = "filters")]
+            if let Some(f) = &cfg.features.filters {
+                info!(
+                    "Feature flags - filters: {}",
+                    if f.enable {
+                        "启用"
+                    } else {
+                        "配置但未明确启用"
+                    }
+                );
+            }
+            #[cfg(feature = "csv")]
+            if let Some(csv) = &cfg.exporter.csv {
+                info!(
+                    "CSV export: {} (overwrite: {})",
+                    csv.file,
+                    if csv.overwrite { "yes" } else { "no" }
+                );
+            }
             Ok(())
         }
         Some(cli::opts::Commands::ShowConfig { config, set }) => {

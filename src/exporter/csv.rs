@@ -1,4 +1,4 @@
-use super::util::{ensure_parent_dir, f32_ms_to_i64, strip_ip_prefix};
+use super::{ensure_parent_dir, f32_ms_to_i64, strip_ip_prefix};
 use super::{ExportStats, Exporter};
 use crate::config;
 use crate::error::{Error, ExportError, Result};

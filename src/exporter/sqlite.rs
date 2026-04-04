@@ -1,4 +1,4 @@
-use super::util::strip_ip_prefix;
+use super::strip_ip_prefix;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;

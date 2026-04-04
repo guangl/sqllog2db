@@ -1,4 +1,4 @@
-use super::util::{ensure_parent_dir, strip_ip_prefix};
+use super::{ensure_parent_dir, strip_ip_prefix};
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::Sqllog;

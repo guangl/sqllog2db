@@ -1,5 +1,6 @@
-use crate::constants::LOG_LEVELS;
 use crate::error::{ConfigError, Error, Result};
+
+pub const LOG_LEVELS: &[&str] = &["trace", "debug", "info", "warn", "error"];
 pub use crate::features::FeaturesConfig;
 #[cfg(feature = "filters")]
 #[allow(unused_imports)]

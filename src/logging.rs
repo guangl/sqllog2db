@@ -1,5 +1,4 @@
-use crate::config::LoggingConfig;
-use crate::constants::LOG_LEVELS;
+use crate::config::{LoggingConfig, LOG_LEVELS};
 use crate::error::{Error, FileError, Result};
 use chrono::Local;
 use log::{Level, LevelFilter, Metadata, Record};
