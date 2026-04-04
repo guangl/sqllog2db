@@ -10,6 +10,8 @@ use dm_database_sqllog2db::config::Config;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 fn synthetic_log(record_count: usize) -> String {
     use std::fmt::Write as _;
@@ -71,7 +73,9 @@ fn bench_sqlite_export(c: &mut Criterion) {
 
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &cfg, |b, cfg| {
-            b.iter(|| handle_run(cfg, None, false).unwrap());
+            b.iter(|| {
+                handle_run(cfg, None, false, false, &Arc::new(AtomicBool::new(false))).unwrap();
+            });
         });
     }
 

@@ -9,6 +9,8 @@ use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::LogParser;
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use log::{info, warn};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "filters")]
@@ -71,6 +73,7 @@ fn process_log_file(
     pipeline: &Pipeline,
     pb: &ProgressBar,
     limit: Option<usize>,
+    interrupted: &Arc<AtomicBool>,
     #[cfg(feature = "replace_parameters")] do_normalize: bool,
     #[cfg(feature = "replace_parameters")] placeholder_override: Option<bool>,
 ) -> Result<usize> {
@@ -124,6 +127,12 @@ fn process_log_file(
     }
 
     'outer: for result in parser.iter() {
+        // batch 结束后检查中断信号（Relaxed 原子读，无额外开销）
+        if interrupted.load(Ordering::Relaxed) {
+            flush_batch!();
+            break 'outer;
+        }
+
         match result {
             Ok(record) => {
                 #[cfg(feature = "replace_parameters")]
@@ -283,7 +292,10 @@ fn scan_for_trxids_by_transaction_filters(
     found_trxids
 }
 
-fn make_progress_bar() -> ProgressBar {
+fn make_progress_bar(quiet: bool) -> ProgressBar {
+    if quiet {
+        return ProgressBar::hidden();
+    }
     let pb = ProgressBar::new_spinner();
     pb.set_style(
         ProgressStyle::with_template(
@@ -296,7 +308,13 @@ fn make_progress_bar() -> ProgressBar {
     pb
 }
 
-pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<()> {
+pub fn handle_run(
+    cfg: &Config,
+    limit: Option<usize>,
+    dry_run: bool,
+    quiet: bool,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<()> {
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.directory).log_files()?;
     if log_files.is_empty() {
@@ -352,10 +370,14 @@ pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<(
         info!("Parsing and exporting SQL logs...");
     }
 
-    let pb = make_progress_bar();
+    let pb = make_progress_bar(quiet);
     let mut total_records = 0usize;
 
     for (idx, log_file) in log_files.iter().enumerate() {
+        if interrupted.load(Ordering::Relaxed) {
+            break;
+        }
+
         let remaining = limit.map(|l| l.saturating_sub(total_records));
         if remaining == Some(0) {
             break;
@@ -370,6 +392,7 @@ pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<(
             &pipeline,
             &pb,
             remaining,
+            interrupted,
             #[cfg(feature = "replace_parameters")]
             do_normalize,
             #[cfg(feature = "replace_parameters")]
@@ -387,13 +410,19 @@ pub fn handle_run(cfg: &Config, limit: Option<usize>, dry_run: bool) -> Result<(
     exporter_manager.finalize()?;
     error_logger.finalize()?;
 
-    let elapsed = total_start.elapsed().as_secs_f64();
-    let mode_label = if dry_run { " [dry-run]" } else { "" };
-    eprintln!(
-        "\n{} SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
-        color::green("✓"),
-        color::green(HumanCount(total_records as u64)),
-    );
-    exporter_manager.log_stats();
+    if !quiet {
+        let elapsed = total_start.elapsed().as_secs_f64();
+        let mode_label = if dry_run { " [dry-run]" } else { "" };
+        eprintln!(
+            "\n{} SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
+            color::green("✓"),
+            color::green(HumanCount(total_records as u64)),
+        );
+        exporter_manager.log_stats();
+    }
+
+    if interrupted.load(Ordering::Relaxed) {
+        return Err(Error::Interrupted);
+    }
     Ok(())
 }

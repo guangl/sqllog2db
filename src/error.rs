@@ -23,6 +23,9 @@ pub enum Error {
 
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
+
+    #[error("Interrupted by user")]
+    Interrupted,
 }
 
 #[derive(Debug, Error)]
