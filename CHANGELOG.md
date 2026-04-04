@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-04-04
+
+### Changed
+- 升级 `dm-database-parser-sqllog` 0.7.0 → 0.9.0，解析层改用 mmap + SIMD 加速，性能全面提升
+
+### Performance
+- **全导出器提速**：CSV -9~11%，JSONL -26~30%，SQLite -8~10%（基于 Criterion 对比 0.7.0 baseline）
+- **pre-scan 并行化**：`filters` feature 下事务扫描阶段改用 `par_iter()` 多核并行，prescan -11%；`rayon` 作为可选依赖随 `filters` feature 一同启用
+
+---
+
 ## [0.4.1] - 2026-04-03
 
 ### Performance
