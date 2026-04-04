@@ -1,4 +1,5 @@
 mod cli;
+mod color;
 mod config;
 mod constants;
 mod error;
@@ -43,9 +44,24 @@ fn apply_cli_flags_to_config(cfg: &mut Config, verbose: bool, quiet: bool) {
     }
 }
 
+/// Apply --from / --to date range to filters config (requires filters feature)
+#[cfg(feature = "filters")]
+fn apply_date_range(cfg: &mut Config, from: Option<&str>, to: Option<&str>) {
+    if from.is_none() && to.is_none() {
+        return;
+    }
+    let filters = cfg.features.filters.get_or_insert_with(Default::default);
+    filters.enable = true;
+    if let Some(f) = from {
+        filters.meta.start_ts = Some(f.to_string());
+    }
+    if let Some(t) = to {
+        filters.meta.end_ts = Some(t.to_string());
+    }
+}
+
 fn main() {
     if let Err(e) = run() {
-        // Use error! if logger is initialized, otherwise fallback to eprintln
         error!("{e}");
         std::process::exit(1);
     }
@@ -82,8 +98,21 @@ fn run() -> Result<()> {
             config,
             limit,
             dry_run,
+            set,
+            from,
+            to,
         }) => {
             let mut cfg = load_config(config)?;
+            cfg.apply_overrides(set)?;
+
+            #[cfg(feature = "filters")]
+            apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
+
+            #[cfg(not(feature = "filters"))]
+            if from.is_some() || to.is_some() {
+                warn!("--from/--to require the 'filters' feature (ignored)");
+            }
+
             cfg.validate()?;
             info!("Configuration validation passed");
 
@@ -105,6 +134,12 @@ fn run() -> Result<()> {
             info!("Application started");
 
             cli::validate::handle_validate(&cfg);
+            Ok(())
+        }
+        Some(cli::opts::Commands::ShowConfig { config, set }) => {
+            let mut cfg = load_config(config)?;
+            cfg.apply_overrides(set)?;
+            cli::show_config::handle_show_config(&cfg, config);
             Ok(())
         }
         None => {

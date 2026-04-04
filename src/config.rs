@@ -46,6 +46,132 @@ impl Config {
         FeaturesConfig::validate();
         Ok(())
     }
+
+    /// 将 `--set key=value` 覆盖应用到 config。
+    /// 支持点路径，例如 `sqllog.directory`、`exporter.csv.file`。
+    pub fn apply_overrides(&mut self, overrides: &[String]) -> Result<()> {
+        for item in overrides {
+            let (key, value) = item.split_once('=').ok_or_else(|| {
+                Error::Config(ConfigError::InvalidValue {
+                    field: item.clone(),
+                    value: String::new(),
+                    reason: "expected KEY=VALUE format".to_string(),
+                })
+            })?;
+            self.apply_one(key, value)?;
+        }
+        Ok(())
+    }
+
+    fn apply_one(&mut self, key: &str, value: &str) -> Result<()> {
+        let unknown = || {
+            Error::Config(ConfigError::InvalidValue {
+                field: key.to_string(),
+                value: value.to_string(),
+                reason: format!("unknown config key '{key}'"),
+            })
+        };
+        let parse_bool = |v: &str| -> Result<bool> {
+            match v {
+                "true" | "1" | "yes" => Ok(true),
+                "false" | "0" | "no" => Ok(false),
+                _ => Err(Error::Config(ConfigError::InvalidValue {
+                    field: key.to_string(),
+                    value: v.to_string(),
+                    reason: "expected true/false".to_string(),
+                })),
+            }
+        };
+
+        match key {
+            "sqllog.directory" => self.sqllog.directory = value.to_string(),
+            "error.file" => self.error.file = value.to_string(),
+            "logging.level" => self.logging.level = value.to_string(),
+            "logging.file" => self.logging.file = value.to_string(),
+            "logging.retention_days" => {
+                self.logging.retention_days = value.parse().map_err(|_| {
+                    Error::Config(ConfigError::InvalidValue {
+                        field: key.to_string(),
+                        value: value.to_string(),
+                        reason: "expected a positive integer".to_string(),
+                    })
+                })?;
+            }
+
+            #[cfg(feature = "csv")]
+            "exporter.csv.file" => {
+                self.exporter.csv.get_or_insert_with(Default::default).file = value.to_string();
+            }
+            #[cfg(feature = "csv")]
+            "exporter.csv.overwrite" => {
+                self.exporter
+                    .csv
+                    .get_or_insert_with(Default::default)
+                    .overwrite = parse_bool(value)?;
+            }
+            #[cfg(feature = "csv")]
+            "exporter.csv.append" => {
+                self.exporter
+                    .csv
+                    .get_or_insert_with(Default::default)
+                    .append = parse_bool(value)?;
+            }
+
+            #[cfg(feature = "jsonl")]
+            "exporter.jsonl.file" => {
+                self.exporter
+                    .jsonl
+                    .get_or_insert_with(Default::default)
+                    .file = value.to_string();
+            }
+            #[cfg(feature = "jsonl")]
+            "exporter.jsonl.overwrite" => {
+                self.exporter
+                    .jsonl
+                    .get_or_insert_with(Default::default)
+                    .overwrite = parse_bool(value)?;
+            }
+            #[cfg(feature = "jsonl")]
+            "exporter.jsonl.append" => {
+                self.exporter
+                    .jsonl
+                    .get_or_insert_with(Default::default)
+                    .append = parse_bool(value)?;
+            }
+
+            #[cfg(feature = "sqlite")]
+            "exporter.sqlite.database_url" => {
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .database_url = value.to_string();
+            }
+            #[cfg(feature = "sqlite")]
+            "exporter.sqlite.table_name" => {
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .table_name = value.to_string();
+            }
+            #[cfg(feature = "sqlite")]
+            "exporter.sqlite.overwrite" => {
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .overwrite = parse_bool(value)?;
+            }
+            #[cfg(feature = "sqlite")]
+            "exporter.sqlite.append" => {
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .append = parse_bool(value)?;
+            }
+
+            _ => return Err(unknown()),
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
