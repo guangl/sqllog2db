@@ -14,6 +14,8 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
+    #[cfg(feature = "replace_parameters")]
+    pub(super) normalize: bool,
 }
 
 impl std::fmt::Debug for SqliteExporter {
@@ -44,6 +46,8 @@ impl SqliteExporter {
             append,
             conn: None,
             stats: ExportStats::new(),
+            #[cfg(feature = "replace_parameters")]
+            normalize: true,
         }
     }
 
@@ -173,24 +177,29 @@ impl Exporter for SqliteExporter {
         .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
 
         #[cfg(feature = "replace_parameters")]
-        stmt.execute(params![
-            sqllog.ts.as_ref(),
-            meta.ep,
-            meta.sess_id.as_ref(),
-            meta.thrd_id.as_ref(),
-            meta.username.as_ref(),
-            meta.trxid.as_ref(),
-            meta.statement.as_ref(),
-            meta.appname.as_ref(),
-            strip_ip_prefix(meta.client_ip.as_ref()),
-            sqllog.tag.as_deref(),
-            pm.sql.as_ref(),
-            exec_time,
-            row_count,
-            exec_id,
-            crate::features::normalize_sql(pm.sql.as_ref()).as_str()
-        ])
-        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        {
+            let normalized: Option<String> = self
+                .normalize
+                .then(|| crate::features::normalize_sql(pm.sql.as_ref()));
+            stmt.execute(params![
+                sqllog.ts.as_ref(),
+                meta.ep,
+                meta.sess_id.as_ref(),
+                meta.thrd_id.as_ref(),
+                meta.username.as_ref(),
+                meta.trxid.as_ref(),
+                meta.statement.as_ref(),
+                meta.appname.as_ref(),
+                strip_ip_prefix(meta.client_ip.as_ref()),
+                sqllog.tag.as_deref(),
+                pm.sql.as_ref(),
+                exec_time,
+                row_count,
+                exec_id,
+                normalized.as_deref()
+            ])
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        }
 
         self.stats.record_success();
         Ok(())
@@ -236,24 +245,29 @@ impl Exporter for SqliteExporter {
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
 
             #[cfg(feature = "replace_parameters")]
-            stmt.execute(params![
-                sqllog.ts.as_ref(),
-                meta.ep,
-                meta.sess_id.as_ref(),
-                meta.thrd_id.as_ref(),
-                meta.username.as_ref(),
-                meta.trxid.as_ref(),
-                meta.statement.as_ref(),
-                meta.appname.as_ref(),
-                strip_ip_prefix(meta.client_ip.as_ref()),
-                sqllog.tag.as_deref(),
-                pm.sql.as_ref(),
-                exec_time,
-                row_count,
-                exec_id,
-                crate::features::normalize_sql(pm.sql.as_ref()).as_str()
-            ])
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+            {
+                let normalized: Option<String> = self
+                    .normalize
+                    .then(|| crate::features::normalize_sql(pm.sql.as_ref()));
+                stmt.execute(params![
+                    sqllog.ts.as_ref(),
+                    meta.ep,
+                    meta.sess_id.as_ref(),
+                    meta.thrd_id.as_ref(),
+                    meta.username.as_ref(),
+                    meta.trxid.as_ref(),
+                    meta.statement.as_ref(),
+                    meta.appname.as_ref(),
+                    strip_ip_prefix(meta.client_ip.as_ref()),
+                    sqllog.tag.as_deref(),
+                    pm.sql.as_ref(),
+                    exec_time,
+                    row_count,
+                    exec_id,
+                    normalized.as_deref()
+                ])
+                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+            }
         }
 
         self.stats.record_success_batch(sqllogs.len());

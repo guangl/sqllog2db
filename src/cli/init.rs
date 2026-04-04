@@ -43,6 +43,10 @@ level = "info"
 # 日志保留天数 (1-365) - 用于滚动文件最大保留数量
 retention_days = 7
 
+[features.replace_parameters]
+# 是否在导出结果中写入 normalized_sql 列（将 SQL 字面量替换为占位符 ?）
+enable = true
+
 [features.filters]
 # 是否启用过滤器
 enable = false

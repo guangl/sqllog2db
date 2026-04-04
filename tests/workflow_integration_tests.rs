@@ -52,6 +52,8 @@ mod full_workflow_tests {
             features: FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
@@ -110,6 +112,8 @@ mod full_workflow_tests {
             features: FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]
@@ -270,6 +274,8 @@ mod full_workflow_tests {
             features: FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
             exporter: ExporterConfig {
                 #[cfg(feature = "csv")]

@@ -17,7 +17,10 @@ pub struct Config {
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
-    #[cfg_attr(not(feature = "filters"), allow(dead_code))]
+    #[cfg_attr(
+        not(any(feature = "filters", feature = "replace_parameters")),
+        allow(dead_code)
+    )]
     pub features: FeaturesConfig,
     #[serde(default)]
     pub exporter: ExporterConfig,

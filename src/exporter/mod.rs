@@ -86,27 +86,49 @@ impl ExporterManager {
     pub fn from_config(config: &Config) -> Result<Self> {
         info!("Initializing exporter manager...");
 
+        #[cfg(feature = "replace_parameters")]
+        let normalize = config
+            .features
+            .replace_parameters
+            .as_ref()
+            .is_none_or(|r| r.enable);
+
         #[cfg(feature = "csv")]
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
+            let mut exporter = CsvExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(CsvExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 
         #[cfg(feature = "jsonl")]
         if let Some(cfg) = &config.exporter.jsonl {
             info!("Using JSONL exporter: {}", cfg.file);
+            let mut exporter = JsonlExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(JsonlExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 
         #[cfg(feature = "sqlite")]
         if let Some(cfg) = &config.exporter.sqlite {
             info!("Using SQLite exporter: {}", cfg.database_url);
+            let mut exporter = SqliteExporter::from_config(cfg);
+            #[cfg(feature = "replace_parameters")]
+            {
+                exporter.normalize = normalize;
+            }
             return Ok(Self {
-                exporter: Box::new(SqliteExporter::from_config(cfg)),
+                exporter: Box::new(exporter),
             });
         }
 

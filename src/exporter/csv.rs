@@ -15,6 +15,8 @@ pub struct CsvExporter {
     stats: ExportStats,
     itoa_buf: itoa::Buffer,
     line_buf: Vec<u8>,
+    #[cfg(feature = "replace_parameters")]
+    pub(super) normalize: bool,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -37,6 +39,8 @@ impl CsvExporter {
             stats: ExportStats::new(),
             itoa_buf: itoa::Buffer::new(),
             line_buf: Vec::with_capacity(512),
+            #[cfg(feature = "replace_parameters")]
+            normalize: true,
         }
     }
 
@@ -60,6 +64,7 @@ impl CsvExporter {
         sqllog: &Sqllog<'_>,
         writer: &mut BufWriter<File>,
         path: &Path,
+        #[cfg(feature = "replace_parameters")] normalize: bool,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -108,7 +113,7 @@ impl CsvExporter {
         }
 
         #[cfg(feature = "replace_parameters")]
-        {
+        if normalize {
             let normalized = crate::features::normalize_sql(pm.sql.as_ref());
             line_buf.push(b',');
             line_buf.push(b'"');
@@ -169,7 +174,11 @@ impl Exporter for CsvExporter {
             #[cfg(not(feature = "replace_parameters"))]
             let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n".as_ref();
             #[cfg(feature = "replace_parameters")]
-            let header = b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n".as_ref();
+            let header: &[u8] = if self.normalize {
+                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n"
+            } else {
+                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n"
+            };
             writer.write_all(header).map_err(|e| {
                 Error::Export(ExportError::WriteError {
                     path: self.path.clone(),
@@ -195,6 +204,8 @@ impl Exporter for CsvExporter {
             sqllog,
             writer,
             &self.path,
+            #[cfg(feature = "replace_parameters")]
+            self.normalize,
         )?;
         self.stats.record_success();
         Ok(())
@@ -210,6 +221,8 @@ impl Exporter for CsvExporter {
                 reason: "not initialized".to_string(),
             })
         })?;
+        #[cfg(feature = "replace_parameters")]
+        let normalize = self.normalize;
         for sqllog in sqllogs {
             Self::write_record(
                 &mut self.itoa_buf,
@@ -217,6 +230,8 @@ impl Exporter for CsvExporter {
                 sqllog,
                 writer,
                 &self.path,
+                #[cfg(feature = "replace_parameters")]
+                normalize,
             )?;
         }
         self.stats.record_success_batch(sqllogs.len());

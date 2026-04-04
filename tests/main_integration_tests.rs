@@ -50,6 +50,8 @@ mod main_integration_tests {
             features: FeaturesConfig {
                 #[cfg(feature = "filters")]
                 filters: Some(FiltersFeature::default()),
+                #[cfg(feature = "replace_parameters")]
+                replace_parameters: None,
             },
 
             exporter: ExporterConfig {
