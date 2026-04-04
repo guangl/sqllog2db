@@ -81,6 +81,8 @@ pub enum Commands {
         #[arg(short = 'k', long = "check")]
         check: bool,
     },
+    /// Print the man page to stdout
+    Man,
 }
 
 impl Cli {

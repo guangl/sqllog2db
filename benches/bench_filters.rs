@@ -17,6 +17,8 @@ use dm_database_sqllog2db::config::Config;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 const RECORDS: usize = 10_000;
 
@@ -149,7 +151,9 @@ fn bench_filters(c: &mut Criterion) {
 
     for (name, cfg) in scenarios {
         group.bench_with_input(BenchmarkId::from_parameter(name), cfg, |b, cfg| {
-            b.iter(|| handle_run(cfg, None, false).unwrap());
+            b.iter(|| {
+                handle_run(cfg, None, false, false, &Arc::new(AtomicBool::new(false))).unwrap();
+            });
         });
     }
 

@@ -11,8 +11,32 @@ mod parser;
 
 use config::Config;
 use error::Result;
-use log::{error, info, warn};
+use log::{info, warn};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+// 退出码约定：
+// 0  = 成功
+// 1  = 未分类错误
+// 2  = 配置错误
+// 3  = 输入/文件/解析错误
+// 4  = 导出错误
+// 130 = 被用户中断（Ctrl+C），遵循 Unix 128+SIGINT(2) 惯例
+const EXIT_CONFIG: i32 = 2;
+const EXIT_IO: i32 = 3;
+const EXIT_EXPORT: i32 = 4;
+const EXIT_INTERRUPTED: i32 = 130;
+
+fn exit_code_for(e: &error::Error) -> i32 {
+    match e {
+        error::Error::Config(_) => EXIT_CONFIG,
+        error::Error::File(_) | error::Error::Parser(_) | error::Error::Io(_) => EXIT_IO,
+        error::Error::Export(_) => EXIT_EXPORT,
+        error::Error::Interrupted => EXIT_INTERRUPTED,
+        error::Error::Update(_) => 1,
+    }
+}
 
 /// Initialize simple console logging for init/completions/update commands
 fn init_simple_logging(verbose: bool, quiet: bool) {
@@ -61,9 +85,16 @@ fn apply_date_range(cfg: &mut Config, from: Option<&str>, to: Option<&str>) {
 }
 
 fn main() {
-    if let Err(e) = run() {
-        error!("{e}");
-        std::process::exit(1);
+    match run() {
+        Ok(()) => {}
+        Err(e) => {
+            let code = exit_code_for(&e);
+            // Interrupted：静默退出，进度条已清除，用户清楚自己按了 Ctrl+C
+            if code != EXIT_INTERRUPTED {
+                eprintln!("{} {e}", color::red("Error:"));
+            }
+            std::process::exit(code);
+        }
     }
 }
 
@@ -94,6 +125,13 @@ fn run() -> Result<()> {
             Ok(())
         }
         Some(cli::opts::Commands::SelfUpdate { check }) => cli::update::handle_update(*check),
+        Some(cli::opts::Commands::Man) => {
+            use clap::CommandFactory;
+            let cmd = cli::opts::Cli::command();
+            let man = clap_mangen::Man::new(cmd);
+            man.render(&mut std::io::stdout())?;
+            Ok(())
+        }
         Some(cli::opts::Commands::Run {
             config,
             limit,
@@ -121,7 +159,15 @@ fn run() -> Result<()> {
             logging::init_logging(&cfg.logging, false)?;
             info!("Application started");
 
-            cli::run::handle_run(&cfg, *limit, *dry_run)
+            // 注册 Ctrl+C 处理器：设置中断标志，让处理循环在下一个 batch 结束时优雅退出
+            let interrupted = Arc::new(AtomicBool::new(false));
+            let interrupted_flag = Arc::clone(&interrupted);
+            ctrlc::set_handler(move || {
+                interrupted_flag.store(true, Ordering::Relaxed);
+            })
+            .ok();
+
+            cli::run::handle_run(&cfg, *limit, *dry_run, cli.quiet, &interrupted)
         }
         Some(cli::opts::Commands::Validate { config }) => {
             let mut cfg = load_config(config)?;

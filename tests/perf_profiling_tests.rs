@@ -6,6 +6,8 @@ use dm_database_sqllog2db::config::Config;
 use std::fs;
 #[cfg(feature = "filters")]
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[cfg(feature = "filters")]
 #[test]
@@ -58,7 +60,14 @@ append = false
     let config: Config = toml::from_str(&config_toml).unwrap();
 
     println!("--- Starting handle_run with enable=false ---");
-    handle_run(&config, None, false).unwrap();
+    handle_run(
+        &config,
+        None,
+        false,
+        false,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
     println!("--- Finished handle_run with enable=false ---");
 
     let mut config_enabled = config.clone();
@@ -69,6 +78,13 @@ append = false
     }
 
     println!("--- Starting handle_run with enable=true ---");
-    handle_run(&config_enabled, None, false).unwrap();
+    handle_run(
+        &config_enabled,
+        None,
+        false,
+        false,
+        &Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
     println!("--- Finished handle_run with enable=true ---");
 }
