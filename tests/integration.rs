@@ -57,7 +57,7 @@ fn test_handle_run_dry_run_empty_dir() {
         ..Default::default()
     };
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn test_handle_run_dry_run_with_log_files() {
     };
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn test_handle_run_dry_run_with_limit() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit to 5 records
-    handle_run(&cfg, Some(5), true, true, &interrupted, 80).unwrap();
+    handle_run(&cfg, Some(5), true, true, &interrupted, 80, false, None).unwrap();
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn test_handle_run_real_csv_export() {
     let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, false, true, &interrupted, 80).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80, false, None).unwrap();
 
     let content = std::fs::read_to_string(&csv_file).unwrap();
     // header + 10 data rows
@@ -132,9 +132,126 @@ fn test_handle_run_interrupted() {
 
     // Pre-set interrupted flag — run should return Err(Interrupted)
     let interrupted = Arc::new(AtomicBool::new(true));
-    let result = handle_run(&cfg, None, true, true, &interrupted, 80);
+    let result = handle_run(&cfg, None, true, true, &interrupted, 80, false, None);
     // Either Ok (no files processed) or Err(Interrupted) depending on timing
     let _ = result;
+}
+
+// ── resume tests ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_resume_skips_processed_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    // Two files: a.log (10 records) + b.log (10 records)
+    write_test_log(&log_dir.join("a.log"), 10);
+    write_test_log(&log_dir.join("b.log"), 10);
+
+    let state_path = dir.path().join("state.toml");
+    let csv1 = dir.path().join("out1.csv");
+    let cfg = make_run_config(&log_dir, &csv1);
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    // First run with --resume: processes both files, writes state
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_path.to_str().unwrap()),
+    )
+    .unwrap();
+    let rows_first = std::fs::read_to_string(&csv1).unwrap().lines().count();
+    assert!(rows_first >= 10, "expected at least 10 rows");
+
+    // State file must exist after first run
+    assert!(state_path.exists(), "state file should be created");
+
+    // Second run with --resume + append: already-processed files are skipped → no new rows
+    let csv2 = dir.path().join("out2.csv");
+    let mut cfg2 = make_run_config(&log_dir, &csv2);
+    cfg2.exporter.csv.as_mut().unwrap().append = true;
+    cfg2.exporter.csv.as_mut().unwrap().overwrite = false;
+
+    handle_run(
+        &cfg2,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_path.to_str().unwrap()),
+    )
+    .unwrap();
+
+    // csv2 should have at most a header row (no data rows) because all files were skipped
+    let rows_second = if csv2.exists() {
+        std::fs::read_to_string(&csv2).unwrap().lines().count()
+    } else {
+        0
+    };
+    assert!(
+        rows_second <= 1,
+        "second run should skip all files; got {rows_second} rows (expected header only)"
+    );
+}
+
+#[test]
+fn test_resume_reprocesses_changed_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    let log_file = log_dir.join("a.log");
+    write_test_log(&log_file, 5);
+
+    let state_path = dir.path().join("state.toml");
+    let csv = dir.path().join("out.csv");
+    let cfg = make_run_config(&log_dir, &csv);
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    // First run: process and record state
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_path.to_str().unwrap()),
+    )
+    .unwrap();
+    assert!(state_path.exists());
+
+    // Simulate file growing (append more records)
+    write_test_log(&log_file, 10);
+
+    // Second run with --resume: file fingerprint changed → must reprocess
+    let csv2 = dir.path().join("out2.csv");
+    let cfg2 = make_run_config(&log_dir, &csv2);
+    handle_run(
+        &cfg2,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_path.to_str().unwrap()),
+    )
+    .unwrap();
+
+    // csv2 should have data (file was reprocessed)
+    assert!(csv2.exists(), "changed file should be reprocessed");
+    let rows = std::fs::read_to_string(&csv2).unwrap().lines().count();
+    assert!(rows >= 1, "expected rows from reprocessed file");
 }
 
 // ── handle_stats tests ───────────────────────────────────────────────────────
@@ -251,7 +368,7 @@ fn test_csv_throughput_baseline() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let start = std::time::Instant::now();
-    handle_run(&cfg, None, false, true, &interrupted, 80).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80, false, None).unwrap();
     let elapsed = start.elapsed().as_secs_f64();
 
     #[allow(clippy::cast_precision_loss)]

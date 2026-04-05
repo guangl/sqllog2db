@@ -6,6 +6,7 @@ mod exporter;
 mod features;
 mod logging;
 mod parser;
+mod resume;
 
 use config::Config;
 use error::Result;
@@ -144,6 +145,8 @@ fn run() -> Result<()> {
             to,
             output,
             progress_interval,
+            resume,
+            state_file,
         }) => {
             let mut cfg = load_config(config)?;
             // --output is a shorthand applied before --set so --set can override
@@ -185,6 +188,8 @@ fn run() -> Result<()> {
                 cli.quiet,
                 &interrupted,
                 *progress_interval,
+                *resume,
+                state_file.as_deref(),
             )
         }
         Some(cli::opts::Commands::Validate { config, set }) => {

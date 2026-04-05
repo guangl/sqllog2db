@@ -7,3 +7,4 @@ pub mod features;
 pub use exporter::*;
 pub mod logging;
 pub mod parser;
+pub mod resume;

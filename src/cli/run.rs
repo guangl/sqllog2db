@@ -290,6 +290,8 @@ pub fn handle_run(
     quiet: bool,
     interrupted: &Arc<AtomicBool>,
     progress_interval: u64,
+    resume: bool,
+    state_file_override: Option<&str>,
 ) -> Result<()> {
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
@@ -297,6 +299,20 @@ pub fn handle_run(
         warn!("No log files found");
         return Ok(());
     }
+
+    let state_path =
+        std::path::PathBuf::from(state_file_override.unwrap_or(&cfg.resume.state_file));
+    let mut resume_state = if resume {
+        let state = crate::resume::ResumeState::load(&state_path);
+        info!(
+            "Resume mode: state file {}, {} files previously processed",
+            state_path.display(),
+            state.processed_count()
+        );
+        Some(state)
+    } else {
+        None
+    };
 
     let mut final_cfg = cfg.clone();
     if cfg
@@ -341,6 +357,8 @@ pub fn handle_run(
     let pb = make_progress_bar(quiet, progress_interval);
     let mut total_records = 0usize;
 
+    let mut skipped_files = 0usize;
+
     for (idx, log_file) in log_files.iter().enumerate() {
         if interrupted.load(Ordering::Relaxed) {
             break;
@@ -349,6 +367,21 @@ pub fn handle_run(
         let remaining = limit.map(|l| l.saturating_sub(total_records));
         if remaining == Some(0) {
             break;
+        }
+
+        // 断点续传：跳过已完整处理的文件
+        if let Some(state) = &resume_state {
+            if state.is_processed(log_file) {
+                skipped_files += 1;
+                pb.println(format!(
+                    "{} [{}/{}] {} — skipped (already processed)",
+                    color::dim("⏭"),
+                    idx + 1,
+                    log_files.len(),
+                    log_file.display(),
+                ));
+                continue;
+            }
         }
 
         let processed = process_log_file(
@@ -364,6 +397,14 @@ pub fn handle_run(
             placeholder_override,
         )?;
 
+        // 处理完成后立即持久化状态（dry-run 不更新）
+        if !dry_run {
+            if let Some(state) = &mut resume_state {
+                state.mark_processed(log_file, processed as u64)?;
+                state.save(&state_path)?;
+            }
+        }
+
         total_records += processed;
         if limit.is_some_and(|l| total_records >= l) {
             break;
@@ -377,8 +418,13 @@ pub fn handle_run(
     if !quiet {
         let elapsed = total_start.elapsed().as_secs_f64();
         let mode_label = if dry_run { " [dry-run]" } else { "" };
+        let skip_label = if skipped_files > 0 {
+            format!(", {} skipped", color::dim(HumanCount(skipped_files as u64)))
+        } else {
+            String::new()
+        };
         eprintln!(
-            "\n{} SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total",
+            "\n{} SQL Log Export Task Completed{mode_label} in {elapsed:.2}s — {} records total{skip_label}",
             color::green("✓"),
             color::green(HumanCount(total_records as u64)),
         );

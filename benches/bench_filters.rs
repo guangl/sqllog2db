@@ -159,6 +159,8 @@ fn bench_filters(c: &mut Criterion) {
                     false,
                     &Arc::new(AtomicBool::new(false)),
                     80,
+                    false,
+                    None,
                 )
                 .unwrap();
             });

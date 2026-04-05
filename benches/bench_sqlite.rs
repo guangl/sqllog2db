@@ -81,6 +81,8 @@ fn bench_sqlite_export(c: &mut Criterion) {
                     false,
                     &Arc::new(AtomicBool::new(false)),
                     80,
+                    false,
+                    None,
                 )
                 .unwrap();
             });
