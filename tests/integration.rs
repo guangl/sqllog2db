@@ -28,7 +28,7 @@ fn write_test_log(path: &std::path::Path, count: usize) {
 fn make_run_config(log_dir: &std::path::Path, csv_file: &std::path::Path) -> Config {
     Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         exporter: ExporterConfig {
             csv: Some(CsvExporter {
@@ -52,7 +52,7 @@ fn test_handle_run_dry_run_empty_dir() {
     // No log files → handle_run returns Ok early
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
@@ -70,7 +70,7 @@ fn test_handle_run_dry_run_with_log_files() {
 
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
@@ -88,7 +88,7 @@ fn test_handle_run_dry_run_with_limit() {
 
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
@@ -125,7 +125,7 @@ fn test_handle_run_interrupted() {
 
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
@@ -146,12 +146,12 @@ fn test_handle_stats_empty_dir() {
     std::fs::create_dir_all(&log_dir).unwrap();
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
     // No log files → prints "No log files found" and returns without panic
-    handle_stats(&cfg, true);
+    handle_stats(&cfg, true, false, None);
 }
 
 #[test]
@@ -163,23 +163,23 @@ fn test_handle_stats_with_log_files() {
 
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: log_dir.to_str().unwrap().to_string(),
+            path: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
-    handle_stats(&cfg, true); // quiet=true to suppress progress bar
+    handle_stats(&cfg, true, false, None); // quiet=true to suppress progress bar
 }
 
 #[test]
 fn test_handle_stats_nonexistent_dir() {
     let cfg = Config {
         sqllog: SqllogConfig {
-            directory: "/no/such/directory/at/all".to_string(),
+            path: "/no/such/directory/at/all".to_string(),
         },
         ..Default::default()
     };
     // Should not panic — prints an error and returns
-    handle_stats(&cfg, true);
+    handle_stats(&cfg, true, false, None);
 }
 
 // ── handle_init tests ────────────────────────────────────────────────────────

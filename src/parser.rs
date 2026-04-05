@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 /// SQL 日志解析器
 #[derive(Debug)]
 pub struct SqllogParser {
-    /// 日志路径（文件或目录）
+    /// 日志路径（文件、目录或 glob 模式）
     path: PathBuf,
 }
 
@@ -26,14 +26,20 @@ impl SqllogParser {
         &self.path
     }
 
-    /// 返回所有日志文件的路径列表
-    /// 这样用户可以遍历文件，然后对每个文件使用 `iter_sqllogs_from_file`
+    /// 返回所有日志文件的路径列表（已按路径排序）
     pub fn log_files(&self) -> Result<Vec<PathBuf>> {
         self.scan_log_files()
     }
 
     /// 扫描并获取所有需要解析的日志文件
     fn scan_log_files(&self) -> Result<Vec<PathBuf>> {
+        let path_str = self.path.to_string_lossy();
+
+        // Glob 模式检测
+        if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
+            return self.scan_glob(&path_str);
+        }
+
         let path = &self.path;
 
         if !path.exists() {
@@ -69,7 +75,6 @@ impl SqllogParser {
 
                 let entry_path = entry.path();
 
-                // 只处理 .log 文件
                 if entry_path.is_file() && entry_path.extension().is_some_and(|ext| ext == "log") {
                     debug!("Found log file: {}", entry_path.display());
                     log_files.push(entry_path);
@@ -86,6 +91,34 @@ impl SqllogParser {
                 path: path.clone(),
                 reason: "既不是文件也不是目录".to_string(),
             }));
+        }
+
+        log_files.sort();
+        Ok(log_files)
+    }
+
+    /// 使用 glob 模式扫描日志文件
+    fn scan_glob(&self, pattern: &str) -> Result<Vec<PathBuf>> {
+        let mut log_files: Vec<PathBuf> = glob::glob(pattern)
+            .map_err(|e| {
+                Error::Parser(ParserError::InvalidPath {
+                    path: self.path.clone(),
+                    reason: format!("invalid glob pattern: {e}"),
+                })
+            })?
+            .filter_map(std::result::Result::ok)
+            .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "log"))
+            .collect();
+
+        log_files.sort();
+
+        if log_files.is_empty() {
+            warn!("No .log files matched glob pattern: {pattern}");
+        } else {
+            info!(
+                "Glob matched {} log files for pattern: {pattern}",
+                log_files.len()
+            );
         }
 
         Ok(log_files)
@@ -145,5 +178,42 @@ mod tests {
     fn test_path_accessor() {
         let p = SqllogParser::new("/tmp");
         assert_eq!(p.path(), std::path::Path::new("/tmp"));
+    }
+
+    #[test]
+    fn test_log_files_sorted() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("c.log"), "").unwrap();
+        std::fs::write(dir.path().join("a.log"), "").unwrap();
+        std::fs::write(dir.path().join("b.log"), "").unwrap();
+        let p = SqllogParser::new(dir.path());
+        let files = p.log_files().unwrap();
+        assert_eq!(files.len(), 3);
+        let names: Vec<_> = files
+            .iter()
+            .map(|f| f.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["a.log", "b.log", "c.log"]);
+    }
+
+    #[test]
+    fn test_log_files_glob_pattern() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("2025-01.log"), "").unwrap();
+        std::fs::write(dir.path().join("2025-02.log"), "").unwrap();
+        std::fs::write(dir.path().join("other.txt"), "").unwrap();
+        let pattern = format!("{}/*.log", dir.path().display());
+        let p = SqllogParser::new(&pattern);
+        let files = p.log_files().unwrap();
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn test_log_files_glob_no_match() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let pattern = format!("{}/nomatch*.log", dir.path().display());
+        let p = SqllogParser::new(&pattern);
+        let files = p.log_files().unwrap();
+        assert!(files.is_empty());
     }
 }

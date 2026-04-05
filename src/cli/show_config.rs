@@ -9,7 +9,7 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
 
     // [sqllog]
     println!("{}", color::cyan("[sqllog]"));
-    kv("directory", &cfg.sqllog.directory);
+    kv("path", &cfg.sqllog.path);
     println!();
 
     // [logging]

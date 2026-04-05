@@ -5,29 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-04-05
+
+### Added
+
+- **Glob 输入支持**：`sqllog.path` 现在接受 glob 模式（如 `./logs/2025-*.log`），自动匹配所有 `.log` 文件
+- **目录扫描排序**：目录模式和 glob 模式扫描结果均按路径字典序排序，确保处理顺序可预期
+- **`stats --top N`**：展示执行时间最长的前 N 条慢查询；使用有界 min-heap 实现，无论日志大小均为常数内存
+- **`stats -v` 每文件明细**：verbose 模式下按文件输出记录数、解析错误数及处理速率
+
+### Changed
+
+- **`sqllog.directory` 重命名为 `sqllog.path`**：新字段名更准确地反映其支持文件/目录/glob 三种输入形式；旧字段名通过 `serde(alias)` 保持向后兼容，`--set sqllog.directory=...` 同样继续有效
+
+---
+
 ## [0.8.0] - 2026-04-05
 
 ### Removed
 
-- **移除全部 Cargo Features**：删除 `csv`、`jsonl`、`sqlite`、`filters`、`replace_parameters`、`full` 六个编译开关及所有 `#[cfg(feature = ...)]` 条件编译块
-  - 三种导出器（CSV / JSONL / SQLite）现在始终编译进二进制，无需 `--features` 参数
-  - 过滤器（`filters`）和参数标准化（`replace_parameters`）模块同样始终可用
-  - 所有可选依赖（`serde_json`、`ryu`、`rayon`、`rusqlite`）升级为必选依赖
+- **移除 JSONL 导出器**：删除 `src/exporter/jsonl.rs` 及所有相关配置（`[exporter.jsonl]`），导出格式精简为 CSV 和 SQLite
+- **移除 ErrorLogger**：不再将解析错误写入独立文件，改为通过 `log::trace!()` 写入应用日志；同步移除 `[error]` 配置节
+- **移除全部 Cargo Features**：删除 `csv`、`jsonl`、`sqlite`、`filters`、`replace_parameters`、`full` 六个编译开关，所有功能始终编译进二进制
 
 ### Added
 
-- **156 个新测试**，行覆盖率从 ~53% 提升至 **74.82%**，覆盖以下此前零覆盖模块：
-  - `src/color.rs`：8 个单元测试（各颜色函数 + `init` 边界）
-  - `src/error_logger.rs`：5 个单元测试（创建、父目录自动建立、parse error 记录、finalize）
-  - `src/logging.rs`：4 个单元测试（有效/无效日志级别、父目录创建）
-  - `src/cli/preflight.rs`：9 个单元测试（不存在目录、非目录路径、无 .log 文件警告、输出可写性检查）
-  - `src/cli/show_config.rs`：5 个单元测试（CSV / JSONL / SQLite / filters / replace_parameters 各配置分支）
-  - `tests/integration.rs`：13 个集成测试（`handle_run` dry-run/limit/interrupt、`handle_stats`、`handle_init`、`handle_show_config`，以及 CSV 吞吐量基准断言）
-- **CI 覆盖率门控**：新增 `coverage` job，使用 `cargo-llvm-cov` 检查行覆盖率 ≥ 70%，`release` 和 `publish` job 均依赖此门控
-- **CI 性能基准检查**：
-  - `cargo bench --no-run`（lint job）：每次 PR 验证所有 bench 目标可正常编译
-  - `cargo test --release --test integration test_csv_throughput_baseline`（test job，仅 Linux）：release 模式断言 CSV 吞吐量 ≥ 500k 条/秒
-- **Criterion 基准快照**：执行 `cargo bench -- --save-baseline main` 保存当前性能基准，后续 bench 比较时不再误报 regression
+- **`validate --set`**：`validate` 子命令新增 `--set KEY=VALUE` 选项，可在校验前覆盖配置字段
+- **`stats --from / --to`**：`stats` 子命令支持时间范围过滤，与 `run` 命令保持一致
+- **`validate` 命令提取为独立处理函数**：`cli::validate::handle_validate` 负责输出生效配置详情（路径、日志级别、过滤器、导出器）
+- **156 个新测试**，行覆盖率从 ~53% 提升至 **74.82%**
+- **CI 覆盖率门控**：`cargo-llvm-cov` 检查行覆盖率 ≥ 70%
+- **CI 性能基准检查**：release 模式断言 CSV 吞吐量 ≥ 500k 条/秒
 
 ### Performance
 
@@ -36,7 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | 导出器 | 吞吐量 |
 |--------|--------|
 | CSV | ~2.13M 条/秒 |
-| JSONL | ~1.67M 条/秒 |
 | SQLite | ~1.11M 条/秒 |
 | Filters 预扫描 | ~2.25M 条/秒 |
 
@@ -376,6 +383,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 多平台交叉编译支持
 - Release artifacts 附带 SHA256 校验文件
 
+[0.9.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.9.0
 [0.8.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.8.0
 [0.7.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.7.0
 [0.6.0]: https://github.com/guangl/sqllog2db/releases/tag/v0.6.0

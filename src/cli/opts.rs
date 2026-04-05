@@ -73,7 +73,7 @@ pub enum Commands {
             env = "SQLLOG2DB_CONFIG"
         )]
         config: String,
-        /// Override config values, e.g. --set sqllog.directory=./logs
+        /// Override config values, e.g. --set sqllog.path=./logs
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
     },
@@ -101,7 +101,7 @@ pub enum Commands {
             env = "SQLLOG2DB_CONFIG"
         )]
         config: String,
-        /// Override config values, e.g. --set sqllog.directory=./logs
+        /// Override config values, e.g. --set sqllog.path=./logs
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
         /// Keep only records at or after this timestamp
@@ -110,6 +110,9 @@ pub enum Commands {
         /// Keep only records at or before this timestamp
         #[arg(long = "to", value_name = "DATETIME")]
         to: Option<String>,
+        /// Show top N slowest queries ranked by execution time
+        #[arg(long = "top", value_name = "N")]
+        top: Option<usize>,
     },
     /// Generate shell completion scripts
     Completions {

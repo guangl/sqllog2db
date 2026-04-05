@@ -7,7 +7,7 @@ use std::path::Path;
 #[must_use]
 pub fn check(cfg: &Config) -> PreflightResult {
     let mut result = PreflightResult::default();
-    check_log_dir(&cfg.sqllog.directory, &mut result);
+    check_log_dir(&cfg.sqllog.path, &mut result);
     check_output_writable(cfg, &mut result);
     result
 }
@@ -16,7 +16,7 @@ fn check_log_dir(directory: &str, result: &mut PreflightResult) {
     let path = Path::new(directory);
     if !path.exists() {
         result.errors.push(format!(
-            "日志目录不存在: {directory}  (可用 --set sqllog.directory=<path> 覆盖)"
+            "日志目录不存在: {directory}  (可用 --set sqllog.path=<path> 覆盖)"
         ));
         return;
     }
@@ -119,7 +119,7 @@ mod tests {
     fn config_with_log_dir(dir: &str) -> Config {
         Config {
             sqllog: SqllogConfig {
-                directory: dir.to_string(),
+                path: dir.to_string(),
             },
             ..Default::default()
         }

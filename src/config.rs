@@ -39,7 +39,7 @@ impl Config {
     }
 
     /// 将 `--set key=value` 覆盖应用到 config。
-    /// 支持点路径，例如 `sqllog.directory`、`exporter.csv.file`。
+    /// 支持点路径，例如 `sqllog.path`、`exporter.csv.file`。
     pub fn apply_overrides(&mut self, overrides: &[String]) -> Result<()> {
         for item in overrides {
             let (key, value) = item.split_once('=').ok_or_else(|| {
@@ -75,7 +75,7 @@ impl Config {
         };
 
         match key {
-            "sqllog.directory" => self.sqllog.directory = value.to_string(),
+            "sqllog.path" | "sqllog.directory" => self.sqllog.path = value.to_string(),
             "logging.level" => self.logging.level = value.to_string(),
             "logging.file" => self.logging.file = value.to_string(),
             "logging.retention_days" => {
@@ -137,24 +137,27 @@ impl Config {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqllogConfig {
-    pub directory: String,
+    /// 日志文件路径：目录、单文件或 glob 模式（e.g. `sqllogs/*.log`）
+    /// 旧配置中的 `directory` 键仍被接受。
+    #[serde(alias = "directory")]
+    pub path: String,
 }
 
 impl Default for SqllogConfig {
     fn default() -> Self {
         Self {
-            directory: "sqllogs".to_string(),
+            path: "sqllogs".to_string(),
         }
     }
 }
 
 impl SqllogConfig {
     pub fn validate(&self) -> Result<()> {
-        if self.directory.trim().is_empty() {
+        if self.path.trim().is_empty() {
             return Err(Error::Config(ConfigError::InvalidValue {
-                field: "sqllog.directory".to_string(),
-                value: self.directory.clone(),
-                reason: "Input directory cannot be empty".to_string(),
+                field: "sqllog.path".to_string(),
+                value: self.path.clone(),
+                reason: "Input path cannot be empty".to_string(),
             }));
         }
         Ok(())
@@ -328,7 +331,7 @@ mod tests {
     #[test]
     fn test_validate_empty_sqllog_directory() {
         let mut cfg = default_config();
-        cfg.sqllog.directory = "  ".into();
+        cfg.sqllog.path = "  ".into();
         assert!(cfg.validate().is_err());
     }
 
@@ -341,11 +344,19 @@ mod tests {
 
     // ── apply_overrides ────────────────────────────────────────
     #[test]
-    fn test_apply_overrides_sqllog_directory() {
+    fn test_apply_overrides_sqllog_path() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["sqllog.path=/tmp/logs".into()])
+            .unwrap();
+        assert_eq!(cfg.sqllog.path, "/tmp/logs");
+    }
+
+    #[test]
+    fn test_apply_overrides_sqllog_directory_alias() {
         let mut cfg = default_config();
         cfg.apply_overrides(&["sqllog.directory=/tmp/logs".into()])
             .unwrap();
-        assert_eq!(cfg.sqllog.directory, "/tmp/logs");
+        assert_eq!(cfg.sqllog.path, "/tmp/logs");
     }
 
     #[test]
@@ -445,7 +456,7 @@ file = "out.csv"
         )
         .unwrap();
         let cfg = Config::from_file(&path).unwrap();
-        assert_eq!(cfg.sqllog.directory, "sqllogs");
+        assert_eq!(cfg.sqllog.path, "sqllogs");
         assert_eq!(cfg.exporter.csv.unwrap().file, "out.csv");
     }
 }

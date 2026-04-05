@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "dm-database-sqllog2db"
-version = "0.7.0"
+version = "0.9.0"
 dependencies = [
  "chrono",
  "clap",
@@ -589,6 +589,7 @@ dependencies = [
  "ctrlc",
  "dm-database-parser-sqllog",
  "env_logger",
+ "glob",
  "indicatif 0.17.11",
  "itoa",
  "log",
@@ -919,6 +920,12 @@ dependencies = [
  "wasip2",
  "wasm-bindgen",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "h2"

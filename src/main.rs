@@ -197,11 +197,12 @@ fn run() -> Result<()> {
             set,
             from,
             to,
+            top,
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
-            cli::stats::handle_stats(&cfg, cli.quiet);
+            cli::stats::handle_stats(&cfg, cli.quiet, cli.verbose, *top);
             Ok(())
         }
         None => {

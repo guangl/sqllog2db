@@ -291,7 +291,7 @@ pub fn handle_run(
     interrupted: &Arc<AtomicBool>,
 ) -> Result<()> {
     let total_start = Instant::now();
-    let log_files = SqllogParser::new(&cfg.sqllog.directory).log_files()?;
+    let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
     if log_files.is_empty() {
         warn!("No log files found");
         return Ok(());
