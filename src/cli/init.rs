@@ -30,10 +30,6 @@ pub fn handle_init(output_path: &str, force: bool) -> Result<()> {
 # SQL 日志目录或文件路径
 directory = "sqllogs"
 
-[error]
-# 解析错误日志输出路径（纯文本行: file | error | raw | line）
-file = "export/errors.log"
-
 [logging]
 # 应用日志输出目录或文件路径 (当前版本要求为"文件路径"，例如 logs/sqllog2db.log)
 # 如果仅设置为目录（如 "logs"），请确保后续代码逻辑能够自动生成文件；否则请填写完整文件路径
@@ -89,7 +85,7 @@ enable = false
 
 # ===================== 导出器配置 =====================
 # 只能配置一个导出器
-# 同时配置多个时，按优先级使用：csv > jsonl > sqlite
+# 同时配置多个时，按优先级使用：csv > sqlite
 
 # 方案 1: csv 导出（默认）
 [exporter.csv]
@@ -97,13 +93,7 @@ file = "outputs/sqllog.csv"
 overwrite = true
 append = false
 
-# 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
-# [exporter.jsonl]
-# file = "export/sqllog2db.jsonl"
-# overwrite = true
-# append = false
-
-# 方案 3: SQLite 数据库导出
+# 方案 2: SQLite 数据库导出
 # [exporter.sqlite]
 # database_url = "export/sqllog2db.db"
 # table_name = "sqllog_records"

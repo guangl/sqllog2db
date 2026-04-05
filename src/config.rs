@@ -10,8 +10,6 @@ pub struct Config {
     #[serde(default)]
     pub sqllog: SqllogConfig,
     #[serde(default)]
-    pub error: ErrorConfig,
-    #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
     pub features: FeaturesConfig,
@@ -78,7 +76,6 @@ impl Config {
 
         match key {
             "sqllog.directory" => self.sqllog.directory = value.to_string(),
-            "error.file" => self.error.file = value.to_string(),
             "logging.level" => self.logging.level = value.to_string(),
             "logging.file" => self.logging.file = value.to_string(),
             "logging.retention_days" => {
@@ -103,25 +100,6 @@ impl Config {
             "exporter.csv.append" => {
                 self.exporter
                     .csv
-                    .get_or_insert_with(Default::default)
-                    .append = parse_bool(value)?;
-            }
-
-            "exporter.jsonl.file" => {
-                self.exporter
-                    .jsonl
-                    .get_or_insert_with(Default::default)
-                    .file = value.to_string();
-            }
-            "exporter.jsonl.overwrite" => {
-                self.exporter
-                    .jsonl
-                    .get_or_insert_with(Default::default)
-                    .overwrite = parse_bool(value)?;
-            }
-            "exporter.jsonl.append" => {
-                self.exporter
-                    .jsonl
                     .get_or_insert_with(Default::default)
                     .append = parse_bool(value)?;
             }
@@ -184,24 +162,6 @@ impl SqllogConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ErrorConfig {
-    #[serde(default = "default_error_file")]
-    pub file: String,
-}
-
-fn default_error_file() -> String {
-    "export/errors.log".to_string()
-}
-
-impl Default for ErrorConfig {
-    fn default() -> Self {
-        Self {
-            file: "export/errors.log".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct LoggingConfig {
     #[serde(default = "default_logging_file")]
     pub file: String,
@@ -256,13 +216,12 @@ impl LoggingConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExporterConfig {
     pub csv: Option<CsvExporter>,
-    pub jsonl: Option<JsonlExporter>,
     pub sqlite: Option<SqliteExporter>,
 }
 
 impl ExporterConfig {
     fn has_any(&self) -> bool {
-        self.csv.is_some() || self.jsonl.is_some() || self.sqlite.is_some()
+        self.csv.is_some() || self.sqlite.is_some()
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -277,7 +236,6 @@ impl Default for ExporterConfig {
     fn default() -> Self {
         Self {
             csv: Some(CsvExporter::default()),
-            jsonl: None,
             sqlite: None,
         }
     }
@@ -296,25 +254,6 @@ impl Default for CsvExporter {
     fn default() -> Self {
         Self {
             file: "outputs/sqllog.csv".to_string(),
-            overwrite: true,
-            append: false,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct JsonlExporter {
-    pub file: String,
-    #[serde(default = "default_true")]
-    pub overwrite: bool,
-    #[serde(default)]
-    pub append: bool,
-}
-
-impl Default for JsonlExporter {
-    fn default() -> Self {
-        Self {
-            file: "export/sqllog2db.jsonl".to_string(),
             overwrite: true,
             append: false,
         }
@@ -434,14 +373,6 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_overrides_jsonl_file() {
-        let mut cfg = default_config();
-        cfg.apply_overrides(&["exporter.jsonl.file=/tmp/out.jsonl".into()])
-            .unwrap();
-        assert_eq!(cfg.exporter.jsonl.unwrap().file, "/tmp/out.jsonl");
-    }
-
-    #[test]
     fn test_apply_overrides_sqlite_database_url() {
         let mut cfg = default_config();
         cfg.apply_overrides(&["exporter.sqlite.database_url=/tmp/out.db".into()])
@@ -487,9 +418,8 @@ mod tests {
     }
 
     #[test]
-    fn test_exporter_config_default_no_jsonl_sqlite() {
+    fn test_exporter_config_default_no_sqlite() {
         let cfg = ExporterConfig::default();
-        assert!(cfg.jsonl.is_none());
         assert!(cfg.sqlite.is_none());
     }
 

@@ -2,7 +2,6 @@ pub mod cli;
 pub mod color;
 pub mod config;
 pub mod error;
-pub mod error_logger;
 pub mod exporter;
 pub mod features;
 pub use exporter::*;

@@ -55,9 +55,26 @@ pub fn handle_stats(cfg: &Config, quiet: bool) {
 
         let mut file_records: u64 = 0;
         let mut file_errors: u64 = 0;
+        let filters = cfg.features.filters.as_ref().filter(|f| f.has_filters());
         for result in parser.iter() {
             match result {
-                Ok(_) => {
+                Ok(record) => {
+                    if let Some(f) = filters {
+                        let meta = record.parse_meta();
+                        if !f.should_keep(
+                            record.ts.as_ref(),
+                            &meta.trxid,
+                            &meta.client_ip,
+                            &meta.sess_id,
+                            &meta.thrd_id,
+                            &meta.username,
+                            &meta.statement,
+                            &meta.appname,
+                            record.tag.as_deref(),
+                        ) {
+                            continue;
+                        }
+                    }
                     file_records += 1;
                     pb.inc(1);
                 }

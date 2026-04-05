@@ -12,11 +12,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
     kv("directory", &cfg.sqllog.directory);
     println!();
 
-    // [error]
-    println!("{}", color::cyan("[error]"));
-    kv("file", &cfg.error.file);
-    println!();
-
     // [logging]
     println!("{}", color::cyan("[logging]"));
     kv("file", &cfg.logging.file);
@@ -30,14 +25,6 @@ pub fn handle_show_config(cfg: &Config, config_path: &str) {
         kv("file", &csv.file);
         kv("overwrite", &csv.overwrite.to_string());
         kv("append", &csv.append.to_string());
-        println!();
-    }
-
-    if let Some(jsonl) = &cfg.exporter.jsonl {
-        println!("{}", color::cyan("[exporter.jsonl]"));
-        kv("file", &jsonl.file);
-        kv("overwrite", &jsonl.overwrite.to_string());
-        kv("append", &jsonl.append.to_string());
         println!();
     }
 
@@ -89,7 +76,7 @@ fn kv(key: &str, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ExporterConfig, JsonlExporter, SqliteExporter};
+    use crate::config::{Config, ExporterConfig, SqliteExporter};
     use crate::features::{FeaturesConfig, FiltersFeature, ReplaceParametersConfig};
 
     #[test]
@@ -100,28 +87,10 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_show_config_with_jsonl_exporter() {
-        let cfg = Config {
-            exporter: ExporterConfig {
-                csv: None,
-                jsonl: Some(JsonlExporter {
-                    file: "out.jsonl".to_string(),
-                    overwrite: true,
-                    append: false,
-                }),
-                sqlite: None,
-            },
-            ..Default::default()
-        };
-        handle_show_config(&cfg, "test_config.toml");
-    }
-
-    #[test]
     fn test_handle_show_config_with_sqlite_exporter() {
         let cfg = Config {
             exporter: ExporterConfig {
                 csv: None,
-                jsonl: None,
                 sqlite: Some(SqliteExporter {
                     database_url: "out.db".to_string(),
                     table_name: "logs".to_string(),

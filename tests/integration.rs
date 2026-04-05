@@ -68,13 +68,12 @@ fn test_handle_run_dry_run_with_log_files() {
     write_test_log(&log_dir.join("a.log"), 20);
     write_test_log(&log_dir.join("b.log"), 10);
 
-    let mut cfg = Config {
+    let cfg = Config {
         sqllog: SqllogConfig {
             directory: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
-    cfg.error.file = dir.path().join("errors.log").to_str().unwrap().to_string();
 
     let interrupted = Arc::new(AtomicBool::new(false));
     handle_run(&cfg, None, true, true, &interrupted).unwrap();
@@ -87,13 +86,12 @@ fn test_handle_run_dry_run_with_limit() {
     std::fs::create_dir_all(&log_dir).unwrap();
     write_test_log(&log_dir.join("test.log"), 50);
 
-    let mut cfg = Config {
+    let cfg = Config {
         sqllog: SqllogConfig {
             directory: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
-    cfg.error.file = dir.path().join("errors.log").to_str().unwrap().to_string();
 
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit to 5 records
@@ -108,8 +106,7 @@ fn test_handle_run_real_csv_export() {
     write_test_log(&log_dir.join("test.log"), 10);
 
     let csv_file = dir.path().join("out.csv");
-    let mut cfg = make_run_config(&log_dir, &csv_file);
-    cfg.error.file = dir.path().join("errors.log").to_str().unwrap().to_string();
+    let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
     handle_run(&cfg, None, false, true, &interrupted).unwrap();
@@ -126,13 +123,12 @@ fn test_handle_run_interrupted() {
     std::fs::create_dir_all(&log_dir).unwrap();
     write_test_log(&log_dir.join("test.log"), 100);
 
-    let mut cfg = Config {
+    let cfg = Config {
         sqllog: SqllogConfig {
             directory: log_dir.to_str().unwrap().to_string(),
         },
         ..Default::default()
     };
-    cfg.error.file = dir.path().join("errors.log").to_str().unwrap().to_string();
 
     // Pre-set interrupted flag — run should return Err(Interrupted)
     let interrupted = Arc::new(AtomicBool::new(true));
@@ -251,8 +247,7 @@ fn test_csv_throughput_baseline() {
     write_test_log(&log_dir.join("perf.log"), RECORD_COUNT);
 
     let csv_file = dir.path().join("out.csv");
-    let mut cfg = make_run_config(&log_dir, &csv_file);
-    cfg.error.file = dir.path().join("errors.log").to_str().unwrap().to_string();
+    let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let start = std::time::Instant::now();

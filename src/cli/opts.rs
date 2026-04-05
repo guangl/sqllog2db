@@ -6,8 +6,8 @@ use clap_complete::{Shell, generate};
 #[command(
     name = "sqllog2db",
     version,
-    about = "Parse DM database SQL logs and export to CSV/JSONL/SQLite",
-    long_about = "A lightweight and efficient CLI tool for parsing DM database SQL logs (streaming) and exporting to multiple formats with error tracking."
+    about = "Parse DM database SQL logs and export to CSV/SQLite",
+    long_about = "A lightweight and efficient CLI tool for parsing DM database SQL logs (streaming) and exporting to CSV or SQLite."
 )]
 pub struct Cli {
     /// Enable verbose output (debug level)
@@ -73,6 +73,9 @@ pub enum Commands {
             env = "SQLLOG2DB_CONFIG"
         )]
         config: String,
+        /// Override config values, e.g. --set sqllog.directory=./logs
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
     },
     /// Show effective configuration (after loading and any --set overrides)
     ShowConfig {
@@ -101,6 +104,12 @@ pub enum Commands {
         /// Override config values, e.g. --set sqllog.directory=./logs
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
+        /// Keep only records at or after this timestamp
+        #[arg(long = "from", value_name = "DATETIME")]
+        from: Option<String>,
+        /// Keep only records at or before this timestamp
+        #[arg(long = "to", value_name = "DATETIME")]
+        to: Option<String>,
     },
     /// Generate shell completion scripts
     Completions {

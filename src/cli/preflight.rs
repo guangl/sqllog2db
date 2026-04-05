@@ -46,10 +46,6 @@ fn check_output_writable(cfg: &Config, result: &mut PreflightResult) {
         check_path_writable(&csv.file, result);
         return;
     }
-    if let Some(jsonl) = &cfg.exporter.jsonl {
-        check_path_writable(&jsonl.file, result);
-        return;
-    }
     if let Some(sqlite) = &cfg.exporter.sqlite {
         check_path_writable(&sqlite.database_url, result);
         return;

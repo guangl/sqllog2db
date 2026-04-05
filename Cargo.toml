@@ -86,10 +86,6 @@ name = "bench_csv"
 harness = false
 
 [[bench]]
-name = "bench_jsonl"
-harness = false
-
-[[bench]]
 name = "bench_sqlite"
 harness = false
 

@@ -4,10 +4,8 @@ use dm_database_parser_sqllog::Sqllog;
 use log::info;
 
 pub mod csv;
-pub mod jsonl;
 pub mod sqlite;
 pub use csv::CsvExporter;
-pub use jsonl::JsonlExporter;
 pub use sqlite::SqliteExporter;
 
 /// 所有导出器必须实现的接口
@@ -143,15 +141,6 @@ impl ExporterManager {
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
             let mut exporter = CsvExporter::from_config(cfg);
-            exporter.normalize = normalize;
-            return Ok(Self {
-                exporter: Box::new(exporter),
-            });
-        }
-
-        if let Some(cfg) = &config.exporter.jsonl {
-            info!("Using JSONL exporter: {}", cfg.file);
-            let mut exporter = JsonlExporter::from_config(cfg);
             exporter.normalize = normalize;
             return Ok(Self {
                 exporter: Box::new(exporter),

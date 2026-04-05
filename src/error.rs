@@ -58,7 +58,7 @@ pub enum ConfigError {
         reason: String,
     },
 
-    #[error("At least one exporter must be configured (csv/jsonl/sqlite)")]
+    #[error("At least one exporter must be configured (csv/sqlite)")]
     NoExporters,
 }
 

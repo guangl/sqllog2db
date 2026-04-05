@@ -2,7 +2,6 @@ use crate::color;
 use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
-use crate::error_logger::ErrorLogger;
 use crate::exporter::ExporterManager;
 use crate::features::{LogProcessor, Pipeline};
 use crate::parser::SqllogParser;
@@ -57,7 +56,6 @@ fn process_log_file(
     file_index: usize,
     total_files: usize,
     exporter_manager: &mut ExporterManager,
-    error_logger: &mut ErrorLogger,
     pipeline: &Pipeline,
     pb: &ProgressBar,
     limit: Option<usize>,
@@ -150,9 +148,7 @@ fn process_log_file(
             Err(e) => {
                 errors_in_file += 1;
                 flush_batch!();
-                if let Err(log_err) = error_logger.log_parse_error(file_path, &e) {
-                    warn!("Failed to record parse error: {log_err}");
-                }
+                log::trace!("{file_path} | {e:?}");
             }
         }
     }
@@ -321,7 +317,6 @@ pub fn handle_run(
     } else {
         ExporterManager::from_config(final_cfg)?
     };
-    let mut error_logger = ErrorLogger::new(&final_cfg.error.file)?;
     exporter_manager.initialize()?;
 
     let do_normalize = final_cfg
@@ -360,7 +355,6 @@ pub fn handle_run(
             idx + 1,
             log_files.len(),
             &mut exporter_manager,
-            &mut error_logger,
             &pipeline,
             &pb,
             remaining,
@@ -378,8 +372,6 @@ pub fn handle_run(
     pb.finish_and_clear();
 
     exporter_manager.finalize()?;
-    let parse_errors = error_logger.error_count();
-    error_logger.finalize()?;
 
     if !quiet {
         let elapsed = total_start.elapsed().as_secs_f64();
@@ -390,14 +382,6 @@ pub fn handle_run(
             color::green(HumanCount(total_records as u64)),
         );
         exporter_manager.log_stats();
-        if parse_errors > 0 {
-            eprintln!(
-                "{} {} parse errors logged → {}",
-                color::yellow("⚠"),
-                color::yellow(HumanCount(parse_errors as u64)),
-                final_cfg.error.file,
-            );
-        }
     }
 
     if interrupted.load(Ordering::Relaxed) {
