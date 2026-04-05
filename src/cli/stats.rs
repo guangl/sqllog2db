@@ -3,16 +3,38 @@ use crate::config::Config;
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::LogParser;
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
+use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::time::{Duration, Instant};
 
 /// 单文件统计
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct FileStats {
     name: String,
     records: u64,
     errors: u64,
+}
+
+/// `--json` 输出结构
+#[derive(Debug, Serialize)]
+struct StatsJson {
+    files: usize,
+    records: u64,
+    errors: u64,
+    elapsed_secs: f64,
+    rate_per_sec: u64,
+    per_file: Vec<FileStats>,
+    slow_queries: Vec<SlowQueryJson>,
+}
+
+#[derive(Debug, Serialize)]
+struct SlowQueryJson {
+    rank: usize,
+    exec_time_ms: f32,
+    ts: String,
+    sql: String,
+    file: String,
 }
 
 /// 慢查询条目，通过 `BinaryHeap<Reverse<SlowEntry>>` 维护 Top-N min-heap
@@ -43,7 +65,7 @@ impl PartialOrd for SlowEntry {
     }
 }
 
-pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>) {
+pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>, json: bool) {
     let start = Instant::now();
 
     let log_files = match SqllogParser::new(&cfg.sqllog.path).log_files() {
@@ -185,6 +207,36 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
         0
     };
 
+    let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
+    slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
+
+    if json {
+        let output = StatsJson {
+            files: total_files,
+            records: total_records,
+            errors: total_errors,
+            elapsed_secs: elapsed,
+            rate_per_sec: rate,
+            per_file: file_stats,
+            slow_queries: slow_entries
+                .iter()
+                .enumerate()
+                .map(|(i, e)| SlowQueryJson {
+                    rank: i + 1,
+                    exec_time_ms: e.exec_time_ms(),
+                    ts: e.ts.clone(),
+                    sql: e.sql_snippet.clone(),
+                    file: e.file_name.clone(),
+                })
+                .collect(),
+        };
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+        return;
+    }
+
     // 按文件明细（--verbose）
     if verbose {
         eprintln!();
@@ -225,9 +277,6 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
 
     // Top-N 慢查询
     if top_n > 0 {
-        let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
-        slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
-
         if slow_entries.is_empty() {
             eprintln!("\n{}", color::dim("No execution time data found."));
         } else {

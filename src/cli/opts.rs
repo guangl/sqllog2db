@@ -53,6 +53,12 @@ pub enum Commands {
         /// Keep only records at or before this timestamp (requires filters feature)
         #[arg(long = "to", value_name = "DATETIME")]
         to: Option<String>,
+        /// Write CSV output to this file (shorthand for --set exporter.csv.file=<FILE>)
+        #[arg(short = 'o', long = "output", value_name = "FILE")]
+        output: Option<String>,
+        /// Progress bar refresh interval in milliseconds
+        #[arg(long = "progress-interval", default_value = "80", value_name = "MS")]
+        progress_interval: u64,
     },
     /// Generate a default configuration file
     Init {
@@ -90,6 +96,9 @@ pub enum Commands {
         /// Override config values before displaying
         #[arg(long = "set", value_name = "KEY=VALUE")]
         set: Vec<String>,
+        /// Highlight fields that differ from the default configuration
+        #[arg(long = "diff")]
+        diff: bool,
     },
     /// Count records in log files without exporting
     Stats {
@@ -113,6 +122,9 @@ pub enum Commands {
         /// Show top N slowest queries ranked by execution time
         #[arg(long = "top", value_name = "N")]
         top: Option<usize>,
+        /// Output statistics as JSON (goes to stdout)
+        #[arg(long = "json")]
+        json: bool,
     },
     /// Generate shell completion scripts
     Completions {

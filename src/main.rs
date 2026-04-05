@@ -142,9 +142,17 @@ fn run() -> Result<()> {
             set,
             from,
             to,
+            output,
+            progress_interval,
         }) => {
             let mut cfg = load_config(config)?;
-            cfg.apply_overrides(set)?;
+            // --output is a shorthand applied before --set so --set can override
+            let mut all_set = Vec::new();
+            if let Some(out) = output {
+                all_set.push(format!("exporter.csv.file={out}"));
+            }
+            all_set.extend_from_slice(set);
+            cfg.apply_overrides(&all_set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
             cfg.validate()?;
             info!("Configuration validation passed");
@@ -170,7 +178,14 @@ fn run() -> Result<()> {
             })
             .ok();
 
-            cli::run::handle_run(&cfg, *limit, *dry_run, cli.quiet, &interrupted)
+            cli::run::handle_run(
+                &cfg,
+                *limit,
+                *dry_run,
+                cli.quiet,
+                &interrupted,
+                *progress_interval,
+            )
         }
         Some(cli::opts::Commands::Validate { config, set }) => {
             let mut cfg = load_config(config)?;
@@ -186,10 +201,10 @@ fn run() -> Result<()> {
             cli::validate::handle_validate(&cfg);
             Ok(())
         }
-        Some(cli::opts::Commands::ShowConfig { config, set }) => {
+        Some(cli::opts::Commands::ShowConfig { config, set, diff }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
-            cli::show_config::handle_show_config(&cfg, config);
+            cli::show_config::handle_show_config(&cfg, config, *diff);
             Ok(())
         }
         Some(cli::opts::Commands::Stats {
@@ -198,11 +213,12 @@ fn run() -> Result<()> {
             from,
             to,
             top,
+            json,
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
-            cli::stats::handle_stats(&cfg, cli.quiet, cli.verbose, *top);
+            cli::stats::handle_stats(&cfg, cli.quiet, cli.verbose, *top, *json);
             Ok(())
         }
         None => {

@@ -1,5 +1,6 @@
 use crate::color;
 use crate::config::Config;
+use crate::parser::SqllogParser;
 use std::path::Path;
 
 /// 在 run 命令执行前检查基础条件。
@@ -7,36 +8,35 @@ use std::path::Path;
 #[must_use]
 pub fn check(cfg: &Config) -> PreflightResult {
     let mut result = PreflightResult::default();
-    check_log_dir(&cfg.sqllog.path, &mut result);
+    check_log_path(&cfg.sqllog.path, &mut result);
     check_output_writable(cfg, &mut result);
     result
 }
 
-fn check_log_dir(directory: &str, result: &mut PreflightResult) {
-    let path = Path::new(directory);
-    if !path.exists() {
-        result.errors.push(format!(
-            "日志目录不存在: {directory}  (可用 --set sqllog.path=<path> 覆盖)"
-        ));
-        return;
-    }
-    if !path.is_dir() {
-        result.errors.push(format!("路径不是目录: {directory}"));
-        return;
+fn check_log_path(path_str: &str, result: &mut PreflightResult) {
+    let has_glob = path_str.contains('*') || path_str.contains('?') || path_str.contains('[');
+
+    // For non-glob paths, check existence before trying to scan
+    if !has_glob {
+        let path = Path::new(path_str);
+        if !path.exists() {
+            result.errors.push(format!(
+                "日志路径不存在: {path_str}  (可用 --set sqllog.path=<path> 覆盖)"
+            ));
+            return;
+        }
     }
 
-    let has_logs = std::fs::read_dir(path)
-        .map(|entries| {
-            entries
-                .filter_map(std::result::Result::ok)
-                .any(|e| e.path().extension().is_some_and(|x| x == "log"))
-        })
-        .unwrap_or(false);
-
-    if !has_logs {
-        result
-            .warnings
-            .push(format!("日志目录 {directory} 中未找到 .log 文件"));
+    match SqllogParser::new(path_str).log_files() {
+        Ok(files) if files.is_empty() => {
+            result
+                .warnings
+                .push(format!("路径 {path_str} 中未找到 .log 文件"));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            result.errors.push(format!("扫描日志路径失败: {e}"));
+        }
     }
 }
 
@@ -161,13 +161,13 @@ mod tests {
     }
 
     #[test]
-    fn test_check_log_dir_not_a_directory() {
+    fn test_check_single_log_file_is_valid() {
         let dir = tempfile::TempDir::new().unwrap();
-        let file_path = dir.path().join("notadir.txt");
-        std::fs::write(&file_path, "data").unwrap();
+        let file_path = dir.path().join("test.log");
+        std::fs::write(&file_path, "").unwrap();
         let cfg = config_with_log_dir(file_path.to_str().unwrap());
         let result = check(&cfg);
-        assert!(result.has_errors());
+        assert!(!result.has_errors());
     }
 
     #[test]
@@ -175,7 +175,6 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let cfg = config_with_log_dir(dir.path().to_str().unwrap());
         let result = check(&cfg);
-        // No error, but warning that no .log files found
         assert!(!result.has_errors());
         assert!(!result.warnings.is_empty());
     }
@@ -188,6 +187,27 @@ mod tests {
         let result = check(&cfg);
         assert!(!result.has_errors());
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_check_glob_pattern_with_matches() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("a.log"), "").unwrap();
+        let pattern = format!("{}/*.log", dir.path().display());
+        let cfg = config_with_log_dir(&pattern);
+        let result = check(&cfg);
+        assert!(!result.has_errors());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_check_glob_pattern_no_matches_produces_warning() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let pattern = format!("{}/nomatch*.log", dir.path().display());
+        let cfg = config_with_log_dir(&pattern);
+        let result = check(&cfg);
+        assert!(!result.has_errors());
+        assert!(!result.warnings.is_empty());
     }
 
     // ── check: output writable ────────────────────────────────────

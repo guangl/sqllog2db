@@ -267,7 +267,7 @@ fn scan_for_trxids_by_transaction_filters(
     found_trxids
 }
 
-fn make_progress_bar(quiet: bool) -> ProgressBar {
+fn make_progress_bar(quiet: bool, interval_ms: u64) -> ProgressBar {
     if quiet {
         return ProgressBar::hidden();
     }
@@ -279,7 +279,7 @@ fn make_progress_bar(quiet: bool) -> ProgressBar {
         .expect("valid template")
         .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
     );
-    pb.enable_steady_tick(Duration::from_millis(80));
+    pb.enable_steady_tick(Duration::from_millis(interval_ms));
     pb
 }
 
@@ -289,6 +289,7 @@ pub fn handle_run(
     dry_run: bool,
     quiet: bool,
     interrupted: &Arc<AtomicBool>,
+    progress_interval: u64,
 ) -> Result<()> {
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
@@ -337,7 +338,7 @@ pub fn handle_run(
         info!("Parsing and exporting SQL logs...");
     }
 
-    let pb = make_progress_bar(quiet);
+    let pb = make_progress_bar(quiet, progress_interval);
     let mut total_records = 0usize;
 
     for (idx, log_file) in log_files.iter().enumerate() {

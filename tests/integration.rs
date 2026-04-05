@@ -57,7 +57,7 @@ fn test_handle_run_dry_run_empty_dir() {
         ..Default::default()
     };
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80).unwrap();
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn test_handle_run_dry_run_with_log_files() {
     };
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80).unwrap();
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn test_handle_run_dry_run_with_limit() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit to 5 records
-    handle_run(&cfg, Some(5), true, true, &interrupted).unwrap();
+    handle_run(&cfg, Some(5), true, true, &interrupted, 80).unwrap();
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn test_handle_run_real_csv_export() {
     let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, false, true, &interrupted).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80).unwrap();
 
     let content = std::fs::read_to_string(&csv_file).unwrap();
     // header + 10 data rows
@@ -132,7 +132,7 @@ fn test_handle_run_interrupted() {
 
     // Pre-set interrupted flag — run should return Err(Interrupted)
     let interrupted = Arc::new(AtomicBool::new(true));
-    let result = handle_run(&cfg, None, true, true, &interrupted);
+    let result = handle_run(&cfg, None, true, true, &interrupted, 80);
     // Either Ok (no files processed) or Err(Interrupted) depending on timing
     let _ = result;
 }
@@ -151,7 +151,7 @@ fn test_handle_stats_empty_dir() {
         ..Default::default()
     };
     // No log files → prints "No log files found" and returns without panic
-    handle_stats(&cfg, true, false, None);
+    handle_stats(&cfg, true, false, None, false);
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn test_handle_stats_with_log_files() {
         },
         ..Default::default()
     };
-    handle_stats(&cfg, true, false, None); // quiet=true to suppress progress bar
+    handle_stats(&cfg, true, false, None, false); // quiet=true to suppress progress bar
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_handle_stats_nonexistent_dir() {
         ..Default::default()
     };
     // Should not panic — prints an error and returns
-    handle_stats(&cfg, true, false, None);
+    handle_stats(&cfg, true, false, None, false);
 }
 
 // ── handle_init tests ────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ fn test_handle_init_force_overwrites_existing() {
 fn test_handle_show_config_integration() {
     let cfg = Config::default();
     // Just verify no panic when called from integration test context
-    handle_show_config(&cfg, "/path/to/config.toml");
+    handle_show_config(&cfg, "/path/to/config.toml", false);
 }
 
 // ── performance baseline ─────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ fn test_csv_throughput_baseline() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let start = std::time::Instant::now();
-    handle_run(&cfg, None, false, true, &interrupted).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80).unwrap();
     let elapsed = start.elapsed().as_secs_f64();
 
     #[allow(clippy::cast_precision_loss)]

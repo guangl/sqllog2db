@@ -74,7 +74,15 @@ fn bench_sqlite_export(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &cfg, |b, cfg| {
             b.iter(|| {
-                handle_run(cfg, None, false, false, &Arc::new(AtomicBool::new(false))).unwrap();
+                handle_run(
+                    cfg,
+                    None,
+                    false,
+                    false,
+                    &Arc::new(AtomicBool::new(false)),
+                    80,
+                )
+                .unwrap();
             });
         });
     }

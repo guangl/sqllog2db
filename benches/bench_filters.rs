@@ -152,7 +152,15 @@ fn bench_filters(c: &mut Criterion) {
     for (name, cfg) in scenarios {
         group.bench_with_input(BenchmarkId::from_parameter(name), cfg, |b, cfg| {
             b.iter(|| {
-                handle_run(cfg, None, false, false, &Arc::new(AtomicBool::new(false))).unwrap();
+                handle_run(
+                    cfg,
+                    None,
+                    false,
+                    false,
+                    &Arc::new(AtomicBool::new(false)),
+                    80,
+                )
+                .unwrap();
             });
         });
     }
