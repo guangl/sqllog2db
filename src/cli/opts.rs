@@ -62,7 +62,7 @@ pub enum Commands {
         /// Keep only records at or before this timestamp (requires filters feature)
         #[arg(long = "to", value_name = "DATETIME")]
         to: Option<String>,
-        /// Write CSV output to this file (shorthand for --set exporter.csv.file=<FILE>)
+        /// Write CSV output to this file (shorthand for `--set exporter.csv.file=<FILE>`)
         #[arg(short = 'o', long = "output", value_name = "FILE")]
         output: Option<String>,
         /// Progress bar refresh interval in milliseconds
