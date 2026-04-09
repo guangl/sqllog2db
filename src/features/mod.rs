@@ -4,6 +4,9 @@ pub use filters::FiltersFeature;
 pub mod replace_parameters;
 pub use replace_parameters::compute_normalized;
 
+pub mod sql_fingerprint;
+pub use sql_fingerprint::fingerprint;
+
 use dm_database_parser_sqllog::Sqllog;
 use serde::Deserialize;
 

@@ -5,6 +5,7 @@ pub mod error;
 pub mod exporter;
 pub mod features;
 pub use exporter::*;
+pub mod lang;
 pub mod logging;
 pub mod parser;
 pub mod resume;

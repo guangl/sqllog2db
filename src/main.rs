@@ -4,6 +4,7 @@ mod config;
 mod error;
 mod exporter;
 mod features;
+mod lang;
 mod logging;
 mod parser;
 mod resume;
@@ -97,16 +98,33 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    use clap::Parser;
-    let cli = cli::opts::Cli::parse();
+    use clap::{CommandFactory, FromArgMatches, Parser};
+
+    // Pre-scan raw args to detect language before building the command, so
+    // that `--help` output is already in the right language.
+    let raw_args: Vec<String> = std::env::args().collect();
+    let lang = lang::detect(&raw_args);
+
+    let base_cmd = cli::opts::Cli::command();
+    let cmd = if lang == lang::Lang::Zh {
+        lang::apply_zh(base_cmd)
+    } else {
+        base_cmd
+    };
+    let matches = cmd.get_matches();
+    let cli = cli::opts::Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
 
     // 尽早初始化颜色开关，后续所有输出均依赖此状态
     color::init(cli.no_color);
 
-    // run/stats 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
+    // run/stats/digest 命令不走 env_logger，避免与进度条冲突；其他命令用 env_logger 输出到终端
     let needs_simple_logging = !matches!(
         &cli.command,
-        Some(cli::opts::Commands::Run { .. } | cli::opts::Commands::Stats { .. })
+        Some(
+            cli::opts::Commands::Run { .. }
+                | cli::opts::Commands::Stats { .. }
+                | cli::opts::Commands::Digest { .. }
+        )
     );
     if needs_simple_logging {
         init_simple_logging(cli.verbose, cli.quiet);
@@ -123,7 +141,9 @@ fn run() -> Result<()> {
     }
 
     match &cli.command {
-        Some(cli::opts::Commands::Init { output, force }) => cli::init::handle_init(output, *force),
+        Some(cli::opts::Commands::Init { output, force }) => {
+            cli::init::handle_init(output, *force, lang)
+        }
         Some(cli::opts::Commands::Completions { shell }) => {
             cli::opts::Cli::generate_completions(*shell);
             Ok(())
@@ -219,11 +239,45 @@ fn run() -> Result<()> {
             to,
             top,
             json,
+            group_by,
+            bucket,
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
-            cli::stats::handle_stats(&cfg, cli.quiet, cli.verbose, *top, *json);
+            cli::stats::handle_stats(
+                &cfg,
+                cli.quiet,
+                cli.verbose,
+                *top,
+                *json,
+                group_by,
+                bucket.as_deref(),
+            );
+            Ok(())
+        }
+        Some(cli::opts::Commands::Digest {
+            config,
+            set,
+            from,
+            to,
+            top,
+            sort,
+            min_count,
+            json,
+        }) => {
+            let mut cfg = load_config(config)?;
+            cfg.apply_overrides(set)?;
+            apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
+            let Some(sort_by) = cli::digest::SortBy::parse(sort) else {
+                eprintln!(
+                    "{} Unknown sort field '{}'. Valid values: count, exec",
+                    color::red("Error:"),
+                    sort
+                );
+                std::process::exit(EXIT_CONFIG);
+            };
+            cli::digest::handle_digest(&cfg, cli.quiet, *top, sort_by, *min_count, *json);
             Ok(())
         }
         None => {

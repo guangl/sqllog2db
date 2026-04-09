@@ -1,10 +1,17 @@
 //! Integration tests for CLI handlers and the run pipeline.
 
+use dm_database_sqllog2db::cli::digest::{SortBy, handle_digest};
 use dm_database_sqllog2db::cli::init::handle_init;
 use dm_database_sqllog2db::cli::run::handle_run;
 use dm_database_sqllog2db::cli::show_config::handle_show_config;
 use dm_database_sqllog2db::cli::stats::handle_stats;
-use dm_database_sqllog2db::config::{Config, CsvExporter, ExporterConfig, SqllogConfig};
+use dm_database_sqllog2db::cli::validate::handle_validate;
+use dm_database_sqllog2db::config::{
+    Config, CsvExporter, ExporterConfig, SqliteExporter, SqllogConfig,
+};
+use dm_database_sqllog2db::features::filters::MetaFilters;
+use dm_database_sqllog2db::features::{FeaturesConfig, FiltersFeature, ReplaceParametersConfig};
+use dm_database_sqllog2db::lang::Lang;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -268,7 +275,7 @@ fn test_handle_stats_empty_dir() {
         ..Default::default()
     };
     // No log files → prints "No log files found" and returns without panic
-    handle_stats(&cfg, true, false, None, false);
+    handle_stats(&cfg, true, false, None, false, &[], None);
 }
 
 #[test]
@@ -284,7 +291,7 @@ fn test_handle_stats_with_log_files() {
         },
         ..Default::default()
     };
-    handle_stats(&cfg, true, false, None, false); // quiet=true to suppress progress bar
+    handle_stats(&cfg, true, false, None, false, &[], None); // quiet=true to suppress progress bar
 }
 
 #[test]
@@ -296,7 +303,264 @@ fn test_handle_stats_nonexistent_dir() {
         ..Default::default()
     };
     // Should not panic — prints an error and returns
-    handle_stats(&cfg, true, false, None, false);
+    handle_stats(&cfg, true, false, None, false, &[], None);
+}
+
+fn write_test_log_multi_ts(path: &std::path::Path, timestamps: &[&str]) {
+    use std::fmt::Write as _;
+    let mut buf = String::new();
+    for (i, ts) in timestamps.iter().enumerate() {
+        writeln!(
+            buf,
+            "{ts} (EP[0] sess:0x{i:04x} user:USER{u} trxid:{i} stmt:0x1 appname:App{a} ip:10.0.0.{ip}) [SEL] SELECT * FROM t WHERE id={i}. EXECTIME: {exec}(ms) ROWCOUNT: 1(rows) EXEC_ID: {i}.",
+            u = i % 3,
+            a = i % 2,
+            ip = (i % 3) + 1,
+            exec = (i * 13 + 5) % 500,
+        ).unwrap();
+    }
+    std::fs::write(path, buf).unwrap();
+}
+
+fn make_stats_cfg(log_dir: &std::path::Path) -> Config {
+    Config {
+        sqllog: SqllogConfig {
+            path: log_dir.to_str().unwrap().to_string(),
+        },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn test_handle_stats_group_by_user() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 20);
+    let cfg = make_stats_cfg(dir.path());
+    handle_stats(&cfg, true, false, None, false, &["user".to_string()], None);
+}
+
+#[test]
+fn test_handle_stats_group_by_multiple() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 20);
+    let cfg = make_stats_cfg(dir.path());
+    let fields = vec!["user".to_string(), "app".to_string(), "ip".to_string()];
+    handle_stats(&cfg, true, false, None, false, &fields, None);
+}
+
+#[test]
+fn test_handle_stats_group_by_invalid() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 5);
+    let cfg = make_stats_cfg(dir.path());
+    // invalid field — should print error and return without panic
+    handle_stats(
+        &cfg,
+        true,
+        false,
+        None,
+        false,
+        &["badfield".to_string()],
+        None,
+    );
+}
+
+#[test]
+fn test_handle_stats_top_slow() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 30);
+    let cfg = make_stats_cfg(dir.path());
+    handle_stats(&cfg, true, false, Some(5), false, &[], None);
+}
+
+#[test]
+fn test_handle_stats_bucket_hour() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let ts = &[
+        "2025-01-15 08:10:00.000",
+        "2025-01-15 08:20:00.000",
+        "2025-01-15 09:05:00.000",
+        "2025-01-15 10:00:00.000",
+        "2025-01-15 10:30:00.000",
+        "2025-01-15 10:59:00.000",
+    ];
+    write_test_log_multi_ts(&dir.path().join("data.log"), ts);
+    let cfg = make_stats_cfg(dir.path());
+    handle_stats(&cfg, true, false, None, false, &[], Some("hour"));
+}
+
+#[test]
+fn test_handle_stats_bucket_minute() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let ts = &[
+        "2025-01-15 10:00:00.000",
+        "2025-01-15 10:00:30.000",
+        "2025-01-15 10:01:00.000",
+        "2025-01-15 10:02:00.000",
+    ];
+    write_test_log_multi_ts(&dir.path().join("data.log"), ts);
+    let cfg = make_stats_cfg(dir.path());
+    handle_stats(&cfg, true, false, None, false, &[], Some("minute"));
+}
+
+#[test]
+fn test_handle_stats_bucket_invalid() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 5);
+    let cfg = make_stats_cfg(dir.path());
+    // invalid granularity — should print error and return without panic
+    handle_stats(&cfg, true, false, None, false, &[], Some("week"));
+}
+
+#[test]
+fn test_handle_stats_json_basic() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 10);
+    let cfg = make_stats_cfg(dir.path());
+    handle_stats(&cfg, true, false, None, true, &[], None);
+}
+
+#[test]
+fn test_handle_stats_json_with_group_and_bucket() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let ts = &[
+        "2025-01-15 08:00:00.000",
+        "2025-01-15 08:30:00.000",
+        "2025-01-15 09:00:00.000",
+        "2025-01-15 09:15:00.000",
+    ];
+    write_test_log_multi_ts(&dir.path().join("data.log"), ts);
+    let cfg = make_stats_cfg(dir.path());
+    let fields = vec!["user".to_string(), "ip".to_string()];
+    handle_stats(&cfg, true, false, Some(3), true, &fields, Some("hour"));
+}
+
+#[test]
+fn test_handle_stats_verbose() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 10);
+    let cfg = make_stats_cfg(dir.path());
+    // quiet=false, verbose=true — exercises the file table path
+    handle_stats(&cfg, false, true, None, false, &[], None);
+}
+
+#[test]
+fn test_handle_stats_group_and_bucket_non_quiet() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let ts = &[
+        "2025-01-15 08:00:00.000",
+        "2025-01-15 09:00:00.000",
+        "2025-01-15 10:00:00.000",
+    ];
+    write_test_log_multi_ts(&dir.path().join("data.log"), ts);
+    let cfg = make_stats_cfg(dir.path());
+    let fields = vec!["user".to_string()];
+    // quiet=false — exercises print_group_table and print_bucket_table
+    handle_stats(&cfg, false, false, Some(2), false, &fields, Some("hour"));
+}
+
+// ── handle_digest tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_handle_digest_empty_dir() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("nologs");
+    let cfg = Config {
+        sqllog: SqllogConfig {
+            path: log_dir.to_str().unwrap().to_string(),
+        },
+        ..Default::default()
+    };
+    // No log files → prints message and returns without panic
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+}
+
+#[test]
+fn test_handle_digest_basic() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 20);
+    let cfg = make_stats_cfg(dir.path());
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+}
+
+#[test]
+fn test_handle_digest_sort_exec() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 20);
+    let cfg = make_stats_cfg(dir.path());
+    handle_digest(&cfg, true, None, SortBy::Exec, 1, false);
+}
+
+#[test]
+fn test_handle_digest_top_n() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 30);
+    let cfg = make_stats_cfg(dir.path());
+    handle_digest(&cfg, true, Some(5), SortBy::Count, 1, false);
+}
+
+#[test]
+fn test_handle_digest_min_count() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 20);
+    let cfg = make_stats_cfg(dir.path());
+    // min_count=100 filters out everything — should print "No SQL fingerprints found."
+    handle_digest(&cfg, true, None, SortBy::Count, 100, false);
+}
+
+#[test]
+fn test_handle_digest_json() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    write_test_log(&dir.path().join("data.log"), 10);
+    let cfg = make_stats_cfg(dir.path());
+    handle_digest(&cfg, true, None, SortBy::Count, 1, true);
+}
+
+#[test]
+fn test_handle_digest_nonexistent_dir() {
+    let cfg = Config {
+        sqllog: SqllogConfig {
+            path: "/nonexistent_dir_xyz".to_string(),
+        },
+        ..Default::default()
+    };
+    // Should not panic
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+}
+
+#[test]
+fn test_handle_digest_aggregates_same_fingerprint() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    // Write records with identical SQL structure but different literal values
+    // These should collapse into one fingerprint
+    let mut buf = String::new();
+    use std::fmt::Write as _;
+    for i in 0..5 {
+        writeln!(
+            buf,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x{i:04x} user:U trxid:{i} stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT * FROM tbl WHERE id={i}. EXECTIME: 10(ms) ROWCOUNT: 1(rows) EXEC_ID: {i}.",
+        ).unwrap();
+    }
+    std::fs::write(dir.path().join("data.log"), buf).unwrap();
+    let cfg = make_stats_cfg(dir.path());
+    handle_digest(&cfg, true, None, SortBy::Count, 1, true);
 }
 
 // ── handle_init tests ────────────────────────────────────────────────────────
@@ -305,7 +569,7 @@ fn test_handle_stats_nonexistent_dir() {
 fn test_handle_init_creates_config_file() {
     let dir = tempfile::TempDir::new().unwrap();
     let config_path = dir.path().join("config.toml");
-    handle_init(config_path.to_str().unwrap(), false).unwrap();
+    handle_init(config_path.to_str().unwrap(), false, Lang::Zh).unwrap();
     assert!(config_path.exists());
     let content = std::fs::read_to_string(&config_path).unwrap();
     assert!(!content.is_empty());
@@ -316,7 +580,7 @@ fn test_handle_init_fails_if_exists_without_force() {
     let dir = tempfile::TempDir::new().unwrap();
     let config_path = dir.path().join("config.toml");
     std::fs::write(&config_path, "existing").unwrap();
-    let result = handle_init(config_path.to_str().unwrap(), false);
+    let result = handle_init(config_path.to_str().unwrap(), false, Lang::Zh);
     assert!(result.is_err());
 }
 
@@ -325,9 +589,241 @@ fn test_handle_init_force_overwrites_existing() {
     let dir = tempfile::TempDir::new().unwrap();
     let config_path = dir.path().join("config.toml");
     std::fs::write(&config_path, "old content").unwrap();
-    handle_init(config_path.to_str().unwrap(), true).unwrap();
+    handle_init(config_path.to_str().unwrap(), true, Lang::Zh).unwrap();
     let content = std::fs::read_to_string(&config_path).unwrap();
     assert!(content.contains("[sqllog]"));
+}
+
+#[test]
+fn test_handle_init_en_template() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config_path = dir.path().join("config.toml");
+    handle_init(config_path.to_str().unwrap(), false, Lang::En).unwrap();
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("[sqllog]"));
+    assert!(content.contains("SQL log path"));
+    assert!(!content.contains("日志路径"));
+}
+
+#[test]
+fn test_handle_init_zh_template() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let config_path = dir.path().join("config.toml");
+    handle_init(config_path.to_str().unwrap(), false, Lang::Zh).unwrap();
+    let content = std::fs::read_to_string(&config_path).unwrap();
+    assert!(content.contains("[sqllog]"));
+    assert!(content.contains("日志路径"));
+}
+
+// ── handle_validate tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_handle_validate_default_config() {
+    let cfg = Config::default();
+    handle_validate(&cfg); // no panic, hits csv branch and no-filters branch
+}
+
+#[test]
+fn test_handle_validate_with_sqlite_exporter() {
+    let cfg = Config {
+        exporter: ExporterConfig {
+            csv: None,
+            sqlite: Some(SqliteExporter {
+                database_url: "/tmp/test.db".to_string(),
+                table_name: "records".to_string(),
+                overwrite: true,
+                append: false,
+            }),
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits sqlite branch
+}
+
+#[test]
+fn test_handle_validate_with_replace_parameters_none() {
+    let cfg = Config {
+        features: FeaturesConfig {
+            replace_parameters: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits replace_parameters None branch
+}
+
+#[test]
+fn test_handle_validate_with_replace_parameters_some() {
+    let cfg = Config {
+        features: FeaturesConfig {
+            replace_parameters: Some(ReplaceParametersConfig {
+                enable: true,
+                placeholders: vec!["?".to_string()],
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits replace_parameters Some branch
+}
+
+#[test]
+fn test_handle_validate_with_filters_none() {
+    let cfg = Config {
+        features: FeaturesConfig {
+            filters: None,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits filters None branch
+}
+
+#[test]
+fn test_handle_validate_with_filters_all_fields() {
+    use dm_database_sqllog2db::features::filters::{IndicatorFilters, SqlFilters};
+    let cfg = Config {
+        features: FeaturesConfig {
+            filters: Some(FiltersFeature {
+                enable: true,
+                meta: MetaFilters {
+                    start_ts: Some("2025-01-01".to_string()),
+                    end_ts: Some("2025-12-31".to_string()),
+                    usernames: Some(vec!["admin".to_string()]),
+                    client_ips: Some(vec!["10.0.0.1".to_string()]),
+                    trxids: Some(["tx1".to_string()].into_iter().collect()),
+                    ..Default::default()
+                },
+                indicators: IndicatorFilters {
+                    exec_ids: Some(vec![42]),
+                    min_runtime_ms: Some(100),
+                    min_row_count: Some(10),
+                },
+                sql: SqlFilters {
+                    include_patterns: Some(vec!["SELECT".to_string()]),
+                    exclude_patterns: Some(vec!["DROP".to_string()]),
+                },
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits all filter sub-branches
+}
+
+#[test]
+fn test_handle_validate_filters_disabled() {
+    use dm_database_sqllog2db::features::filters::IndicatorFilters;
+    let cfg = Config {
+        features: FeaturesConfig {
+            filters: Some(FiltersFeature {
+                enable: false,
+                meta: MetaFilters::default(),
+                indicators: IndicatorFilters::default(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    handle_validate(&cfg); // hits "配置但未明确启用" branch
+}
+
+// ── handle_run coverage supplement ──────────────────────────────────────────
+
+#[test]
+fn test_handle_run_non_quiet_prints_summary() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("data.log"), 10);
+    let csv_file = dir.path().join("out.csv");
+    let cfg = make_run_config(&log_dir, &csv_file);
+    let interrupted = Arc::new(AtomicBool::new(false));
+    // quiet=false exercises the summary print path
+    handle_run(&cfg, None, true, false, &interrupted, 80, false, None).unwrap();
+}
+
+#[test]
+fn test_handle_run_with_filters_builds_pipeline() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("data.log"), 20);
+    let csv_file = dir.path().join("out.csv");
+    let mut cfg = make_run_config(&log_dir, &csv_file);
+    // Enable a record-level filter — exercises build_pipeline and FilterProcessor
+    cfg.features.filters = Some(FiltersFeature {
+        enable: true,
+        meta: MetaFilters {
+            usernames: Some(vec!["TESTUSER".to_string()]),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let interrupted = Arc::new(AtomicBool::new(false));
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+}
+
+#[test]
+fn test_handle_run_with_limit_mid_file() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("data.log"), 100);
+    let csv_file = dir.path().join("out.csv");
+    let cfg = make_run_config(&log_dir, &csv_file);
+    let interrupted = Arc::new(AtomicBool::new(false));
+    // limit=5 stops partway through the file — exercises the limit check in process_log_file
+    handle_run(&cfg, Some(5), false, true, &interrupted, 80, false, None).unwrap();
+    let content = std::fs::read_to_string(&csv_file).unwrap();
+    let data_lines = content.lines().count().saturating_sub(1); // minus header
+    assert!(data_lines <= 5, "expected ≤5 records, got {data_lines}");
+}
+
+#[test]
+fn test_handle_run_with_transaction_filters_prescans() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("data.log"), 30);
+    let csv_file = dir.path().join("out.csv");
+    let mut cfg = make_run_config(&log_dir, &csv_file);
+    // exec_ids filter triggers transaction pre-scan path
+    cfg.features.filters = Some(FiltersFeature {
+        enable: true,
+        meta: MetaFilters::default(),
+        indicators: dm_database_sqllog2db::features::filters::IndicatorFilters {
+            exec_ids: Some(vec![0, 1, 2]),
+            min_runtime_ms: None,
+            min_row_count: None,
+        },
+        ..Default::default()
+    });
+    let interrupted = Arc::new(AtomicBool::new(false));
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+}
+
+#[test]
+fn test_handle_run_with_min_runtime_filter() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("data.log"), 20);
+    let csv_file = dir.path().join("out.csv");
+    let mut cfg = make_run_config(&log_dir, &csv_file);
+    cfg.features.filters = Some(FiltersFeature {
+        enable: true,
+        meta: MetaFilters::default(),
+        indicators: dm_database_sqllog2db::features::filters::IndicatorFilters {
+            exec_ids: None,
+            min_runtime_ms: Some(1),
+            min_row_count: None,
+        },
+        ..Default::default()
+    });
+    let interrupted = Arc::new(AtomicBool::new(false));
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
 }
 
 // ── handle_show_config tests (via integration) ───────────────────────────────

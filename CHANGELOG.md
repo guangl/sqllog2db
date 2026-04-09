@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-04-09
+
+### Added
+
+- **`digest` 子命令**：SQL 指纹聚合分析。将字面量（字符串、数字）替换为 `?`，结构相同的 SQL 折叠为同一指纹，输出执行次数、总/平均/最大执行时间及代表 SQL，快速定位高频或高耗查询
+  - `--top N`：只显示前 N 条指纹
+  - `--sort count|exec`：按执行次数（默认）或总执行时间排序
+  - `--min-count N`：忽略出现次数低于 N 的指纹
+  - `--json`：JSON 格式输出，适合管道处理
+  - 支持 `--from`/`--to` 时间范围过滤
+- **`stats --group-by`**：按维度聚合统计（`user`、`app`、`ip`，可叠加），输出每组的记录数、总/平均/最大执行时间
+- **`stats --bucket`**：按时间粒度分桶统计（`hour`、`minute`），含迷你柱状图可视化
+- **`stats --json` 扩展**：JSON 输出现包含 `group_sections` 和 `time_buckets` 字段
+
+### Changed
+
+- `stats` 函数签名新增 `group_by` 和 `bucket` 参数
+
+---
+
 ## [0.9.0] - 2026-04-05
 
 ### Added

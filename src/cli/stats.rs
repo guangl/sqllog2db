@@ -1,11 +1,11 @@
 use crate::color;
 use crate::config::Config;
 use crate::parser::SqllogParser;
-use dm_database_parser_sqllog::LogParser;
+use dm_database_parser_sqllog::{LogParser, MetaParts};
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use serde::Serialize;
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use std::time::{Duration, Instant};
 
 /// 单文件统计
@@ -26,6 +26,10 @@ struct StatsJson {
     rate_per_sec: u64,
     per_file: Vec<FileStats>,
     slow_queries: Vec<SlowQueryJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    group_sections: Vec<GroupSection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_buckets: Option<TimeBucketSection>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,10 +41,142 @@ struct SlowQueryJson {
     file: String,
 }
 
-/// 慢查询条目，通过 `BinaryHeap<Reverse<SlowEntry>>` 维护 Top-N min-heap
+// ── 聚合维度 ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GroupBy {
+    User,
+    App,
+    Ip,
+}
+
+impl GroupBy {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "user" => Some(Self::User),
+            "app" => Some(Self::App),
+            "ip" => Some(Self::Ip),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::User => "User",
+            Self::App => "App",
+            Self::Ip => "IP",
+        }
+    }
+
+    fn key<'a>(self, meta: &'a MetaParts) -> &'a str {
+        match self {
+            Self::User => meta.username.as_ref(),
+            Self::App => meta.appname.as_ref(),
+            Self::Ip => meta.client_ip.as_ref(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct GroupAccumulator {
+    count: u64,
+    total_exec_ms: f64,
+    max_exec_ms: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct GroupEntry {
+    key: String,
+    count: u64,
+    total_exec_ms: f64,
+    avg_exec_ms: f64,
+    max_exec_ms: f32,
+}
+
+impl GroupEntry {
+    fn from_acc(key: String, acc: GroupAccumulator) -> Self {
+        #[allow(clippy::cast_precision_loss)]
+        let avg = if acc.count > 0 {
+            acc.total_exec_ms / acc.count as f64
+        } else {
+            0.0
+        };
+        Self {
+            key,
+            count: acc.count,
+            total_exec_ms: acc.total_exec_ms,
+            avg_exec_ms: avg,
+            max_exec_ms: acc.max_exec_ms,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct GroupSection {
+    field: String,
+    entries: Vec<GroupEntry>,
+}
+
+// ── 时间分桶 ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bucket {
+    Hour,
+    Minute,
+}
+
+impl Bucket {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "hour" => Some(Self::Hour),
+            "minute" => Some(Self::Minute),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Hour => "hour",
+            Self::Minute => "minute",
+        }
+    }
+
+    /// 从时间戳字符串提取分桶 key（字符串截断，零分配）
+    fn truncate(self, ts: &str) -> &str {
+        let len = match self {
+            Self::Hour => 13,   // "2025-01-15 10"
+            Self::Minute => 16, // "2025-01-15 10:30"
+        };
+        &ts[..ts.len().min(len)]
+    }
+}
+
+#[derive(Debug, Default)]
+struct BucketAccumulator {
+    count: u64,
+    total_exec_ms: f64,
+    max_exec_ms: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct BucketEntry {
+    time: String,
+    count: u64,
+    total_exec_ms: f64,
+    avg_exec_ms: f64,
+    max_exec_ms: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct TimeBucketSection {
+    granularity: String,
+    entries: Vec<BucketEntry>,
+}
+
+// ── 慢查询 ───────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Eq, PartialEq)]
 struct SlowEntry {
-    /// f32 bits — 正数 IEEE 754 bit 顺序与浮点大小顺序一致，可直接用 u32 比较
     exec_time_bits: u32,
     ts: String,
     sql_snippet: String,
@@ -58,16 +194,43 @@ impl Ord for SlowEntry {
         self.exec_time_bits.cmp(&other.exec_time_bits)
     }
 }
-
 impl PartialOrd for SlowEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>, json: bool) {
-    let start = Instant::now();
+// ── 主入口 ───────────────────────────────────────────────────────────────────
 
+pub fn handle_stats(
+    cfg: &Config,
+    quiet: bool,
+    verbose: bool,
+    top: Option<usize>,
+    json: bool,
+    group_by: &[String],
+    bucket: Option<&str>,
+) {
+    let Some(group_fields) = parse_group_fields(group_by) else {
+        return;
+    };
+    let bucket_field: Option<Bucket> = match bucket {
+        None => None,
+        Some(s) => {
+            if let Some(b) = Bucket::from_str(s) {
+                Some(b)
+            } else {
+                eprintln!(
+                    "{} Unknown bucket granularity '{}'. Valid values: hour, minute",
+                    color::red("Error:"),
+                    s
+                );
+                return;
+            }
+        }
+    };
+
+    let start = Instant::now();
     let log_files = match SqllogParser::new(&cfg.sqllog.path).log_files() {
         Ok(files) => files,
         Err(e) => {
@@ -75,42 +238,27 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
             return;
         }
     };
-
     if log_files.is_empty() {
         eprintln!("No log files found in {}", cfg.sqllog.path);
         return;
     }
 
-    let pb = if quiet {
-        ProgressBar::hidden()
-    } else {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{spinner:.cyan} [{prefix}] {msg} | {human_pos} records [{elapsed_precise}]",
-            )
-            .unwrap_or_else(|_| ProgressStyle::default_spinner())
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
-        );
-        pb.enable_steady_tick(Duration::from_millis(80));
-        pb
-    };
-
+    let pb = make_progress_bar(quiet);
     let total_files = log_files.len();
     let mut total_records: u64 = 0;
     let mut total_errors: u64 = 0;
     let mut file_stats: Vec<FileStats> = Vec::with_capacity(total_files);
-
-    // Top-N 慢查询 min-heap：heap 顶始终是当前收集到的最小执行时间
     let top_n = top.unwrap_or(0);
     let mut slow_heap: BinaryHeap<Reverse<SlowEntry>> = BinaryHeap::with_capacity(top_n + 1);
+    let mut group_maps: Vec<HashMap<String, GroupAccumulator>> =
+        group_fields.iter().map(|_| HashMap::new()).collect();
+    let mut bucket_map: BTreeMap<String, BucketAccumulator> = BTreeMap::new();
 
     for (idx, log_file) in log_files.iter().enumerate() {
         let file_name = log_file
             .file_name()
             .map_or_else(|| log_file.to_string_lossy(), |n| n.to_string_lossy())
             .into_owned();
-
         pb.set_prefix(format!("{}/{total_files}", idx + 1));
         pb.set_message(file_name.clone());
 
@@ -124,61 +272,18 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
             continue;
         };
 
-        let mut file_records: u64 = 0;
-        let mut file_errors: u64 = 0;
-        let filters = cfg.features.filters.as_ref().filter(|f| f.has_filters());
-
-        for result in parser.iter() {
-            match result {
-                Ok(record) => {
-                    if let Some(f) = filters {
-                        let meta = record.parse_meta();
-                        if !f.should_keep(
-                            record.ts.as_ref(),
-                            &meta.trxid,
-                            &meta.client_ip,
-                            &meta.sess_id,
-                            &meta.thrd_id,
-                            &meta.username,
-                            &meta.statement,
-                            &meta.appname,
-                            record.tag.as_deref(),
-                        ) {
-                            continue;
-                        }
-                    }
-
-                    if top_n > 0 {
-                        if let Some(ind) = record.parse_indicators() {
-                            let exec_time = ind.exectime;
-                            let should_add = slow_heap.len() < top_n
-                                || slow_heap
-                                    .peek()
-                                    .is_some_and(|Reverse(min)| exec_time > min.exec_time_ms());
-                            if should_add {
-                                let pm = record.parse_performance_metrics();
-                                let sql_snippet: String =
-                                    pm.sql.as_ref().chars().take(120).collect();
-                                let entry = SlowEntry {
-                                    exec_time_bits: exec_time.to_bits(),
-                                    ts: record.ts.as_ref().to_string(),
-                                    sql_snippet,
-                                    file_name: file_name.clone(),
-                                };
-                                slow_heap.push(Reverse(entry));
-                                if slow_heap.len() > top_n {
-                                    slow_heap.pop();
-                                }
-                            }
-                        }
-                    }
-
-                    file_records += 1;
-                    pb.inc(1);
-                }
-                Err(_) => file_errors += 1,
-            }
-        }
+        let (file_records, file_errors) = process_file(
+            &parser,
+            cfg,
+            &file_name,
+            top_n,
+            &mut slow_heap,
+            &group_fields,
+            &mut group_maps,
+            bucket_field,
+            &mut bucket_map,
+            &pb,
+        );
 
         total_records += file_records;
         total_errors += file_errors;
@@ -190,7 +295,6 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
     }
 
     pb.finish_and_clear();
-
     if quiet {
         return;
     }
@@ -210,58 +314,28 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
     let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
     slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
 
+    let group_sections = build_group_sections(&group_fields, group_maps);
+    let time_bucket_section = build_bucket_section(bucket_field, bucket_map);
+
     if json {
-        let output = StatsJson {
-            files: total_files,
-            records: total_records,
-            errors: total_errors,
-            elapsed_secs: elapsed,
-            rate_per_sec: rate,
-            per_file: file_stats,
-            slow_queries: slow_entries
-                .iter()
-                .enumerate()
-                .map(|(i, e)| SlowQueryJson {
-                    rank: i + 1,
-                    exec_time_ms: e.exec_time_ms(),
-                    ts: e.ts.clone(),
-                    sql: e.sql_snippet.clone(),
-                    file: e.file_name.clone(),
-                })
-                .collect(),
-        };
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+        print_json(
+            total_files,
+            total_records,
+            total_errors,
+            elapsed,
+            rate,
+            file_stats,
+            &slow_entries,
+            group_sections,
+            time_bucket_section,
         );
         return;
     }
 
-    // 按文件明细（--verbose）
     if verbose {
-        eprintln!();
-        eprintln!(
-            "  {:<40} {:>10} {:>8}",
-            color::cyan("File"),
-            color::cyan("Records"),
-            color::cyan("Errors"),
-        );
-        eprintln!("  {}", color::dim("─".repeat(62)));
-        for fs in &file_stats {
-            eprintln!(
-                "  {:<40} {:>10} {:>8}",
-                fs.name,
-                HumanCount(fs.records),
-                if fs.errors > 0 {
-                    color::yellow(HumanCount(fs.errors))
-                } else {
-                    color::green(HumanCount(0))
-                },
-            );
-        }
+        print_file_table(&file_stats);
     }
 
-    // 汇总行
     eprintln!(
         "\n{} Stats — {} files, {} records, {} parse errors  ({}/s, {elapsed:.2}s)",
         color::green("✓"),
@@ -275,27 +349,382 @@ pub fn handle_stats(cfg: &Config, quiet: bool, verbose: bool, top: Option<usize>
         color::green(HumanCount(rate)),
     );
 
-    // Top-N 慢查询
-    if top_n > 0 {
-        if slow_entries.is_empty() {
-            eprintln!("\n{}", color::dim("No execution time data found."));
-        } else {
-            eprintln!(
-                "\n{} Top {} slowest queries:",
-                color::cyan("⏱"),
-                slow_entries.len()
-            );
-            eprintln!("  {}", color::dim("─".repeat(100)));
-            for (i, entry) in slow_entries.iter().enumerate() {
+    for section in &group_sections {
+        let field = GroupBy::from_str(&section.field).unwrap_or(GroupBy::User);
+        print_group_table(&section.entries, field);
+    }
+    if let Some(ref section) = time_bucket_section {
+        print_bucket_table(section);
+    }
+    print_slow_queries(&slow_entries, top_n);
+}
+
+// ── 解析辅助 ─────────────────────────────────────────────────────────────────
+
+fn parse_group_fields(raw: &[String]) -> Option<Vec<GroupBy>> {
+    let mut fields: Vec<GroupBy> = Vec::new();
+    for s in raw {
+        match GroupBy::from_str(s) {
+            Some(g) if !fields.contains(&g) => fields.push(g),
+            Some(_) => {}
+            None => {
                 eprintln!(
-                    "  #{:<3} {:>10.1}ms  {}  [{}]",
-                    i + 1,
-                    entry.exec_time_ms(),
-                    entry.ts,
-                    color::dim(&entry.file_name),
+                    "{} Unknown group-by field '{}'. Valid values: user, app, ip",
+                    color::red("Error:"),
+                    s
                 );
-                eprintln!("       {}", color::yellow(&entry.sql_snippet));
+                return None;
             }
         }
     }
+    Some(fields)
+}
+
+// ── 处理单个文件 ─────────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn process_file(
+    parser: &dm_database_parser_sqllog::LogParser,
+    cfg: &Config,
+    file_name: &str,
+    top_n: usize,
+    slow_heap: &mut BinaryHeap<Reverse<SlowEntry>>,
+    group_fields: &[GroupBy],
+    group_maps: &mut [HashMap<String, GroupAccumulator>],
+    bucket_field: Option<Bucket>,
+    bucket_map: &mut BTreeMap<String, BucketAccumulator>,
+    pb: &ProgressBar,
+) -> (u64, u64) {
+    let mut file_records: u64 = 0;
+    let mut file_errors: u64 = 0;
+    let filters = cfg.features.filters.as_ref().filter(|f| f.has_filters());
+    let need_meta = filters.is_some() || !group_fields.is_empty();
+    let need_ind = top_n > 0 || !group_fields.is_empty() || bucket_field.is_some();
+
+    for result in parser.iter() {
+        match result {
+            Ok(record) => {
+                let meta: Option<MetaParts<'_>> = if need_meta {
+                    Some(record.parse_meta())
+                } else {
+                    None
+                };
+
+                if let (Some(f), Some(m)) = (filters, &meta) {
+                    if !f.should_keep(
+                        record.ts.as_ref(),
+                        &m.trxid,
+                        &m.client_ip,
+                        &m.sess_id,
+                        &m.thrd_id,
+                        &m.username,
+                        &m.statement,
+                        &m.appname,
+                        record.tag.as_deref(),
+                    ) {
+                        continue;
+                    }
+                }
+
+                let ind = if need_ind {
+                    record.parse_indicators()
+                } else {
+                    None
+                };
+
+                for (gb, map) in group_fields.iter().zip(group_maps.iter_mut()) {
+                    let raw_key = meta.as_ref().map_or("", |m| gb.key(m));
+                    let key = if raw_key.is_empty() {
+                        "(unknown)".to_owned()
+                    } else {
+                        raw_key.to_owned()
+                    };
+                    let acc = map.entry(key).or_default();
+                    acc.count += 1;
+                    if let Some(ref i) = ind {
+                        acc.total_exec_ms += f64::from(i.exectime);
+                        if i.exectime > acc.max_exec_ms {
+                            acc.max_exec_ms = i.exectime;
+                        }
+                    }
+                }
+
+                if let Some(bkt) = bucket_field {
+                    let key = bkt.truncate(record.ts.as_ref()).to_owned();
+                    let acc = bucket_map.entry(key).or_default();
+                    acc.count += 1;
+                    if let Some(ref i) = ind {
+                        acc.total_exec_ms += f64::from(i.exectime);
+                        if i.exectime > acc.max_exec_ms {
+                            acc.max_exec_ms = i.exectime;
+                        }
+                    }
+                }
+
+                if top_n > 0 {
+                    if let Some(ref i) = ind {
+                        push_slow_entry(slow_heap, top_n, i.exectime, &record, file_name);
+                    }
+                }
+
+                file_records += 1;
+                pb.inc(1);
+            }
+            Err(_) => file_errors += 1,
+        }
+    }
+    (file_records, file_errors)
+}
+
+fn push_slow_entry(
+    slow_heap: &mut BinaryHeap<Reverse<SlowEntry>>,
+    top_n: usize,
+    exec_time: f32,
+    record: &dm_database_parser_sqllog::Sqllog,
+    file_name: &str,
+) {
+    let should_add = slow_heap.len() < top_n
+        || slow_heap
+            .peek()
+            .is_some_and(|Reverse(min)| exec_time > min.exec_time_ms());
+    if should_add {
+        let pm = record.parse_performance_metrics();
+        let sql_snippet: String = pm.sql.as_ref().chars().take(120).collect();
+        slow_heap.push(Reverse(SlowEntry {
+            exec_time_bits: exec_time.to_bits(),
+            ts: record.ts.as_ref().to_string(),
+            sql_snippet,
+            file_name: file_name.to_owned(),
+        }));
+        if slow_heap.len() > top_n {
+            slow_heap.pop();
+        }
+    }
+}
+
+// ── 构建结果 ─────────────────────────────────────────────────────────────────
+
+fn build_group_sections(
+    group_fields: &[GroupBy],
+    group_maps: Vec<HashMap<String, GroupAccumulator>>,
+) -> Vec<GroupSection> {
+    group_fields
+        .iter()
+        .zip(group_maps)
+        .map(|(gb, map)| {
+            let mut entries: Vec<GroupEntry> = map
+                .into_iter()
+                .map(|(key, acc)| GroupEntry::from_acc(key, acc))
+                .collect();
+            entries.sort_by(|a, b| b.count.cmp(&a.count).then(a.key.cmp(&b.key)));
+            GroupSection {
+                field: gb.label().to_lowercase(),
+                entries,
+            }
+        })
+        .collect()
+}
+
+fn build_bucket_section(
+    bucket_field: Option<Bucket>,
+    bucket_map: BTreeMap<String, BucketAccumulator>,
+) -> Option<TimeBucketSection> {
+    let bkt = bucket_field?;
+    if bucket_map.is_empty() {
+        return None;
+    }
+    let entries = bucket_map
+        .into_iter()
+        .map(|(time, acc)| {
+            #[allow(clippy::cast_precision_loss)]
+            let avg = if acc.count > 0 {
+                acc.total_exec_ms / acc.count as f64
+            } else {
+                0.0
+            };
+            BucketEntry {
+                time,
+                count: acc.count,
+                total_exec_ms: acc.total_exec_ms,
+                avg_exec_ms: avg,
+                max_exec_ms: acc.max_exec_ms,
+            }
+        })
+        .collect();
+    Some(TimeBucketSection {
+        granularity: bkt.label().to_string(),
+        entries,
+    })
+}
+
+// ── 打印 ─────────────────────────────────────────────────────────────────────
+
+fn make_progress_bar(quiet: bool) -> ProgressBar {
+    if quiet {
+        return ProgressBar::hidden();
+    }
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.cyan} [{prefix}] {msg} | {human_pos} records [{elapsed_precise}]",
+        )
+        .unwrap_or_else(|_| ProgressStyle::default_spinner())
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    pb.enable_steady_tick(Duration::from_millis(80));
+    pb
+}
+
+fn print_file_table(file_stats: &[FileStats]) {
+    eprintln!();
+    eprintln!(
+        "  {:<40} {:>10} {:>8}",
+        color::cyan("File"),
+        color::cyan("Records"),
+        color::cyan("Errors")
+    );
+    eprintln!("  {}", color::dim("─".repeat(62)));
+    for fs in file_stats {
+        eprintln!(
+            "  {:<40} {:>10} {:>8}",
+            fs.name,
+            HumanCount(fs.records),
+            if fs.errors > 0 {
+                color::yellow(HumanCount(fs.errors))
+            } else {
+                color::green(HumanCount(0))
+            },
+        );
+    }
+}
+
+fn print_group_table(entries: &[GroupEntry], field: GroupBy) {
+    eprintln!("\n{} Group by {}:", color::cyan("▶"), field.label());
+    eprintln!(
+        "  {:<30} {:>10} {:>14} {:>10} {:>10}",
+        color::cyan(field.label()),
+        color::cyan("Count"),
+        color::cyan("Total(ms)"),
+        color::cyan("Avg(ms)"),
+        color::cyan("Max(ms)"),
+    );
+    eprintln!("  {}", color::dim("─".repeat(78)));
+    for entry in entries {
+        eprintln!(
+            "  {:<30} {:>10} {:>14.1} {:>10.1} {:>10.1}",
+            if entry.key.is_empty() {
+                "(unknown)"
+            } else {
+                &entry.key
+            },
+            HumanCount(entry.count),
+            entry.total_exec_ms,
+            entry.avg_exec_ms,
+            entry.max_exec_ms,
+        );
+    }
+}
+
+const BAR_WIDTH: usize = 20;
+
+fn print_bucket_table(section: &TimeBucketSection) {
+    let max_count = section.entries.iter().map(|e| e.count).max().unwrap_or(1);
+    eprintln!("\n{} Records by {}:", color::cyan("▶"), section.granularity);
+    eprintln!(
+        "  {:<19} {:>10} {:>10} {:>10}",
+        color::cyan("Time"),
+        color::cyan("Count"),
+        color::cyan("Avg(ms)"),
+        color::cyan("Max(ms)"),
+    );
+    eprintln!("  {}", color::dim("─".repeat(65)));
+    for entry in &section.entries {
+        let bar = make_bar(entry.count, max_count);
+        eprintln!(
+            "  {:<19} {:>10} {:>10.1} {:>10.1}  {}",
+            entry.time,
+            HumanCount(entry.count),
+            entry.avg_exec_ms,
+            entry.max_exec_ms,
+            color::cyan(bar),
+        );
+    }
+}
+
+fn make_bar(count: u64, max_count: u64) -> String {
+    if max_count == 0 {
+        return String::new();
+    }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
+    let filled = ((count as f64 / max_count as f64) * BAR_WIDTH as f64).round() as usize;
+    "█".repeat(filled.min(BAR_WIDTH))
+}
+
+fn print_slow_queries(slow_entries: &[SlowEntry], top_n: usize) {
+    if top_n == 0 {
+        return;
+    }
+    if slow_entries.is_empty() {
+        eprintln!("\n{}", color::dim("No execution time data found."));
+        return;
+    }
+    eprintln!(
+        "\n{} Top {} slowest queries:",
+        color::cyan("⏱"),
+        slow_entries.len()
+    );
+    eprintln!("  {}", color::dim("─".repeat(100)));
+    for (i, entry) in slow_entries.iter().enumerate() {
+        eprintln!(
+            "  #{:<3} {:>10.1}ms  {}  [{}]",
+            i + 1,
+            entry.exec_time_ms(),
+            entry.ts,
+            color::dim(&entry.file_name),
+        );
+        eprintln!("       {}", color::yellow(&entry.sql_snippet));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn print_json(
+    total_files: usize,
+    total_records: u64,
+    total_errors: u64,
+    elapsed: f64,
+    rate: u64,
+    file_stats: Vec<FileStats>,
+    slow_entries: &[SlowEntry],
+    group_sections: Vec<GroupSection>,
+    time_buckets: Option<TimeBucketSection>,
+) {
+    let output = StatsJson {
+        files: total_files,
+        records: total_records,
+        errors: total_errors,
+        elapsed_secs: elapsed,
+        rate_per_sec: rate,
+        per_file: file_stats,
+        slow_queries: slow_entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| SlowQueryJson {
+                rank: i + 1,
+                exec_time_ms: e.exec_time_ms(),
+                ts: e.ts.clone(),
+                sql: e.sql_snippet.clone(),
+                file: e.file_name.clone(),
+            })
+            .collect(),
+        group_sections,
+        time_buckets,
+    };
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
 }

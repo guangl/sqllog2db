@@ -40,7 +40,8 @@
   - SQLite（批量事务，`PRAGMA` 性能调优）
 - **SQL 参数标准化**：自动替换占位符，导出 `normalized_sql` 列，支持 `?` 和 `:N` 两种风格
 - **灵活过滤**：记录级（时间范围、用户、IP、标签）与事务级（执行时长、行数、exec_id）过滤
-- **统计分析**：`stats` 命令支持每文件明细（`-v`）和最慢查询排行（`--top N`）
+- **统计分析**：`stats` 命令支持每文件明细（`-v`）、最慢查询排行（`--top N`）、按用户/应用/IP 分组（`--group-by`）、时间分桶（`--bucket hour|minute`）
+- **SQL 指纹聚合**：`digest` 命令将查询结构相同但参数不同的 SQL 折叠为指纹，按执行次数或总耗时排序，快速定位高频/高耗 SQL
 - **日志管理**：可配置级别与保留天数（1-365 天）
 - **二进制优化**：LTO + strip + panic=abort，体积最小化
 
@@ -127,9 +128,53 @@ sqllog2db stats -c config.toml -v
 # 按执行时长排名前 10 的慢查询
 sqllog2db stats -c config.toml --top 10
 
+# 按用户/应用/IP 聚合统计（可叠加）
+sqllog2db stats -c config.toml --group-by user
+sqllog2db stats -c config.toml --group-by user,app,ip
+
+# 按时间分桶统计（hour 或 minute）
+sqllog2db stats -c config.toml --bucket hour
+sqllog2db stats -c config.toml --bucket minute --group-by user
+
 # 时间范围 + 慢查询排行
 sqllog2db stats -c config.toml --from "2025-01-01" --to "2025-12-31" --top 20
+
+# JSON 输出（含分组和分桶数据）
+sqllog2db stats -c config.toml --group-by user --bucket hour --json
 ```
+
+### SQL 指纹聚合（digest）
+
+将 SQL 语句中的字面量替换为 `?`，按查询结构聚合统计执行次数和耗时：
+
+```bash
+# 默认按执行次数降序排列
+sqllog2db digest -c config.toml
+
+# 按总执行时长排序，显示 Top 20
+sqllog2db digest -c config.toml --sort exec --top 20
+
+# 只显示出现 5 次及以上的查询模式
+sqllog2db digest -c config.toml --min-count 5
+
+# 时间范围过滤
+sqllog2db digest -c config.toml --from "2025-01-01" --to "2025-12-31" --top 10
+
+# JSON 输出（适合管道处理）
+sqllog2db digest -c config.toml --json | jq '.entries[0]'
+```
+
+**输出字段说明：**
+
+| 字段 | 说明 |
+|------|------|
+| `fingerprint` | SQL 指纹（字面量已替换为 `?`） |
+| `count` | 出现次数 |
+| `total_exec_ms` | 总执行时间（ms） |
+| `avg_exec_ms` | 平均执行时间（ms） |
+| `max_exec_ms` | 最大执行时间（ms） |
+| `example_sql` | 首次出现的代表 SQL |
+| `first_seen` | 首次出现时间戳 |
 
 ### 查看当前生效配置
 

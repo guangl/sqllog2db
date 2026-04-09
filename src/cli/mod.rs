@@ -1,3 +1,4 @@
+pub mod digest;
 pub mod init;
 pub mod opts;
 pub mod preflight;

@@ -22,6 +22,15 @@ pub struct Cli {
     #[arg(long = "no-color", global = true)]
     pub no_color: bool,
 
+    /// Output language: zh | en (default: auto-detect from LANG env var)
+    #[arg(
+        long = "lang",
+        value_name = "LANG",
+        global = true,
+        env = "SQLLOG2DB_LANG"
+    )]
+    pub lang: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -129,6 +138,44 @@ pub enum Commands {
         #[arg(long = "top", value_name = "N")]
         top: Option<usize>,
         /// Output statistics as JSON (goes to stdout)
+        #[arg(long = "json")]
+        json: bool,
+        /// Aggregate records by field(s): user, app, ip (repeatable, or comma-separated)
+        #[arg(long = "group-by", value_name = "FIELD", value_delimiter = ',')]
+        group_by: Vec<String>,
+        /// Aggregate records into time buckets: hour, minute
+        #[arg(long = "bucket", value_name = "GRANULARITY")]
+        bucket: Option<String>,
+    },
+    /// Fingerprint SQL queries and aggregate by structure
+    Digest {
+        /// Configuration file path
+        #[arg(
+            short = 'c',
+            long = "config",
+            default_value = "config.toml",
+            env = "SQLLOG2DB_CONFIG"
+        )]
+        config: String,
+        /// Override config values, e.g. --set sqllog.path=./logs
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// Keep only records at or after this timestamp
+        #[arg(long = "from", value_name = "DATETIME")]
+        from: Option<String>,
+        /// Keep only records at or before this timestamp
+        #[arg(long = "to", value_name = "DATETIME")]
+        to: Option<String>,
+        /// Show only top N fingerprints
+        #[arg(long = "top", value_name = "N")]
+        top: Option<usize>,
+        /// Sort results by: count (default) or exec (total execution time)
+        #[arg(long = "sort", value_name = "FIELD", default_value = "count")]
+        sort: String,
+        /// Skip fingerprints with fewer than N occurrences
+        #[arg(long = "min-count", value_name = "N", default_value = "1")]
+        min_count: u64,
+        /// Output results as JSON (goes to stdout)
         #[arg(long = "json")]
         json: bool,
     },
