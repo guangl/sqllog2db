@@ -36,7 +36,7 @@ log = "0.4.29"
 thiserror = "2.0.17"
 itoa = "1.0"
 
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 clap_complete = "4.5"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = { version = "0.9.8", features = ["serde"] }
