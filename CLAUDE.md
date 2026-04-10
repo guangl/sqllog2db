@@ -5,19 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Build (default = CSV only)
+# Build
 cargo build --release
-
-# Build with optional features
-cargo build --release --features "jsonl sqlite filters"
-cargo build --release --features full
 
 # Test
 cargo test
-cargo test --all-features
 
 # Lint (must pass with no warnings)
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --all-targets -- -D warnings
 
 # Format
 cargo fmt
@@ -30,7 +25,7 @@ cargo run -- run -c config.toml
 
 ## Architecture
 
-**sqllog2db** parses DaMeng (达梦) database SQL log files and exports them to CSV, JSONL, or SQLite. It streams log records through an optional processing pipeline and writes to a single configured exporter.
+**sqllog2db** parses DaMeng (达梦) database SQL log files and exports them to CSV or SQLite. It streams log records through an optional processing pipeline and writes to a single configured exporter.
 
 ### Data Flow
 
@@ -40,26 +35,16 @@ Input .log files (sqllogs/)
     ↓ dm-database-parser-sqllog  — parses each line into Sqllog records
     ↓ Pipeline            — optional filters (src/features/)
     ↓ ExporterManager     — routes to active exporter (src/exporter/)
-    ↓ Output (CSV / JSONL / SQLite)
+    ↓ Output (CSV / SQLite)
 ```
 
 ### Key Modules
 
 - **`cli/run.rs`** — main orchestration: loads config, builds pipeline, pre-scans for transaction filters, processes files in 5000-record batches
-- **`exporter/mod.rs`** — `Exporter` trait + `ExporterManager` factory; only one exporter is active per run (priority: CSV > JSONL > SQLite)
+- **`exporter/mod.rs`** — `Exporter` trait + `ExporterManager` factory; only one exporter is active per run (priority: CSV > SQLite)
 - **`features/mod.rs`** — `LogProcessor` trait + `Pipeline`; `pipeline.is_empty()` enables a zero-overhead fast path when no filters are configured
-- **`features/filters.rs`** — feature-gated (`--features filters`); two-pass design: pre-scan finds matching transaction IDs, main pass applies all filters
+- **`features/filters.rs`** — two-pass design: pre-scan finds matching transaction IDs, main pass applies all filters
 - **`config.rs`** — all config structs with serde deserialization and validation
-
-### Features (compile-time)
-
-| Feature | Adds |
-|---------|------|
-| *(default)* | CSV export only |
-| `jsonl` | JSONL export |
-| `sqlite` | SQLite export via rusqlite |
-| `filters` | Filter pipeline |
-| `full` | All of the above |
 
 ### Performance Design
 

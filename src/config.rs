@@ -55,7 +55,6 @@ impl Config {
         self.logging.validate()?;
         self.exporter.validate()?;
         self.sqllog.validate()?;
-        FeaturesConfig::validate();
         Ok(())
     }
 

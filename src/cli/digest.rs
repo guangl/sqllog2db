@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Debug, Default)]
 struct FingerprintAccumulator {
-    count: u64,
+    count: u32,
     total_exec_ms: f64,
     max_exec_ms: f32,
     /// 首次出现时的代表 SQL（未指纹化版本，截取前 120 字符）
@@ -92,7 +92,7 @@ pub fn handle_digest(
             .map_or_else(|| log_file.to_string_lossy(), |n| n.to_string_lossy())
             .into_owned();
         pb.set_prefix(format!("{}/{total_files}", idx + 1));
-        pb.set_message(file_name.clone());
+        pb.set_message(file_name);
 
         let Ok(parser) = LogParser::from_path(log_file.as_path()) else {
             total_errors += 1;
@@ -128,32 +128,23 @@ pub fn handle_digest(
     }
 
     pb.finish_and_clear();
-    let elapsed = start.elapsed().as_secs_f64();
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation
-    )]
-    let rate = if elapsed > 0.0 {
-        (total_records as f64 / elapsed) as u64
-    } else {
-        0
-    };
+    let elapsed = start.elapsed();
+    let elapsed_secs = elapsed.as_secs_f64();
+    let rate = total_records / elapsed.as_secs().max(1);
 
     let mut entries: Vec<DigestEntry> = fp_map
         .into_iter()
-        .filter(|(_, acc)| acc.count >= min_count)
+        .filter(|(_, acc)| u64::from(acc.count) >= min_count)
         .map(|(fp, acc)| {
-            #[allow(clippy::cast_precision_loss)]
             let avg = if acc.count > 0 {
-                acc.total_exec_ms / acc.count as f64
+                acc.total_exec_ms / f64::from(acc.count)
             } else {
                 0.0
             };
             DigestEntry {
                 rank: 0, // 排序后再设置
                 fingerprint: fp,
-                count: acc.count,
+                count: u64::from(acc.count),
                 total_exec_ms: acc.total_exec_ms,
                 avg_exec_ms: avg,
                 max_exec_ms: acc.max_exec_ms,
@@ -188,13 +179,13 @@ pub fn handle_digest(
             total_files,
             total_records,
             total_errors,
-            elapsed,
+            elapsed_secs,
             rate,
             fp_map_len_before_filter(&entries),
             entries,
         );
     } else {
-        print_summary(total_files, total_records, total_errors, elapsed, rate);
+        print_summary(total_files, total_records, total_errors, elapsed_secs, rate);
         print_table(&entries, sort);
     }
 }

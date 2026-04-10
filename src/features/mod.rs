@@ -63,12 +63,6 @@ pub struct FeaturesConfig {
     pub replace_parameters: Option<ReplaceParametersConfig>,
 }
 
-impl FeaturesConfig {
-    pub fn validate() {
-        FiltersFeature::validate();
-    }
-}
-
 /// 记录处理器接口：实现此接口即可加入处理管线
 /// 返回 true 表示保留该记录，false 表示丢弃
 pub trait LogProcessor: Send + Sync + std::fmt::Debug {
@@ -172,11 +166,6 @@ mod tests {
     }
 
     // ── FeaturesConfig ─────────────────────────────────────────
-    #[test]
-    fn test_features_config_validate_no_panic() {
-        FeaturesConfig::validate();
-    }
-
     #[test]
     fn test_features_config_default() {
         let cfg = FeaturesConfig::default();

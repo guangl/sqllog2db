@@ -87,13 +87,12 @@ pub enum ParserError {
 }
 
 #[derive(Debug, Error)]
-#[allow(clippy::enum_variant_names)]
 pub enum ExportError {
     /// 文件写入失败（CSV、JSONL、错误日志等所有文件型导出器通用）
     #[error("Write failed {path}: {reason}")]
-    WriteError { path: PathBuf, reason: String },
+    WriteFailed { path: PathBuf, reason: String },
 
     /// `SQLite` 操作失败
     #[error("Database error: {reason}")]
-    DatabaseError { reason: String },
+    DatabaseFailed { reason: String },
 }

@@ -56,7 +56,7 @@ impl SqliteExporter {
     }
 
     fn db_err(reason: impl Into<String>) -> Error {
-        Error::Export(ExportError::DatabaseError {
+        Error::Export(ExportError::DatabaseFailed {
             reason: reason.into(),
         })
     }
@@ -235,7 +235,6 @@ impl Exporter for SqliteExporter {
 }
 
 #[cfg(test)]
-#[allow(clippy::redundant_closure_for_method_calls)]
 mod tests {
     use super::*;
     use dm_database_parser_sqllog::LogParser;
@@ -262,7 +261,7 @@ mod tests {
         write_test_log(&logfile, 5);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
 
         {
             let mut exporter = SqliteExporter::new(
@@ -292,7 +291,7 @@ mod tests {
         write_test_log(&logfile, 3);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
 
         // First run: insert 3 rows
         {
@@ -327,7 +326,7 @@ mod tests {
         write_test_log(&logfile, 2);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
         let normalized: Vec<Option<String>> = records
             .iter()
             .map(|_| Some("SELECT * FROM t WHERE id=?".into()))
