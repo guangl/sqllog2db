@@ -1,5 +1,6 @@
 use crate::color;
 use crate::config::Config;
+use crate::features::filters::RecordMeta;
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::{LogParser, MetaParts};
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
@@ -79,7 +80,7 @@ impl GroupBy {
 
 #[derive(Debug, Default, Clone, Copy)]
 struct GroupAccumulator {
-    count: u64,
+    count: u32,
     total_exec_ms: f64,
     max_exec_ms: f32,
 }
@@ -95,15 +96,14 @@ struct GroupEntry {
 
 impl GroupEntry {
     fn from_acc(key: String, acc: GroupAccumulator) -> Self {
-        #[allow(clippy::cast_precision_loss)]
         let avg = if acc.count > 0 {
-            acc.total_exec_ms / acc.count as f64
+            acc.total_exec_ms / f64::from(acc.count)
         } else {
             0.0
         };
         Self {
             key,
-            count: acc.count,
+            count: u64::from(acc.count),
             total_exec_ms: acc.total_exec_ms,
             avg_exec_ms: avg,
             max_exec_ms: acc.max_exec_ms,
@@ -153,7 +153,7 @@ impl Bucket {
 
 #[derive(Debug, Default)]
 struct BucketAccumulator {
-    count: u64,
+    count: u32,
     total_exec_ms: f64,
     max_exec_ms: f32,
 }
@@ -274,15 +274,17 @@ pub fn handle_stats(
 
         let (file_records, file_errors) = process_file(
             &parser,
-            cfg,
-            &file_name,
-            top_n,
-            &mut slow_heap,
-            &group_fields,
-            &mut group_maps,
-            bucket_field,
-            &mut bucket_map,
-            &pb,
+            &mut ProcessFileCtx {
+                cfg,
+                file_name: &file_name,
+                top_n,
+                slow_heap: &mut slow_heap,
+                group_fields: &group_fields,
+                group_maps: &mut group_maps,
+                bucket_field,
+                bucket_map: &mut bucket_map,
+                pb: &pb,
+            },
         );
 
         total_records += file_records;
@@ -299,17 +301,9 @@ pub fn handle_stats(
         return;
     }
 
-    let elapsed = start.elapsed().as_secs_f64();
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::cast_precision_loss
-    )]
-    let rate = if elapsed > 0.0 {
-        (total_records as f64 / elapsed).round() as u64
-    } else {
-        0
-    };
+    let elapsed = start.elapsed();
+    let elapsed_secs = elapsed.as_secs_f64();
+    let rate = total_records / elapsed.as_secs().max(1);
 
     let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
     slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
@@ -318,17 +312,28 @@ pub fn handle_stats(
     let time_bucket_section = build_bucket_section(bucket_field, bucket_map);
 
     if json {
-        print_json(
-            total_files,
-            total_records,
-            total_errors,
-            elapsed,
-            rate,
-            file_stats,
-            &slow_entries,
+        let slow_queries = slow_entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| SlowQueryJson {
+                rank: i + 1,
+                exec_time_ms: e.exec_time_ms(),
+                ts: e.ts.clone(),
+                sql: e.sql_snippet.clone(),
+                file: e.file_name.clone(),
+            })
+            .collect();
+        print_json(&StatsJson {
+            files: total_files,
+            records: total_records,
+            errors: total_errors,
+            elapsed_secs,
+            rate_per_sec: rate,
+            per_file: file_stats,
+            slow_queries,
             group_sections,
-            time_bucket_section,
-        );
+            time_buckets: time_bucket_section,
+        });
         return;
     }
 
@@ -337,7 +342,7 @@ pub fn handle_stats(
     }
 
     eprintln!(
-        "\n{} Stats — {} files, {} records, {} parse errors  ({}/s, {elapsed:.2}s)",
+        "\n{} Stats — {} files, {} records, {} parse errors  ({}/s, {elapsed_secs:.2}s)",
         color::green("✓"),
         color::green(HumanCount(total_files as u64)),
         color::green(HumanCount(total_records)),
@@ -382,24 +387,32 @@ fn parse_group_fields(raw: &[String]) -> Option<Vec<GroupBy>> {
 
 // ── 处理单个文件 ─────────────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
+struct ProcessFileCtx<'a> {
+    cfg: &'a Config,
+    file_name: &'a str,
+    top_n: usize,
+    slow_heap: &'a mut BinaryHeap<Reverse<SlowEntry>>,
+    group_fields: &'a [GroupBy],
+    group_maps: &'a mut [HashMap<String, GroupAccumulator>],
+    bucket_field: Option<Bucket>,
+    bucket_map: &'a mut BTreeMap<String, BucketAccumulator>,
+    pb: &'a ProgressBar,
+}
+
 fn process_file(
     parser: &dm_database_parser_sqllog::LogParser,
-    cfg: &Config,
-    file_name: &str,
-    top_n: usize,
-    slow_heap: &mut BinaryHeap<Reverse<SlowEntry>>,
-    group_fields: &[GroupBy],
-    group_maps: &mut [HashMap<String, GroupAccumulator>],
-    bucket_field: Option<Bucket>,
-    bucket_map: &mut BTreeMap<String, BucketAccumulator>,
-    pb: &ProgressBar,
+    ctx: &mut ProcessFileCtx,
 ) -> (u64, u64) {
     let mut file_records: u64 = 0;
     let mut file_errors: u64 = 0;
-    let filters = cfg.features.filters.as_ref().filter(|f| f.has_filters());
-    let need_meta = filters.is_some() || !group_fields.is_empty();
-    let need_ind = top_n > 0 || !group_fields.is_empty() || bucket_field.is_some();
+    let filters = ctx
+        .cfg
+        .features
+        .filters
+        .as_ref()
+        .filter(|f| f.has_filters());
+    let need_meta = filters.is_some() || !ctx.group_fields.is_empty();
+    let need_ind = ctx.top_n > 0 || !ctx.group_fields.is_empty() || ctx.bucket_field.is_some();
 
     for result in parser.iter() {
         match result {
@@ -413,14 +426,16 @@ fn process_file(
                 if let (Some(f), Some(m)) = (filters, &meta) {
                     if !f.should_keep(
                         record.ts.as_ref(),
-                        &m.trxid,
-                        &m.client_ip,
-                        &m.sess_id,
-                        &m.thrd_id,
-                        &m.username,
-                        &m.statement,
-                        &m.appname,
-                        record.tag.as_deref(),
+                        &RecordMeta {
+                            trxid: m.trxid.as_ref(),
+                            ip: m.client_ip.as_ref(),
+                            sess: m.sess_id.as_ref(),
+                            thrd: m.thrd_id.as_ref(),
+                            user: m.username.as_ref(),
+                            stmt: m.statement.as_ref(),
+                            app: m.appname.as_ref(),
+                            tag: record.tag.as_deref(),
+                        },
                     ) {
                         continue;
                     }
@@ -432,7 +447,7 @@ fn process_file(
                     None
                 };
 
-                for (gb, map) in group_fields.iter().zip(group_maps.iter_mut()) {
+                for (gb, map) in ctx.group_fields.iter().zip(ctx.group_maps.iter_mut()) {
                     let raw_key = meta.as_ref().map_or("", |m| gb.key(m));
                     let key = if raw_key.is_empty() {
                         "(unknown)".to_owned()
@@ -449,9 +464,9 @@ fn process_file(
                     }
                 }
 
-                if let Some(bkt) = bucket_field {
+                if let Some(bkt) = ctx.bucket_field {
                     let key = bkt.truncate(record.ts.as_ref()).to_owned();
-                    let acc = bucket_map.entry(key).or_default();
+                    let acc = ctx.bucket_map.entry(key).or_default();
                     acc.count += 1;
                     if let Some(ref i) = ind {
                         acc.total_exec_ms += f64::from(i.exectime);
@@ -461,14 +476,20 @@ fn process_file(
                     }
                 }
 
-                if top_n > 0 {
+                if ctx.top_n > 0 {
                     if let Some(ref i) = ind {
-                        push_slow_entry(slow_heap, top_n, i.exectime, &record, file_name);
+                        push_slow_entry(
+                            ctx.slow_heap,
+                            ctx.top_n,
+                            i.exectime,
+                            &record,
+                            ctx.file_name,
+                        );
                     }
                 }
 
                 file_records += 1;
-                pb.inc(1);
+                ctx.pb.inc(1);
             }
             Err(_) => file_errors += 1,
         }
@@ -536,15 +557,14 @@ fn build_bucket_section(
     let entries = bucket_map
         .into_iter()
         .map(|(time, acc)| {
-            #[allow(clippy::cast_precision_loss)]
             let avg = if acc.count > 0 {
-                acc.total_exec_ms / acc.count as f64
+                acc.total_exec_ms / f64::from(acc.count)
             } else {
                 0.0
             };
             BucketEntry {
                 time,
-                count: acc.count,
+                count: u64::from(acc.count),
                 total_exec_ms: acc.total_exec_ms,
                 avg_exec_ms: avg,
                 max_exec_ms: acc.max_exec_ms,
@@ -655,13 +675,9 @@ fn make_bar(count: u64, max_count: u64) -> String {
     if max_count == 0 {
         return String::new();
     }
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation
-    )]
-    let filled = ((count as f64 / max_count as f64) * BAR_WIDTH as f64).round() as usize;
-    "█".repeat(filled.min(BAR_WIDTH))
+    let filled =
+        usize::try_from(count.min(max_count) * BAR_WIDTH as u64 / max_count).unwrap_or(BAR_WIDTH);
+    "█".repeat(filled)
 }
 
 fn print_slow_queries(slow_entries: &[SlowEntry], top_n: usize) {
@@ -690,39 +706,7 @@ fn print_slow_queries(slow_entries: &[SlowEntry], top_n: usize) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn print_json(
-    total_files: usize,
-    total_records: u64,
-    total_errors: u64,
-    elapsed: f64,
-    rate: u64,
-    file_stats: Vec<FileStats>,
-    slow_entries: &[SlowEntry],
-    group_sections: Vec<GroupSection>,
-    time_buckets: Option<TimeBucketSection>,
-) {
-    let output = StatsJson {
-        files: total_files,
-        records: total_records,
-        errors: total_errors,
-        elapsed_secs: elapsed,
-        rate_per_sec: rate,
-        per_file: file_stats,
-        slow_queries: slow_entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| SlowQueryJson {
-                rank: i + 1,
-                exec_time_ms: e.exec_time_ms(),
-                ts: e.ts.clone(),
-                sql: e.sql_snippet.clone(),
-                file: e.file_name.clone(),
-            })
-            .collect(),
-        group_sections,
-        time_buckets,
-    };
+fn print_json(output: &StatsJson) {
     println!(
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()

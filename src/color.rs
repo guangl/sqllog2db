@@ -20,53 +20,36 @@ fn use_color() -> bool {
     })
 }
 
-pub fn green(s: impl std::fmt::Display) -> String {
+fn colorize(code: &str, s: impl std::fmt::Display) -> String {
     if use_color() {
-        format!("\x1b[32m{s}\x1b[0m")
+        format!("\x1b[{code}m{s}\x1b[0m")
     } else {
         s.to_string()
     }
+}
+
+pub fn green(s: impl std::fmt::Display) -> String {
+    colorize("32", s)
 }
 
 pub fn yellow(s: impl std::fmt::Display) -> String {
-    if use_color() {
-        format!("\x1b[33m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
+    colorize("33", s)
 }
 
 pub fn cyan(s: impl std::fmt::Display) -> String {
-    if use_color() {
-        format!("\x1b[36m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
+    colorize("36", s)
 }
 
-#[allow(dead_code)]
 pub fn red(s: impl std::fmt::Display) -> String {
-    if use_color() {
-        format!("\x1b[31m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
+    colorize("31", s)
 }
 
 pub fn bold(s: impl std::fmt::Display) -> String {
-    if use_color() {
-        format!("\x1b[1m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
+    colorize("1", s)
 }
 
 pub fn dim(s: impl std::fmt::Display) -> String {
-    if use_color() {
-        format!("\x1b[2m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
+    colorize("2", s)
 }
 
 #[cfg(test)]

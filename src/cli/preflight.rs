@@ -40,7 +40,6 @@ fn check_log_path(path_str: &str, result: &mut PreflightResult) {
     }
 }
 
-#[allow(clippy::needless_return)]
 fn check_output_writable(cfg: &Config, result: &mut PreflightResult) {
     if let Some(csv) = &cfg.exporter.csv {
         check_path_writable(&csv.file, result);
@@ -48,7 +47,6 @@ fn check_output_writable(cfg: &Config, result: &mut PreflightResult) {
     }
     if let Some(sqlite) = &cfg.exporter.sqlite {
         check_path_writable(&sqlite.database_url, result);
-        return;
     }
 }
 

@@ -19,13 +19,6 @@ impl SqllogParser {
         }
     }
 
-    /// 获取日志路径
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
     /// 返回所有日志文件的路径列表（已按路径排序）
     pub fn log_files(&self) -> Result<Vec<PathBuf>> {
         self.scan_log_files()
@@ -172,12 +165,6 @@ mod tests {
         let files = p.log_files().unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0], file_path);
-    }
-
-    #[test]
-    fn test_path_accessor() {
-        let p = SqllogParser::new("/tmp");
-        assert_eq!(p.path(), std::path::Path::new("/tmp"));
     }
 
     #[test]

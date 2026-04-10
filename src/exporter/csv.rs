@@ -128,7 +128,7 @@ impl CsvExporter {
         line_buf.push(b'\n');
 
         writer.write_all(line_buf).map_err(|e| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: path.to_path_buf(),
                 reason: format!("write failed: {e}"),
             })
@@ -139,7 +139,7 @@ impl CsvExporter {
 impl Exporter for CsvExporter {
     fn initialize(&mut self) -> Result<()> {
         ensure_parent_dir(&self.path).map_err(|e| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: self.path.clone(),
                 reason: format!("create dir failed: {e}"),
             })
@@ -161,7 +161,7 @@ impl Exporter for CsvExporter {
                 .open(&self.path)
         }
         .map_err(|e| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: self.path.clone(),
                 reason: format!("open failed: {e}"),
             })
@@ -176,7 +176,7 @@ impl Exporter for CsvExporter {
                 b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n"
             };
             writer.write_all(header).map_err(|e| {
-                Error::Export(ExportError::WriteError {
+                Error::Export(ExportError::WriteFailed {
                     path: self.path.clone(),
                     reason: format!("write header failed: {e}"),
                 })
@@ -189,7 +189,7 @@ impl Exporter for CsvExporter {
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
         let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: self.path.clone(),
                 reason: "not initialized".to_string(),
             })
@@ -212,7 +212,7 @@ impl Exporter for CsvExporter {
             return Ok(());
         }
         let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: self.path.clone(),
                 reason: "not initialized".to_string(),
             })
@@ -242,7 +242,7 @@ impl Exporter for CsvExporter {
             return Ok(());
         }
         let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::WriteError {
+            Error::Export(ExportError::WriteFailed {
                 path: self.path.clone(),
                 reason: "not initialized".to_string(),
             })
@@ -266,7 +266,7 @@ impl Exporter for CsvExporter {
     fn finalize(&mut self) -> Result<()> {
         if let Some(mut writer) = self.writer.take() {
             writer.flush().map_err(|e| {
-                Error::Export(ExportError::WriteError {
+                Error::Export(ExportError::WriteFailed {
                     path: self.path.clone(),
                     reason: format!("flush failed: {e}"),
                 })
@@ -293,7 +293,6 @@ impl Drop for CsvExporter {
 }
 
 #[cfg(test)]
-#[allow(clippy::redundant_closure_for_method_calls)]
 mod tests {
     use super::*;
     use dm_database_parser_sqllog::LogParser;
@@ -320,7 +319,7 @@ mod tests {
         write_test_log(&logfile, 5);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
         assert!(!records.is_empty());
 
         let mut exporter = CsvExporter::new(&outfile);
@@ -343,7 +342,7 @@ mod tests {
         write_test_log(&logfile, 2);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
 
         let mut exporter = CsvExporter::new(&outfile);
         exporter.normalize = false;
@@ -363,7 +362,7 @@ mod tests {
         write_test_log(&logfile, 3);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
         let normalized: Vec<Option<String>> = records
             .iter()
             .enumerate()
@@ -390,7 +389,7 @@ mod tests {
         write_test_log(&logfile, 2);
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
-        let records: Vec<_> = parser.iter().filter_map(|r| r.ok()).collect();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
 
         // First write
         {

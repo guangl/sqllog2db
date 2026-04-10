@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
 use crate::exporter::ExporterManager;
+use crate::features::filters::RecordMeta;
 use crate::features::{LogProcessor, Pipeline};
 use crate::parser::SqllogParser;
 use dm_database_parser_sqllog::LogParser;
@@ -36,14 +37,16 @@ impl LogProcessor for FilterProcessor {
         let meta = record.parse_meta();
         self.filter.should_keep(
             record.ts.as_ref(),
-            &meta.trxid,
-            &meta.client_ip,
-            &meta.sess_id,
-            &meta.thrd_id,
-            &meta.username,
-            &meta.statement,
-            &meta.appname,
-            record.tag.as_deref(),
+            &RecordMeta {
+                trxid: meta.trxid.as_ref(),
+                ip: meta.client_ip.as_ref(),
+                sess: meta.sess_id.as_ref(),
+                thrd: meta.thrd_id.as_ref(),
+                user: meta.username.as_ref(),
+                stmt: meta.statement.as_ref(),
+                app: meta.appname.as_ref(),
+                tag: record.tag.as_deref(),
+            },
         )
     }
 }
@@ -148,7 +151,7 @@ fn process_log_file(
             Err(e) => {
                 errors_in_file += 1;
                 flush_batch!();
-                log::trace!("{file_path} | {e:?}");
+                log::warn!("{file_path} | {e:?}");
             }
         }
     }
@@ -199,11 +202,9 @@ fn scan_log_file_for_trxids(
             let mut sql_matched = false;
 
             if let Some(ind) = result.parse_indicators() {
-                #[allow(clippy::cast_possible_truncation)]
-                let runtime_ms = ind.exectime.round() as i64;
                 if filters
                     .indicators
-                    .matches(ind.exec_id, runtime_ms, i64::from(ind.rowcount))
+                    .matches(ind.exec_id, ind.exectime, i64::from(ind.rowcount))
                 {
                     matched_exec_id = Some(ind.exec_id);
                 }

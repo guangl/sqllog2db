@@ -1,6 +1,19 @@
 use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
 
+/// 记录的元数据字段，传递给过滤器评估
+#[derive(Debug)]
+pub struct RecordMeta<'a> {
+    pub trxid: &'a str,
+    pub ip: &'a str,
+    pub sess: &'a str,
+    pub thrd: &'a str,
+    pub user: &'a str,
+    pub stmt: &'a str,
+    pub app: &'a str,
+    pub tag: Option<&'a str>,
+}
+
 fn vec_to_hashset<'de, D>(deserializer: D) -> Result<Option<HashSet<String>>, D::Error>
 where
     D: Deserializer<'de>,
@@ -45,8 +58,8 @@ pub struct MetaFilters {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct IndicatorFilters {
     pub exec_ids: Option<Vec<i64>>,
-    pub min_runtime_ms: Option<i64>,
-    pub min_row_count: Option<i64>,
+    pub min_runtime_ms: Option<u32>,
+    pub min_row_count: Option<u32>,
 }
 
 /// SQL 过滤器 (未来扩展)
@@ -57,8 +70,6 @@ pub struct SqlFilters {
 }
 
 impl FiltersFeature {
-    pub fn validate() {}
-
     /// 检查是否配置了任何过滤器
     #[must_use]
     pub fn has_filters(&self) -> bool {
@@ -84,20 +95,8 @@ impl FiltersFeature {
 
     /// 检查记录是否应该被保留
     /// 逻辑：(满足时间过滤) AND ( (没有任何其他过滤) OR (满足任一元数据过滤) OR (属于被选中的事务) )
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn should_keep(
-        &self,
-        ts: &str,
-        trxid: &str,
-        ip: &str,
-        sess: &str,
-        thrd: &str,
-        user: &str,
-        stmt: &str,
-        app: &str,
-        tag: Option<&str>,
-    ) -> bool {
+    pub fn should_keep(&self, ts: &str, meta: &RecordMeta) -> bool {
         // 1. 时间范围过滤 (AND 逻辑: 如果配置了时间，必须通过时间检查)
         if let Some(start) = &self.meta.start_ts {
             if ts < start.as_str() && !ts.starts_with(start.as_str()) {
@@ -116,8 +115,7 @@ impl FiltersFeature {
             return true;
         }
 
-        self.meta
-            .should_keep(ts, trxid, ip, sess, thrd, user, stmt, app, tag)
+        self.meta.should_keep(meta)
     }
 
     /// 合并预扫描发现的事务 ID 到 `MetaFilters` 中，以便在正式扫描时直接通过 trxid 匹配保留整笔事务
@@ -145,29 +143,19 @@ impl MetaFilters {
             || self.tags.as_ref().is_some_and(|v| !v.is_empty())
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn should_keep(
-        &self,
-        _ts: &str,
-        trxid: &str,
-        ip: &str,
-        sess: &str,
-        thrd: &str,
-        user: &str,
-        stmt: &str,
-        app: &str,
-        tag: Option<&str>,
-    ) -> bool {
+    pub fn should_keep(&self, meta: &RecordMeta) -> bool {
         // OR 逻辑：命中任何一个已定义的列表即保留 (前提是已通过时间过滤)
-        Self::match_exact(self.trxids.as_ref(), trxid)
-            || Self::match_substring(self.client_ips.as_ref(), ip)
-            || Self::match_substring(self.sess_ids.as_ref(), sess)
-            || Self::match_substring(self.thrd_ids.as_ref(), thrd)
-            || Self::match_substring(self.usernames.as_ref(), user)
-            || Self::match_substring(self.statements.as_ref(), stmt)
-            || Self::match_substring(self.appnames.as_ref(), app)
-            || tag.is_some_and(|t| Self::match_substring(self.tags.as_ref(), t))
+        Self::match_exact(self.trxids.as_ref(), meta.trxid)
+            || Self::match_substring(self.client_ips.as_ref(), meta.ip)
+            || Self::match_substring(self.sess_ids.as_ref(), meta.sess)
+            || Self::match_substring(self.thrd_ids.as_ref(), meta.thrd)
+            || Self::match_substring(self.usernames.as_ref(), meta.user)
+            || Self::match_substring(self.statements.as_ref(), meta.stmt)
+            || Self::match_substring(self.appnames.as_ref(), meta.app)
+            || meta
+                .tag
+                .is_some_and(|t| Self::match_substring(self.tags.as_ref(), t))
     }
 
     /// O(1) 精确匹配，适用于高基数的 trxid 集合
@@ -192,7 +180,7 @@ impl IndicatorFilters {
     }
 
     #[must_use]
-    pub fn matches(&self, exec_id: i64, runtime_ms: i64, row_count: i64) -> bool {
+    pub fn matches(&self, exec_id: i64, runtime_ms: f32, row_count: i64) -> bool {
         if !self.has_filters() {
             return false;
         }
@@ -203,12 +191,12 @@ impl IndicatorFilters {
             }
         }
         if let Some(min_t) = self.min_runtime_ms {
-            if runtime_ms >= min_t {
+            if f64::from(runtime_ms) >= f64::from(min_t) {
                 return true;
             }
         }
         if let Some(min_r) = self.min_row_count {
-            if row_count >= min_r {
+            if row_count >= i64::from(min_r) {
                 return true;
             }
         }
@@ -336,21 +324,24 @@ mod tests {
         assert!(f.has_transaction_filters());
     }
 
+    fn m<'a>(trxid: &'a str, ip: &'a str, user: &'a str, tag: Option<&'a str>) -> RecordMeta<'a> {
+        RecordMeta {
+            trxid,
+            ip,
+            sess: "s",
+            thrd: "t",
+            user,
+            stmt: "st",
+            app: "a",
+            tag,
+        }
+    }
+
     // ── should_keep: time range ────────────────────────────────
     #[test]
     fn test_should_keep_no_filters_passes_all() {
         let f = make_feature(true);
-        assert!(f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "USER",
-            "stmt",
-            "app",
-            None
-        ));
+        assert!(f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "USER", None)));
     }
 
     #[test]
@@ -358,17 +349,7 @@ mod tests {
         let mut f = make_feature(true);
         f.meta.start_ts = Some("2025-01-15 11:00:00".into());
         // record ts is before start → reject
-        assert!(!f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "USER",
-            "stmt",
-            "app",
-            None
-        ));
+        assert!(!f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "USER", None)));
     }
 
     #[test]
@@ -376,17 +357,7 @@ mod tests {
         let mut f = make_feature(true);
         f.meta.start_ts = Some("2025-01-15".into());
         // record ts starts with start → pass
-        assert!(f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "USER",
-            "stmt",
-            "app",
-            None
-        ));
+        assert!(f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "USER", None)));
     }
 
     #[test]
@@ -394,45 +365,15 @@ mod tests {
         let mut f = make_feature(true);
         f.meta.end_ts = Some("2025-01-15 09:00:00".into());
         // record ts is after end → reject
-        assert!(!f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "USER",
-            "stmt",
-            "app",
-            None
-        ));
+        assert!(!f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "USER", None)));
     }
 
     #[test]
     fn test_should_keep_meta_username_match() {
         let mut f = make_feature(true);
         f.meta.usernames = Some(vec!["USER".into()]);
-        assert!(f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "USER",
-            "stmt",
-            "app",
-            None
-        ));
-        assert!(!f.should_keep(
-            "2025-01-15 10:00:00",
-            "tx1",
-            "1.2.3.4",
-            "s1",
-            "t1",
-            "OTHER",
-            "stmt",
-            "app",
-            None
-        ));
+        assert!(f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "USER", None)));
+        assert!(!f.should_keep("2025-01-15 10:00:00", &m("tx1", "1.2.3.4", "OTHER", None)));
     }
 
     #[test]
@@ -441,25 +382,25 @@ mod tests {
         let mut set = HashSet::new();
         set.insert("TX123".to_string());
         f.meta.trxids = Some(set);
-        assert!(f.should_keep("ts", "TX123", "ip", "s", "t", "u", "st", "a", None));
-        assert!(!f.should_keep("ts", "TX999", "ip", "s", "t", "u", "st", "a", None));
+        assert!(f.should_keep("ts", &m("TX123", "ip", "u", None)));
+        assert!(!f.should_keep("ts", &m("TX999", "ip", "u", None)));
     }
 
     #[test]
     fn test_should_keep_meta_tag_match() {
         let mut f = make_feature(true);
         f.meta.tags = Some(vec!["SEL".into()]);
-        assert!(f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", Some("[SEL]")));
-        assert!(!f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", Some("[INS]")));
-        assert!(!f.should_keep("ts", "tx", "ip", "s", "t", "u", "st", "a", None));
+        assert!(f.should_keep("ts", &m("tx", "ip", "u", Some("[SEL]"))));
+        assert!(!f.should_keep("ts", &m("tx", "ip", "u", Some("[INS]"))));
+        assert!(!f.should_keep("ts", &m("tx", "ip", "u", None)));
     }
 
     #[test]
     fn test_should_keep_meta_client_ip_substring() {
         let mut f = make_feature(true);
         f.meta.client_ips = Some(vec!["192.168".into()]);
-        assert!(f.should_keep("ts", "tx", "192.168.1.1", "s", "t", "u", "st", "a", None));
-        assert!(!f.should_keep("ts", "tx", "10.0.0.1", "s", "t", "u", "st", "a", None));
+        assert!(f.should_keep("ts", &m("tx", "192.168.1.1", "u", None)));
+        assert!(!f.should_keep("ts", &m("tx", "10.0.0.1", "u", None)));
     }
 
     // ── merge_found_trxids ─────────────────────────────────────
@@ -494,8 +435,8 @@ mod tests {
             min_runtime_ms: None,
             min_row_count: None,
         };
-        assert!(f.matches(42, 0, 0));
-        assert!(!f.matches(99, 0, 0));
+        assert!(f.matches(42, 0.0_f32, 0));
+        assert!(!f.matches(99, 0.0_f32, 0));
     }
 
     #[test]
@@ -505,9 +446,9 @@ mod tests {
             min_runtime_ms: Some(1000),
             min_row_count: None,
         };
-        assert!(f.matches(0, 1000, 0));
-        assert!(f.matches(0, 2000, 0));
-        assert!(!f.matches(0, 999, 0));
+        assert!(f.matches(0, 1000.0_f32, 0));
+        assert!(f.matches(0, 2000.0_f32, 0));
+        assert!(!f.matches(0, 999.0_f32, 0));
     }
 
     #[test]
@@ -517,13 +458,13 @@ mod tests {
             min_runtime_ms: None,
             min_row_count: Some(100),
         };
-        assert!(f.matches(0, 0, 100));
-        assert!(!f.matches(0, 0, 99));
+        assert!(f.matches(0, 0.0_f32, 100));
+        assert!(!f.matches(0, 0.0_f32, 99));
     }
 
     #[test]
     fn test_indicator_no_filters_always_false() {
-        assert!(!IndicatorFilters::default().matches(1, 9999, 9999));
+        assert!(!IndicatorFilters::default().matches(1, 9999.0_f32, 9999));
     }
 
     // ── SqlFilters ─────────────────────────────────────────────
