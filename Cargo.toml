@@ -31,17 +31,17 @@ path = "src/main.rs"
 
 [dependencies]
 dm-database-parser-sqllog = "0.9.0"
-env_logger = "0.11.8"
+env_logger = "0.11.10"
 log = "0.4.29"
-thiserror = "2.0.17"
+thiserror = "2.0.18"
 itoa = "1.0"
 
-clap = { version = "4.5.60", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive", "env"] }
 clap_complete = "4.6"
 serde = { version = "1.0.228", features = ["derive"] }
-toml = { version = "0.9.8", features = ["serde"] }
-chrono = { version = "0.4.42", features = ["clock"] }
-self_update = { version = "0.43.1", default-features = false, features = [
+toml = { version = "1.1.2", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["clock"] }
+self_update = { version = "0.44.0", default-features = false, features = [
   "reqwest",
   "rustls",
   "compression-flate2",
@@ -51,10 +51,10 @@ ctrlc = "3"
 glob = "0.3"
 clap_mangen = "0.3"
 
-serde_json = "1.0.145"
+serde_json = "1.0.149"
 ryu = "1"
-rayon = "1.10"
-rusqlite = { version = "0.37.0", features = [
+rayon = "1.11"
+rusqlite = { version = "0.39.0", features = [
   "bundled",
   "vtab",
   "csvtab",
@@ -79,7 +79,7 @@ too_many_lines = "allow"
 items_after_statements = "allow"
 
 [dev-dependencies]
-tempfile = "3.23.0"
+tempfile = "3.27.0"
 criterion = { version = "0.7", features = ["html_reports"] }
 
 [[bench]]
