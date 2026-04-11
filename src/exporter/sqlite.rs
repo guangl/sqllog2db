@@ -230,7 +230,7 @@ impl Exporter for SqliteExporter {
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats.clone())
+        Some(self.stats)
     }
 }
 

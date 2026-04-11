@@ -81,7 +81,7 @@ impl ResumeState {
     /// 将文件标记为已处理，并更新已有条目（若存在）。
     pub fn mark_processed(&mut self, file_path: &Path, records: u64) -> Result<()> {
         let meta = std::fs::metadata(file_path).map_err(|e| {
-            Error::File(FileError::WriteFailed {
+            Error::File(FileError::ReadFailed {
                 path: file_path.to_path_buf(),
                 reason: e.to_string(),
             })

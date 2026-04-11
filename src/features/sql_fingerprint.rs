@@ -1,69 +1,77 @@
-use std::iter::Peekable;
-use std::str::Chars;
-
 /// 将 SQL 字符串转为指纹：字面量替换为 `?`，折叠连续空白。
 ///
 /// 结构相同但参数不同的 SQL 将得到同一指纹，用于 `digest` 命令聚合。
+///
+/// # Panics
+///
+/// 内部断言：`sql` 是有效 UTF-8（函数签名已保证），不会在实际中触发。
 #[must_use]
 pub fn fingerprint(sql: &str) -> String {
-    let mut out = String::with_capacity(sql.len());
-    let mut chars = sql.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\'' => consume_string_literal(&mut chars, &mut out),
-            _ if ch.is_ascii_digit() && !prev_is_ident_byte(&out) => {
-                consume_number_literal(&mut chars, &mut out);
-            }
-            _ if ch.is_whitespace() => collapse_whitespace(&mut chars, &mut out),
-            _ => out.push(ch),
-        }
-    }
-    out.trim().to_string()
-}
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+    let mut out: Vec<u8> = Vec::with_capacity(sql.len());
+    let mut i = 0;
 
-/// 消费单引号字符串直到匹配的结束引号，输出 `?`
-fn consume_string_literal(chars: &mut Peekable<Chars<'_>>, out: &mut String) {
-    out.push('?');
-    loop {
-        match chars.next() {
-            None => break,
-            Some('\'') => {
-                if chars.peek() == Some(&'\'') {
-                    chars.next(); // '' 转义，继续
-                } else {
-                    break;
+    while i < len {
+        match bytes[i] {
+            b'\'' => {
+                out.push(b'?');
+                i += 1;
+                while i < len {
+                    if bytes[i] == b'\'' {
+                        i += 1;
+                        if i < len && bytes[i] == b'\'' {
+                            i += 1; // '' 转义，继续消费
+                        } else {
+                            break;
+                        }
+                    } else {
+                        i += 1;
+                    }
                 }
             }
-            Some(_) => {}
+            b if b.is_ascii_digit() && !prev_is_ident_byte(&out) => {
+                out.push(b'?');
+                i += 1;
+                while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                    i += 1;
+                }
+            }
+            b if b.is_ascii_whitespace() => {
+                if !matches!(out.last(), Some(&b' ')) {
+                    out.push(b' ');
+                }
+                i += 1;
+                while i < len && bytes[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
         }
     }
-}
 
-/// 消费数字字面量（含小数点），输出 `?`
-fn consume_number_literal(chars: &mut Peekable<Chars<'_>>, out: &mut String) {
-    out.push('?');
-    while chars
-        .peek()
-        .is_some_and(|c| c.is_ascii_digit() || *c == '.')
-    {
-        chars.next();
+    // `out` 的来源只有两类字节：
+    //   1. `sql` 原始字节（已是有效 UTF-8）—— 单引号 0x27、ASCII 数字 0x30-0x39、
+    //      ASCII 空白均不可能是 UTF-8 多字节序列的后续字节（>= 0x80），
+    //      因此多字节字符不会被拆断。
+    //   2. 我们插入的 ASCII 字节：b'?' (0x3F) 和 b' ' (0x20)。
+    // 故 `from_utf8` 始终成功。
+    let out_str = String::from_utf8(out).expect("fingerprint: invalid UTF-8");
+    // 折叠后最多只有首尾各一个空格；无需 trim 时直接返回，避免额外分配
+    let trimmed = out_str.trim_ascii();
+    if trimmed.len() == out_str.len() {
+        out_str
+    } else {
+        trimmed.to_string()
     }
 }
 
-/// 将连续空白折叠为单个空格
-fn collapse_whitespace(chars: &mut Peekable<Chars<'_>>, out: &mut String) {
-    if out.as_bytes().last().is_some_and(|&b| b != b' ') {
-        out.push(' ');
-    }
-    while chars.peek().is_some_and(|c| c.is_whitespace()) {
-        chars.next();
-    }
-}
-
-/// 上一个输出字符是否是标识符字符（字母/数字/下划线/点）
-fn prev_is_ident_byte(out: &str) -> bool {
-    out.as_bytes()
-        .last()
+/// 上一个输出字节是否是标识符字节（字母/数字/下划线/点）
+fn prev_is_ident_byte(out: &[u8]) -> bool {
+    out.last()
         .is_some_and(|&b| b.is_ascii_alphanumeric() || b == b'_' || b == b'.')
 }
 

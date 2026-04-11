@@ -280,7 +280,7 @@ impl Exporter for CsvExporter {
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats.clone())
+        Some(self.stats)
     }
 }
 

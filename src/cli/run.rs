@@ -238,9 +238,10 @@ fn scan_for_trxids_by_transaction_filters(
         .features
         .filters
         .as_ref()
-        .and_then(|f| f.indicators.exec_ids.clone())
+        .and_then(|f| f.indicators.exec_ids.as_deref())
         .unwrap_or_default()
-        .into_iter()
+        .iter()
+        .copied()
         .collect();
 
     eprintln!(

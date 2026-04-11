@@ -301,9 +301,8 @@ pub fn compute_normalized<S: std::hash::BuildHasher>(
         return None;
     }
 
-    let meta = record.parse_meta();
-    let key = (meta.trxid.to_string(), meta.statement.to_string());
-
+    // 先扫描 SQL 是否含占位符，大多数 SQL 没有占位符，可以提前返回，
+    // 避免 parse_meta() 调用和两次 String 分配（trxid + statement key）。
     let pm = record.parse_performance_metrics();
     let sql = pm.sql.as_ref();
 
@@ -311,6 +310,9 @@ pub fn compute_normalized<S: std::hash::BuildHasher>(
     if placeholder_count == 0 {
         return None;
     }
+
+    let meta = record.parse_meta();
+    let key = (meta.trxid.to_string(), meta.statement.to_string());
 
     // 消耗 buffer 条目：每个 PARAMS 只对应紧跟其后的一次执行
     let params = buffer.remove(&key)?;

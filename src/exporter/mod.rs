@@ -41,7 +41,7 @@ pub trait Exporter {
 }
 
 /// 导出统计
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct ExportStats {
     pub exported: usize,
     pub skipped: usize,
@@ -102,7 +102,7 @@ impl Exporter for DryRunExporter {
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats.clone())
+        Some(self.stats)
     }
 }
 
