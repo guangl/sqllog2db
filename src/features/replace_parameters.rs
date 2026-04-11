@@ -1,12 +1,23 @@
+use compact_str::CompactString;
+use smallvec::SmallVec;
 use std::collections::HashMap;
 
+/// 参数替换缓冲区类型：keyed by (trxid, stmt)，value 为解析好的参数列表。
+///
+/// - Key 使用 `CompactString`：trxid 和 stmt 通常 ≤23 字节，内联存储，无堆分配。
+/// - Value 使用 `SmallVec<[ParamValue; 6]>`：≤6 个参数时不分配堆内存。
+pub type ParamBuffer = ahash::HashMap<(CompactString, CompactString), SmallVec<[ParamValue; 6]>>;
+
 /// A single parameter value parsed from a `PARAMS(...)` log record.
+///
+/// `CompactString` stores strings ≤ 24 bytes inline (no heap allocation),
+/// which covers virtually all numeric literals and short string params.
 #[derive(Debug, Clone)]
 pub enum ParamValue {
     /// Single-quoted string already including the surrounding quotes, e.g. `'3USJ29'`.
-    Quoted(String),
+    Quoted(CompactString),
     /// Bare numeric literal, e.g. `2370075`.
-    Bare(String),
+    Bare(CompactString),
     /// NULL, BLOB, or any empty-value entry.
     Null,
 }
@@ -23,20 +34,24 @@ impl ParamValue {
 /// Parse a `PARAMS(SEQNO, TYPE, DATA)={...}` record body into an ordered list of values.
 ///
 /// Returns `None` if the body does not match the expected format.
+///
+/// Uses `SmallVec<[ParamValue; 6]>` to avoid heap allocation for typical param lists (≤6 values).
 #[must_use]
-pub fn parse_params(body: &str) -> Option<Vec<ParamValue>> {
-    let brace = body.find("={")?;
+pub fn parse_params(body: &str) -> Option<SmallVec<[ParamValue; 6]>> {
+    // memmem 使用 Two-Way + SIMD 算法，比 str::find 快
+    let brace = memchr::memmem::find(body.as_bytes(), b"={")?;
     let inner = body[brace + 2..].strip_suffix('}')?;
 
-    let mut params = Vec::new();
-    let mut rest = inner.trim();
+    let mut params = SmallVec::new();
+    // trim_start：只需去除前导空格，尾部空格在下一次迭代自然消耗
+    let mut rest = inner.trim_start();
 
     while !rest.is_empty() {
         let (value, tail) = parse_one_entry(rest)?;
         params.push(value);
-        rest = tail.trim();
+        rest = tail.trim_start();
         if let Some(t) = rest.strip_prefix(',') {
-            rest = t.trim();
+            rest = t.trim_start();
         }
     }
 
@@ -48,48 +63,43 @@ pub fn parse_params(body: &str) -> Option<Vec<ParamValue>> {
 fn parse_one_entry(s: &str) -> Option<(ParamValue, &str)> {
     let s = s.strip_prefix('(')?;
 
-    // Skip SEQNO (integer up to first comma)
-    let comma1 = s.find(',')?;
+    // Skip SEQNO (integer up to first comma) — memchr for SIMD acceleration
+    let comma1 = memchr::memchr(b',', s.as_bytes())?;
     let s = s[comma1 + 1..].trim_start();
 
     // Skip TYPE (up to next comma)
-    let comma2 = s.find(',')?;
+    let comma2 = memchr::memchr(b',', s.as_bytes())?;
     let s = s[comma2 + 1..].trim_start();
 
     // Parse VALUE then the closing ')'
     if s.starts_with('\'') {
-        // Quoted string — scan forward to the closing unescaped single-quote
+        // Quoted string — use memchr to skip to the next single-quote, same pattern as
+        // count_placeholders / apply_params, avoiding the byte-by-byte inner loop.
         let bytes = s.as_bytes();
         let mut i = 1;
         loop {
-            if i >= bytes.len() {
-                return None;
-            }
-            if bytes[i] == b'\'' {
+            let rel = memchr::memchr(b'\'', &bytes[i..])?;
+            i += rel + 1;
+            // '' is an escaped quote inside the string — consume both and keep scanning
+            if i < bytes.len() && bytes[i] == b'\'' {
                 i += 1;
-                // '' is an escaped quote inside the string
-                if i < bytes.len() && bytes[i] == b'\'' {
-                    i += 1;
-                } else {
-                    break;
-                }
             } else {
-                i += 1;
+                break;
             }
         }
         // s[..i] is the quoted string including both surrounding quotes
         let quoted = &s[..i];
         let tail = s[i..].trim_start().strip_prefix(')')?;
-        Some((ParamValue::Quoted(quoted.to_string()), tail))
+        Some((ParamValue::Quoted(CompactString::new(quoted)), tail))
     } else {
-        // Bare number or empty — find closing ')'
-        let end = s.find(')')?;
+        // Bare number or empty — memchr for closing ')'
+        let end = memchr::memchr(b')', s.as_bytes())?;
         let raw = s[..end].trim();
         let tail = &s[end + 1..];
         let value = if raw.is_empty() {
             ParamValue::Null
         } else {
-            ParamValue::Bare(raw.to_string())
+            ParamValue::Bare(CompactString::new(raw))
         };
         Some((value, tail))
     }
@@ -112,20 +122,26 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
     let mut max_colon_ordinal = 0usize;
 
     while i < len {
+        // 用 memchr3 跳过无关字节，直接定位到下一个特殊字符
+        let Some(rel) = memchr::memchr3(b'\'', b'?', b':', &bytes[i..]) else {
+            break; // 无更多特殊字节
+        };
+        i += rel;
+
         match bytes[i] {
             b'\'' => {
-                // Skip string literal verbatim
+                // Skip string literal verbatim — use memchr to jump to next quote
                 i += 1;
-                while i < len {
-                    if bytes[i] == b'\'' {
-                        i += 1;
-                        if i < len && bytes[i] == b'\'' {
-                            i += 1; // '' escape
-                        } else {
-                            break;
-                        }
+                loop {
+                    let Some(r) = memchr::memchr(b'\'', &bytes[i..]) else {
+                        i = len;
+                        break;
+                    };
+                    i += r + 1;
+                    if i < len && bytes[i] == b'\'' {
+                        i += 1; // '' escape, keep scanning
                     } else {
-                        i += 1;
+                        break;
                     }
                 }
             }
@@ -137,7 +153,7 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
                 // `:N` where N is one or more decimal digits
                 let start = i + 1;
                 let mut j = start;
-                while j < len && bytes[j].is_ascii_digit() {
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
                     j += 1;
                 }
                 if j > start {
@@ -152,9 +168,7 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
                     i += 1;
                 }
             }
-            _ => {
-                i += 1;
-            }
+            _ => unreachable!(),
         }
     }
 
@@ -162,6 +176,112 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
         (max_colon_ordinal, true)
     } else {
         (question_count, false)
+    }
+}
+
+/// Replace parameter placeholders in `sql` with values from `params`, writing
+/// the result into `out` (which is cleared first).
+///
+/// Internal hot-path used by both [`apply_params`] and [`compute_normalized`].
+/// Avoids a `String` allocation when the caller already owns a reusable `Vec<u8>`.
+///
+/// # Safety invariant
+/// `out` will contain valid UTF-8 on return: all bytes are either taken verbatim
+/// from `sql` (already valid UTF-8) or are ASCII literals from params.
+/// ASCII bytes (0x00–0x7F) can never appear in the interior of a multi-byte
+/// UTF-8 sequence (continuation bytes are 0x80–0xBF), so no sequence is broken.
+fn apply_params_into(sql: &str, params: &[ParamValue], colon_style: bool, out: &mut Vec<u8>) {
+    out.clear();
+    if params.is_empty() {
+        out.extend_from_slice(sql.as_bytes());
+        return;
+    }
+
+    let extra: usize = params
+        .iter()
+        .map(|p| p.as_sql().len().saturating_sub(1))
+        .sum();
+    out.reserve(sql.len() + extra);
+    let bytes = sql.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut seq_idx = 0usize; // used for `?` style
+
+    while i < len {
+        // 用 memchr2 跳过无关字节：问号模式找 ' 和 ?，冒号模式找 ' 和 :
+        let special = if colon_style {
+            memchr::memchr2(b'\'', b':', &bytes[i..])
+        } else {
+            memchr::memchr2(b'\'', b'?', &bytes[i..])
+        };
+        let Some(rel) = special else {
+            out.extend_from_slice(&bytes[i..]);
+            break;
+        };
+        // 批量复制特殊字节之前的普通内容
+        if rel > 0 {
+            out.extend_from_slice(&bytes[i..i + rel]);
+        }
+        i += rel;
+
+        match bytes[i] {
+            b'\'' => {
+                // Copy string literal verbatim — use memchr to bulk-copy chunks between quotes
+                out.push(b'\'');
+                i += 1;
+                loop {
+                    let Some(r) = memchr::memchr(b'\'', &bytes[i..]) else {
+                        out.extend_from_slice(&bytes[i..]);
+                        i = len;
+                        break;
+                    };
+                    out.extend_from_slice(&bytes[i..=(i + r)]); // copy up to and including the '
+                    i += r + 1;
+                    if i < len && bytes[i] == b'\'' {
+                        out.push(b'\''); // '' escape: emit second '
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            b'?' if !colon_style => {
+                if let Some(p) = params.get(seq_idx) {
+                    out.extend_from_slice(p.as_sql().as_bytes());
+                } else {
+                    out.push(b'?');
+                }
+                seq_idx += 1;
+                i += 1;
+            }
+            b':' if colon_style => {
+                let start = i + 1;
+                let mut j = start;
+                while j < len && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                if j > start {
+                    let n: usize = std::str::from_utf8(&bytes[start..j])
+                        .unwrap_or("0")
+                        .parse()
+                        .unwrap_or(0);
+                    // :N is 1-indexed
+                    if let Some(p) = n.checked_sub(1).and_then(|idx| params.get(idx)) {
+                        out.extend_from_slice(p.as_sql().as_bytes());
+                    } else {
+                        out.extend_from_slice(&bytes[i..j]);
+                    }
+                    i = j;
+                } else {
+                    out.push(b':');
+                    i += 1;
+                }
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
     }
 }
 
@@ -182,91 +302,20 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
 ///
 /// Will not panic in practice: the output is valid UTF-8 (original SQL bytes plus
 /// ASCII param literals). The `expect` is an internal consistency assertion.
-#[must_use]
-pub fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> String {
-    if params.is_empty() {
-        return sql.to_string();
-    }
-
-    let extra: usize = params
-        .iter()
-        .map(|p| p.as_sql().len().saturating_sub(1))
-        .sum();
-    let mut result: Vec<u8> = Vec::with_capacity(sql.len() + extra);
-    let bytes = sql.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let mut seq_idx = 0usize; // used for `?` style
-
-    while i < len {
-        match bytes[i] {
-            b'\'' => {
-                // Copy string literal verbatim
-                result.push(b'\'');
-                i += 1;
-                while i < len {
-                    if bytes[i] == b'\'' {
-                        result.push(b'\'');
-                        i += 1;
-                        if i < len && bytes[i] == b'\'' {
-                            result.push(b'\'');
-                            i += 1;
-                        } else {
-                            break;
-                        }
-                    } else {
-                        result.push(bytes[i]);
-                        i += 1;
-                    }
-                }
-            }
-            b'?' if !colon_style => {
-                if let Some(p) = params.get(seq_idx) {
-                    result.extend_from_slice(p.as_sql().as_bytes());
-                } else {
-                    result.push(b'?');
-                }
-                seq_idx += 1;
-                i += 1;
-            }
-            b':' if colon_style => {
-                let start = i + 1;
-                let mut j = start;
-                while j < len && bytes[j].is_ascii_digit() {
-                    j += 1;
-                }
-                if j > start {
-                    let n: usize = std::str::from_utf8(&bytes[start..j])
-                        .unwrap_or("0")
-                        .parse()
-                        .unwrap_or(0);
-                    // :N is 1-indexed
-                    if let Some(p) = n.checked_sub(1).and_then(|idx| params.get(idx)) {
-                        result.extend_from_slice(p.as_sql().as_bytes());
-                    } else {
-                        result.extend_from_slice(&bytes[i..j]);
-                    }
-                    i = j;
-                } else {
-                    result.push(b':');
-                    i += 1;
-                }
-            }
-            b => {
-                result.push(b);
-                i += 1;
-            }
-        }
-    }
-
-    // Safety: bytes are either verbatim UTF-8 from sql, or ASCII param literals.
-    // b'\'' (0x27) and b'?' (0x3F) and b':' (0x3A) are all ASCII and cannot be
-    // UTF-8 continuation bytes (0x80–0xBF), so multi-byte sequences are preserved.
-    String::from_utf8(result).expect("apply_params produced invalid UTF-8")
+#[cfg(test)]
+fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> String {
+    let mut buf = Vec::new();
+    apply_params_into(sql, params, colon_style, &mut buf);
+    String::from_utf8(buf).expect("apply_params produced invalid UTF-8")
 }
 
 /// Helper used in `cli/run.rs` to update the params buffer and compute the
 /// `normalized_sql` value for a single log record.
+///
+/// Accepts pre-parsed `meta` and `pm_sql` to avoid re-parsing inside this
+/// function. For PARAMS records `pm_sql` equals the record body (the two are
+/// identical when there are no performance indicators). For DML records it is
+/// the SQL statement extracted from `PerformanceMetrics::sql`.
 ///
 /// - If the record is a `PARAMS(...)` record, its values are stored in `buffer`
 ///   (keyed by `(trxid, stmt)`) and `None` is returned.
@@ -279,40 +328,61 @@ pub fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> Stri
 /// - `None`        → auto-detect from the SQL (`:N` takes priority over `?`)
 /// - `Some(true)`  → force colon-style (`:N`)
 /// - `Some(false)` → force question-style (`?`)
-pub fn compute_normalized<S: std::hash::BuildHasher>(
+///
+/// `scratch` is a caller-owned reusable buffer. On a successful substitution the
+/// result is written there and a `&str` pointing into it is returned, eliminating
+/// a per-record heap allocation. The caller must not modify `scratch` while the
+/// returned reference is live.
+///
+/// # Panics
+///
+/// Will not panic in practice: the substituted SQL is valid UTF-8. The `expect`
+/// is an internal consistency assertion.
+pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     record: &dm_database_parser_sqllog::Sqllog<'_>,
-    buffer: &mut HashMap<(String, String), Vec<ParamValue>, S>,
+    meta: &dm_database_parser_sqllog::MetaParts<'_>,
+    pm_sql: &str,
+    buffer: &mut HashMap<(CompactString, CompactString), SmallVec<[ParamValue; 6]>, S>,
     placeholder_override: Option<bool>,
-) -> Option<String> {
-    let body = record.body();
-
-    // PARAMS record: buffer the values, produce no output
-    if record.tag.is_none() && body.starts_with("PARAMS(") {
-        let meta = record.parse_meta();
-        if let Some(params) = parse_params(body.as_ref()) {
-            buffer.insert((meta.trxid.to_string(), meta.statement.to_string()), params);
+    scratch: &'a mut Vec<u8>,
+) -> Option<&'a str> {
+    if record.tag.is_none() {
+        // 无 tag → 可能是 PARAMS 记录。
+        // pm_sql 对于 PARAMS 记录等价于 body()（无性能指标时两者相同），
+        // 直接复用，节省一次 find_indicators_split() 后向扫描。
+        if pm_sql.starts_with("PARAMS(") {
+            if let Some(params) = parse_params(pm_sql) {
+                // CompactString 对短字符串（≤23 字节）内联存储，消除堆分配。
+                // trxid（如 "12345"）和 statement（如 "0x1"）通常都满足此条件。
+                buffer.insert(
+                    (
+                        CompactString::from(meta.trxid.as_ref()),
+                        CompactString::from(meta.statement.as_ref()),
+                    ),
+                    params,
+                );
+            }
         }
         return None;
     }
 
-    // DML/SEL execution record
+    // 有 tag → DML/SEL 执行记录
     let tag = record.tag.as_deref()?;
     if !matches!(tag, "INS" | "DEL" | "UPD" | "SEL") {
         return None;
     }
 
     // 先扫描 SQL 是否含占位符，大多数 SQL 没有占位符，可以提前返回，
-    // 避免 parse_meta() 调用和两次 String 分配（trxid + statement key）。
-    let pm = record.parse_performance_metrics();
-    let sql = pm.sql.as_ref();
-
-    let (placeholder_count, detected_colon) = count_placeholders(sql);
+    // 避免两次 CompactString 分配（trxid + statement key）。
+    let (placeholder_count, detected_colon) = count_placeholders(pm_sql);
     if placeholder_count == 0 {
         return None;
     }
 
-    let meta = record.parse_meta();
-    let key = (meta.trxid.to_string(), meta.statement.to_string());
+    let key = (
+        CompactString::from(meta.trxid.as_ref()),
+        CompactString::from(meta.statement.as_ref()),
+    );
 
     // 消耗 buffer 条目：每个 PARAMS 只对应紧跟其后的一次执行
     let params = buffer.remove(&key)?;
@@ -324,12 +394,13 @@ pub fn compute_normalized<S: std::hash::BuildHasher>(
             "replace_parameters: param count mismatch (params={}, placeholders={}) for sql: {}",
             params.len(),
             placeholder_count,
-            &sql[..sql.len().min(120)]
+            &pm_sql[..pm_sql.len().min(120)]
         );
         return None;
     }
 
-    Some(apply_params(sql, &params, colon_style))
+    apply_params_into(pm_sql, &params, colon_style, scratch);
+    Some(std::str::from_utf8(scratch).expect("compute_normalized produced invalid UTF-8"))
 }
 
 #[cfg(test)]
@@ -337,10 +408,10 @@ mod tests {
     use super::*;
 
     fn bare(s: &str) -> ParamValue {
-        ParamValue::Bare(s.to_string())
+        ParamValue::Bare(CompactString::new(s))
     }
     fn quoted(s: &str) -> ParamValue {
-        ParamValue::Quoted(s.to_string())
+        ParamValue::Quoted(CompactString::new(s))
     }
 
     // ── parse_params ──────────────────────────────────────────────────────────

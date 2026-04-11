@@ -17,16 +17,17 @@ pub fn fingerprint(sql: &str) -> String {
             b'\'' => {
                 out.push(b'?');
                 i += 1;
-                while i < len {
-                    if bytes[i] == b'\'' {
-                        i += 1;
-                        if i < len && bytes[i] == b'\'' {
-                            i += 1; // '' 转义，继续消费
-                        } else {
-                            break;
-                        }
+                // 用 memchr 跳到下一个引号，避免逐字节扫描
+                loop {
+                    let Some(rel) = memchr::memchr(b'\'', &bytes[i..]) else {
+                        i = len;
+                        break;
+                    };
+                    i += rel + 1;
+                    if i < len && bytes[i] == b'\'' {
+                        i += 1; // '' 转义，继续消费
                     } else {
-                        i += 1;
+                        break;
                     }
                 }
             }

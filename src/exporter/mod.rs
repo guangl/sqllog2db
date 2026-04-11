@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::error::{ConfigError, Error, Result};
-use dm_database_parser_sqllog::Sqllog;
+use dm_database_parser_sqllog::{MetaParts, PerformanceMetrics, Sqllog};
 use log::info;
 
 pub mod csv;
@@ -13,16 +13,13 @@ pub trait Exporter {
     fn initialize(&mut self) -> Result<()>;
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()>;
 
-    /// 批量导出（默认逐条调用 export）
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        for sqllog in sqllogs {
-            self.export(sqllog)?;
-        }
-        Ok(())
-    }
+    /// 批量导出（仅测试路径使用，生产代码走 `export_one_normalized`）
+    #[allow(dead_code)]
+    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()>;
 
     /// 批量导出，同时传入每条记录对应的 `normalized_sql`。
     /// 默认实现忽略 normalized 参数，直接调用 `export_batch`。
+    #[allow(dead_code)]
     fn export_batch_with_normalized(
         &mut self,
         sqllogs: &[Sqllog<'_>],
@@ -30,6 +27,31 @@ pub trait Exporter {
     ) -> Result<()> {
         let _ = normalized;
         self.export_batch(sqllogs)
+    }
+
+    /// 流式导出单条记录，同时附带 `normalized_sql`（流式路径，无需 batch）。
+    /// 默认实现忽略 normalized，调用 `export`。
+    fn export_one_normalized(
+        &mut self,
+        sqllog: &Sqllog<'_>,
+        normalized: Option<&str>,
+    ) -> Result<()> {
+        let _ = normalized;
+        self.export(sqllog)
+    }
+
+    /// 热路径：接收调用方已预解析的 `MetaParts` 和 `PerformanceMetrics`，
+    /// 避免在导出器内部重复调用 `parse_meta()` / `parse_performance_metrics()`。
+    /// 默认实现退化为 `export_one_normalized`（不使用预解析数据）。
+    fn export_one_preparsed(
+        &mut self,
+        sqllog: &Sqllog<'_>,
+        meta: &MetaParts<'_>,
+        pm: &PerformanceMetrics<'_>,
+        normalized: Option<&str>,
+    ) -> Result<()> {
+        let _ = (meta, pm);
+        self.export_one_normalized(sqllog, normalized)
     }
 
     fn finalize(&mut self) -> Result<()>;
@@ -60,6 +82,7 @@ impl ExportStats {
         self.exported += 1;
     }
 
+    #[allow(dead_code)]
     pub fn record_success_batch(&mut self, count: usize) {
         self.exported += count;
     }
@@ -166,19 +189,16 @@ impl ExporterManager {
         Ok(())
     }
 
-    /// 批量导出，直接传 slice，零额外分配
-    pub fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        self.exporter.export_batch(sqllogs)
-    }
-
-    /// 批量导出，同时传入每条记录的 `normalized_sql`
-    pub fn export_batch_with_normalized(
+    /// 热路径：使用预解析的 meta/pm，避免导出器内部重复解析。
+    pub fn export_one_preparsed(
         &mut self,
-        sqllogs: &[Sqllog<'_>],
-        normalized: &[Option<String>],
+        sqllog: &Sqllog<'_>,
+        meta: &MetaParts<'_>,
+        pm: &PerformanceMetrics<'_>,
+        normalized: Option<&str>,
     ) -> Result<()> {
         self.exporter
-            .export_batch_with_normalized(sqllogs, normalized)
+            .export_one_preparsed(sqllog, meta, pm, normalized)
     }
 
     pub fn finalize(&mut self) -> Result<()> {
@@ -216,9 +236,14 @@ impl ExporterManager {
 }
 
 /// 去除 IPv4-mapped IPv6 地址前缀（如 `::ffff:192.168.1.1` → `192.168.1.1`）
+#[inline]
 #[must_use]
 pub(super) fn strip_ip_prefix(ip: &str) -> &str {
     const PREFIX: &str = "::ffff:";
+    // 快速路径：IPv4 地址以数字开头，不以 ':' 开头，直接返回
+    if ip.as_bytes().first() != Some(&b':') {
+        return ip;
+    }
     if ip.len() > PREFIX.len() && ip[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
         &ip[PREFIX.len()..]
     } else {
@@ -227,6 +252,7 @@ pub(super) fn strip_ip_prefix(ip: &str) -> &str {
 }
 
 /// Saturating cast from f32 milliseconds to i64 milliseconds without precision-loss warnings
+#[inline]
 #[must_use]
 pub(super) fn f32_ms_to_i64(ms: f32) -> i64 {
     if !ms.is_finite() {

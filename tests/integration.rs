@@ -691,7 +691,12 @@ fn test_handle_validate_with_filters_all_fields() {
                     end_ts: Some("2025-12-31".to_string()),
                     usernames: Some(vec!["admin".to_string()]),
                     client_ips: Some(vec!["10.0.0.1".to_string()]),
-                    trxids: Some(["tx1".to_string()].into_iter().collect()),
+                    trxids: Some(
+                        ["tx1"]
+                            .iter()
+                            .map(|s| compact_str::CompactString::new(s))
+                            .collect(),
+                    ),
                     ..Default::default()
                 },
                 indicators: IndicatorFilters {
