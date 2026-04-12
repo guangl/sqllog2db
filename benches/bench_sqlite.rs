@@ -78,7 +78,7 @@ fn bench_sqlite_export(c: &mut Criterion) {
                     cfg,
                     None,
                     false,
-                    false,
+                    true, // quiet=true: 排除进度条 I/O 对吞吐量测量的干扰
                     &Arc::new(AtomicBool::new(false)),
                     80,
                     false,

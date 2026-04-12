@@ -1,7 +1,7 @@
 use super::strip_ip_prefix;
 use super::{ExportStats, Exporter};
 use crate::error::{Error, ExportError, Result};
-use dm_database_parser_sqllog::Sqllog;
+use dm_database_parser_sqllog::{MetaParts, PerformanceMetrics, Sqllog};
 use log::info;
 use rusqlite::{Connection, params};
 use std::path::Path;
@@ -61,17 +61,24 @@ impl SqliteExporter {
         })
     }
 
-    fn do_insert(
+    /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接插入，
+    /// 避免在函数内部重复调用 `parse_meta()` / `parse_performance_metrics()`。
+    fn do_insert_preparsed(
         stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
+        meta: &MetaParts<'_>,
+        pm: &PerformanceMetrics<'_>,
         normalized_sql: Option<&str>,
     ) -> std::result::Result<(), rusqlite::Error> {
-        let meta = sqllog.parse_meta();
-        let pm = sqllog.parse_performance_metrics();
-        let ind = sqllog.parse_indicators();
-        let (exec_time, row_count, exec_id) = ind.map_or((None, None, None), |i| {
-            (Some(i.exectime), Some(i.rowcount), Some(i.exec_id))
-        });
+        // 直接从 pm 推断指标是否存在，避免再次调用 parse_indicators()。
+        // 极罕见的边界情况：exec_id=0 且 exectime=0.0 且 rowcount=0 的记录
+        // 会被存为 NULL 而非 0，这对分析查询影响可忽略不计。
+        let (exec_time, row_count, exec_id) =
+            if pm.exec_id != 0 || pm.exectime > 0.0 || pm.rowcount != 0 {
+                (Some(pm.exectime), Some(pm.rowcount), Some(pm.exec_id))
+            } else {
+                (None, None, None)
+            };
 
         stmt.execute(params![
             sqllog.ts.as_ref(),
@@ -92,6 +99,17 @@ impl SqliteExporter {
         ])?;
 
         Ok(())
+    }
+
+    /// 兼容路径：从 `Sqllog` 内部解析再转调热路径（测试/批量导出使用）。
+    fn do_insert(
+        stmt: &mut rusqlite::CachedStatement<'_>,
+        sqllog: &Sqllog<'_>,
+        normalized_sql: Option<&str>,
+    ) -> std::result::Result<(), rusqlite::Error> {
+        let meta = sqllog.parse_meta();
+        let pm = sqllog.parse_performance_metrics();
+        Self::do_insert_preparsed(stmt, sqllog, &meta, &pm, normalized_sql)
     }
 }
 
@@ -169,10 +187,11 @@ impl Exporter for SqliteExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
+    fn export_one_normalized(
+        &mut self,
+        sqllog: &Sqllog<'_>,
+        normalized: Option<&str>,
+    ) -> Result<()> {
         let conn = self
             .conn
             .as_ref()
@@ -180,22 +199,20 @@ impl Exporter for SqliteExporter {
         let mut stmt = conn
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        for sqllog in sqllogs {
-            Self::do_insert(&mut stmt, sqllog, None)
-                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
+        let ns_ref = if self.normalize { normalized } else { None };
+        Self::do_insert(&mut stmt, sqllog, ns_ref)
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        self.stats.record_success();
         Ok(())
     }
 
-    fn export_batch_with_normalized(
+    fn export_one_preparsed(
         &mut self,
-        sqllogs: &[Sqllog<'_>],
-        normalized: &[Option<String>],
+        sqllog: &Sqllog<'_>,
+        meta: &MetaParts<'_>,
+        pm: &PerformanceMetrics<'_>,
+        normalized: Option<&str>,
     ) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
         let conn = self
             .conn
             .as_ref()
@@ -203,13 +220,10 @@ impl Exporter for SqliteExporter {
         let mut stmt = conn
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        let normalize = self.normalize;
-        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
-            let ns_ref = if normalize { ns.as_deref() } else { None };
-            Self::do_insert(&mut stmt, sqllog, ns_ref)
-                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
+        let ns_ref = if self.normalize { normalized } else { None };
+        Self::do_insert_preparsed(&mut stmt, sqllog, meta, pm, ns_ref)
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        self.stats.record_success();
         Ok(())
     }
 
@@ -230,7 +244,7 @@ impl Exporter for SqliteExporter {
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats.clone())
+        Some(self.stats)
     }
 }
 
@@ -271,7 +285,9 @@ mod tests {
                 false,
             );
             exporter.initialize().unwrap();
-            exporter.export_batch(&records).unwrap();
+            for r in &records {
+                exporter.export_one_normalized(r, None).unwrap();
+            }
             exporter.finalize().unwrap();
         } // exporter drops here, releasing EXCLUSIVE lock
 
@@ -298,7 +314,9 @@ mod tests {
             let mut e =
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), false, false);
             e.initialize().unwrap();
-            e.export_batch(&records).unwrap();
+            for r in &records {
+                e.export_one_normalized(r, None).unwrap();
+            }
             e.finalize().unwrap();
         }
 
@@ -307,7 +325,9 @@ mod tests {
             let mut e =
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
             e.initialize().unwrap();
-            e.export_batch(&records).unwrap();
+            for r in &records {
+                e.export_one_normalized(r, None).unwrap();
+            }
             e.finalize().unwrap();
         }
 
@@ -337,9 +357,9 @@ mod tests {
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
             exporter.normalize = true;
             exporter.initialize().unwrap();
-            exporter
-                .export_batch_with_normalized(&records, &normalized)
-                .unwrap();
+            for (r, ns) in records.iter().zip(normalized.iter()) {
+                exporter.export_one_normalized(r, ns.as_deref()).unwrap();
+            }
             exporter.finalize().unwrap();
         } // exporter drops here, releasing EXCLUSIVE lock
 

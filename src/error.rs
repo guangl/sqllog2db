@@ -67,6 +67,9 @@ pub enum FileError {
     #[error("File already exists: {path} (set overwrite=true to replace)")]
     AlreadyExists { path: PathBuf },
 
+    #[error("Failed to read file {path}: {reason}")]
+    ReadFailed { path: PathBuf, reason: String },
+
     #[error("Failed to write file {path}: {reason}")]
     WriteFailed { path: PathBuf, reason: String },
 

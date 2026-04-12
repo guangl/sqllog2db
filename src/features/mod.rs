@@ -7,7 +7,7 @@ pub use replace_parameters::compute_normalized;
 pub mod sql_fingerprint;
 pub use sql_fingerprint::fingerprint;
 
-use dm_database_parser_sqllog::Sqllog;
+use dm_database_parser_sqllog::{MetaParts, Sqllog};
 use serde::Deserialize;
 
 /// `[features.replace_parameters]` 配置段
@@ -67,6 +67,13 @@ pub struct FeaturesConfig {
 /// 返回 true 表示保留该记录，false 表示丢弃
 pub trait LogProcessor: Send + Sync + std::fmt::Debug {
     fn process(&self, record: &Sqllog) -> bool;
+
+    /// 使用调用方已预解析的 `MetaParts` 运行过滤逻辑，
+    /// 消除 `parse_meta()` 的重复调用。
+    /// 默认实现退化为 `process()`（向后兼容）。
+    fn process_with_meta(&self, record: &Sqllog, _meta: &MetaParts<'_>) -> bool {
+        self.process(record)
+    }
 }
 
 /// 处理管线：按顺序执行处理器，任一返回 false 则丢弃记录
@@ -92,11 +99,14 @@ impl Pipeline {
         self.processors.is_empty()
     }
 
-    /// 顺序执行所有处理器
+    /// 使用已预解析的 `MetaParts` 顺序执行所有处理器，
+    /// 避免各处理器内部重复调用 `parse_meta()`。
     #[inline]
     #[must_use]
-    pub fn run(&self, record: &Sqllog) -> bool {
-        self.processors.iter().all(|p| p.process(record))
+    pub fn run_with_meta(&self, record: &Sqllog, meta: &MetaParts<'_>) -> bool {
+        self.processors
+            .iter()
+            .all(|p| p.process_with_meta(record, meta))
     }
 }
 

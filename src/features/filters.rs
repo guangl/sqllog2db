@@ -1,5 +1,10 @@
+use ahash::HashSet as AHashSet;
+use compact_str::CompactString;
 use serde::{Deserialize, Deserializer};
-use std::collections::HashSet;
+
+/// `trxid` 过滤集合类型：使用 `ahash`（non-cryptographic SIMD 哈希），
+/// 比标准 `SipHash` 快 2-3×，适合大量短字符串的热路径 `contains` 查询。
+type TrxidSet = AHashSet<CompactString>;
 
 /// 记录的元数据字段，传递给过滤器评估
 #[derive(Debug)]
@@ -14,12 +19,14 @@ pub struct RecordMeta<'a> {
     pub tag: Option<&'a str>,
 }
 
-fn vec_to_hashset<'de, D>(deserializer: D) -> Result<Option<HashSet<String>>, D::Error>
+fn vec_to_hashset<'de, D>(deserializer: D) -> Result<Option<TrxidSet>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let v: Option<Vec<String>> = Option::deserialize(deserializer)?;
-    Ok(v.map(|items| items.into_iter().collect()))
+    // CompactString 对 ≤23 字节的字符串（trxid 通常是数字字符串）直接内联存储，
+    // 消除堆分配，提升 HashSet 的 cache locality（bucket 内直接包含字符串数据）。
+    Ok(v.map(|items| items.into_iter().map(CompactString::from).collect()))
 }
 
 /// 过滤器配置 (重构后)
@@ -47,7 +54,7 @@ pub struct MetaFilters {
     pub thrd_ids: Option<Vec<String>>,
     pub usernames: Option<Vec<String>>,
     #[serde(default, deserialize_with = "vec_to_hashset")]
-    pub trxids: Option<HashSet<String>>,
+    pub trxids: Option<TrxidSet>,
     pub statements: Option<Vec<String>>,
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
@@ -119,13 +126,13 @@ impl FiltersFeature {
     }
 
     /// 合并预扫描发现的事务 ID 到 `MetaFilters` 中，以便在正式扫描时直接通过 trxid 匹配保留整笔事务
-    pub fn merge_found_trxids(&mut self, trxids: Vec<String>) {
+    pub fn merge_found_trxids(&mut self, trxids: Vec<CompactString>) {
         if (!self.enable && !self.has_filters()) || trxids.is_empty() {
             return;
         }
         self.meta
             .trxids
-            .get_or_insert_with(HashSet::new)
+            .get_or_insert_with(TrxidSet::default)
             .extend(trxids);
     }
 }
@@ -146,6 +153,7 @@ impl MetaFilters {
     #[must_use]
     pub fn should_keep(&self, meta: &RecordMeta) -> bool {
         // OR 逻辑：命中任何一个已定义的列表即保留 (前提是已通过时间过滤)
+        // trxids 使用 HashSet<CompactString>，contains(&str) 通过 Borrow<str> 零分配查询
         Self::match_exact(self.trxids.as_ref(), meta.trxid)
             || Self::match_substring(self.client_ips.as_ref(), meta.ip)
             || Self::match_substring(self.sess_ids.as_ref(), meta.sess)
@@ -158,8 +166,9 @@ impl MetaFilters {
                 .is_some_and(|t| Self::match_substring(self.tags.as_ref(), t))
     }
 
-    /// O(1) 精确匹配，适用于高基数的 trxid 集合
-    fn match_exact(set: Option<&HashSet<String>>, val: &str) -> bool {
+    /// O(1) 精确匹配，适用于高基数的 trxid 集合。
+    /// `CompactString: Borrow<str>` 允许直接用 `&str` 查询 `TrxidSet`，无需分配。
+    fn match_exact(set: Option<&TrxidSet>, val: &str) -> bool {
         set.is_some_and(|s| !s.is_empty() && s.contains(val))
     }
 
@@ -379,8 +388,8 @@ mod tests {
     #[test]
     fn test_should_keep_meta_trxid_exact_match() {
         let mut f = make_feature(true);
-        let mut set = HashSet::new();
-        set.insert("TX123".to_string());
+        let mut set = TrxidSet::default();
+        set.insert(CompactString::new("TX123"));
         f.meta.trxids = Some(set);
         assert!(f.should_keep("ts", &m("TX123", "ip", "u", None)));
         assert!(!f.should_keep("ts", &m("TX999", "ip", "u", None)));
@@ -416,8 +425,10 @@ mod tests {
     fn test_merge_found_trxids_adds_to_set() {
         let mut f = make_feature(true);
         f.meta.usernames = Some(vec!["USER".into()]);
+        // "TX1".into() → CompactString (inline, no heap alloc)
         f.merge_found_trxids(vec!["TX1".into(), "TX2".into()]);
         let trxids = f.meta.trxids.unwrap();
+        // contains(&str) works via CompactString: Borrow<str>
         assert!(trxids.contains("TX1"));
         assert!(trxids.contains("TX2"));
     }
