@@ -182,7 +182,7 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
 /// Replace parameter placeholders in `sql` with values from `params`, writing
 /// the result into `out` (which is cleared first).
 ///
-/// Internal hot-path used by [`compute_normalized`].
+/// Internal hot-path used by both [`apply_params`] and [`compute_normalized`].
 /// Avoids a `String` allocation when the caller already owns a reusable `Vec<u8>`.
 ///
 /// # Safety invariant
