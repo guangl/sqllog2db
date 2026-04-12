@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.2] - 2026-04-12
+
+### Changed
+
+- 流式导出路径全面替换批量导出路径，移除 `export_batch` / `export_batch_with_normalized` 接口及 `Pipeline::run` 死代码
+- 性能优化：`memchr3` 快速扫描、`normalize` 快速跳过、`ahash` 哈希表、批量写入调优
+
+---
+
 ## [0.10.0] - 2026-04-09
 
 ### Added
