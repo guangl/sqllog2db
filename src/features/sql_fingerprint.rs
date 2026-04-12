@@ -1,3 +1,22 @@
+/// 字节查找表：需要特殊处理的字节（单引号、ASCII 空白、ASCII 数字）。
+/// 其余字节（字母、符号等）可批量复制，避免逐字节分发。
+const NEEDS_SPECIAL: [bool; 256] = {
+    let mut t = [false; 256];
+    t[b'\'' as usize] = true;
+    t[b' ' as usize] = true;
+    t[b'\t' as usize] = true;
+    t[b'\n' as usize] = true;
+    t[b'\r' as usize] = true;
+    t[0x0B_usize] = true; // vertical tab
+    t[0x0C_usize] = true; // form feed
+    let mut d = b'0';
+    while d <= b'9' {
+        t[d as usize] = true;
+        d += 1;
+    }
+    t
+};
+
 /// 将 SQL 字符串转为指纹：字面量替换为 `?`，折叠连续空白。
 ///
 /// 结构相同但参数不同的 SQL 将得到同一指纹，用于 `digest` 命令聚合。
@@ -13,6 +32,18 @@ pub fn fingerprint(sql: &str) -> String {
     let mut i = 0;
 
     while i < len {
+        // 批量复制普通字节（字母、符号等），跳过逐字节分发开销
+        let bulk_start = i;
+        while i < len && !NEEDS_SPECIAL[bytes[i] as usize] {
+            i += 1;
+        }
+        if i > bulk_start {
+            out.extend_from_slice(&bytes[bulk_start..i]);
+        }
+        if i >= len {
+            break;
+        }
+
         match bytes[i] {
             b'\'' => {
                 out.push(b'?');
@@ -48,6 +79,7 @@ pub fn fingerprint(sql: &str) -> String {
                 }
             }
             b => {
+                // 数字跟在标识符字节后（如 col1）：直接复制
                 out.push(b);
                 i += 1;
             }

@@ -389,20 +389,25 @@ pub fn handle_run(
         None
     };
 
-    let mut final_cfg = cfg.clone();
-    if cfg
+    // 仅当有事务级过滤器时才克隆配置（避免常规路径的额外分配）
+    let owned_cfg;
+    let final_cfg: &Config = if cfg
         .features
         .filters
         .as_ref()
         .is_some_and(crate::features::FiltersFeature::has_transaction_filters)
     {
         let extra_trxids = scan_for_trxids_by_transaction_filters(&log_files, cfg);
-        if let Some(f) = &mut final_cfg.features.filters {
+        let mut tmp = cfg.clone();
+        if let Some(f) = &mut tmp.features.filters {
             // into_iter() yields CompactString; merge_found_trxids 接受 Vec<CompactString>
             f.merge_found_trxids(extra_trxids.into_iter().collect());
         }
-    }
-    let final_cfg = &final_cfg;
+        owned_cfg = tmp;
+        &owned_cfg
+    } else {
+        cfg
+    };
 
     let pipeline = build_pipeline(final_cfg);
     let mut exporter_manager = if dry_run {
