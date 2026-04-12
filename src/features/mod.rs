@@ -99,14 +99,6 @@ impl Pipeline {
         self.processors.is_empty()
     }
 
-    /// 顺序执行所有处理器（不共享预解析数据的兼容路径）
-    #[inline]
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn run(&self, record: &Sqllog) -> bool {
-        self.processors.iter().all(|p| p.process(record))
-    }
-
     /// 使用已预解析的 `MetaParts` 顺序执行所有处理器，
     /// 避免各处理器内部重复调用 `parse_meta()`。
     #[inline]

@@ -235,62 +235,6 @@ impl Exporter for CsvExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::WriteFailed {
-                path: self.path.clone(),
-                reason: "not initialized".to_string(),
-            })
-        })?;
-        let normalize = self.normalize;
-        for sqllog in sqllogs {
-            Self::write_record(
-                &mut self.itoa_buf,
-                &mut self.line_buf,
-                sqllog,
-                writer,
-                &self.path,
-                normalize,
-                None,
-            )?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
-        Ok(())
-    }
-
-    fn export_batch_with_normalized(
-        &mut self,
-        sqllogs: &[Sqllog<'_>],
-        normalized: &[Option<String>],
-    ) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
-        let writer = self.writer.as_mut().ok_or_else(|| {
-            Error::Export(ExportError::WriteFailed {
-                path: self.path.clone(),
-                reason: "not initialized".to_string(),
-            })
-        })?;
-        let normalize = self.normalize;
-        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
-            Self::write_record(
-                &mut self.itoa_buf,
-                &mut self.line_buf,
-                sqllog,
-                writer,
-                &self.path,
-                normalize,
-                ns.as_deref(),
-            )?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
-        Ok(())
-    }
-
     fn export_one_normalized(
         &mut self,
         sqllog: &Sqllog<'_>,
@@ -404,7 +348,9 @@ mod tests {
 
         let mut exporter = CsvExporter::new(&outfile);
         exporter.initialize().unwrap();
-        exporter.export_batch(&records).unwrap();
+        for r in &records {
+            exporter.export_one_normalized(r, None).unwrap();
+        }
         exporter.finalize().unwrap();
 
         let content = std::fs::read_to_string(&outfile).unwrap();
@@ -427,7 +373,9 @@ mod tests {
         let mut exporter = CsvExporter::new(&outfile);
         exporter.normalize = false;
         exporter.initialize().unwrap();
-        exporter.export_batch(&records).unwrap();
+        for r in &records {
+            exporter.export_one_normalized(r, None).unwrap();
+        }
         exporter.finalize().unwrap();
 
         let content = std::fs::read_to_string(&outfile).unwrap();
@@ -435,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_export_batch_with_normalized() {
+    fn test_csv_export_with_normalized() {
         let dir = tempfile::TempDir::new().unwrap();
         let logfile = dir.path().join("test.log");
         let outfile = dir.path().join("out.csv");
@@ -443,18 +391,14 @@ mod tests {
 
         let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
         let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
-        let normalized: Vec<Option<String>> = records
-            .iter()
-            .enumerate()
-            .map(|(i, _)| Some(format!("SELECT * FROM t WHERE id=?_{i}")))
-            .collect();
 
         let mut exporter = CsvExporter::new(&outfile);
         exporter.normalize = true;
         exporter.initialize().unwrap();
-        exporter
-            .export_batch_with_normalized(&records, &normalized)
-            .unwrap();
+        for (i, r) in records.iter().enumerate() {
+            let ns = format!("SELECT * FROM t WHERE id=?_{i}");
+            exporter.export_one_normalized(r, Some(&ns)).unwrap();
+        }
         exporter.finalize().unwrap();
 
         let content = std::fs::read_to_string(&outfile).unwrap();
@@ -479,7 +423,9 @@ mod tests {
                 append: false,
             });
             exporter.initialize().unwrap();
-            exporter.export_batch(&records).unwrap();
+            for r in &records {
+                exporter.export_one_normalized(r, None).unwrap();
+            }
             exporter.finalize().unwrap();
         }
         let first_count = std::fs::read_to_string(&outfile).unwrap().lines().count();
@@ -492,7 +438,9 @@ mod tests {
                 append: true,
             });
             exporter.initialize().unwrap();
-            exporter.export_batch(&records).unwrap();
+            for r in &records {
+                exporter.export_one_normalized(r, None).unwrap();
+            }
             exporter.finalize().unwrap();
         }
         let second_count = std::fs::read_to_string(&outfile).unwrap().lines().count();
@@ -501,12 +449,11 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_empty_batch_is_noop() {
+    fn test_csv_empty_export_is_noop() {
         let dir = tempfile::TempDir::new().unwrap();
         let outfile = dir.path().join("out.csv");
         let mut exporter = CsvExporter::new(&outfile);
         exporter.initialize().unwrap();
-        exporter.export_batch(&[]).unwrap(); // should not error
         exporter.finalize().unwrap();
         // Only header
         let content = std::fs::read_to_string(&outfile).unwrap();

@@ -187,50 +187,6 @@ impl Exporter for SqliteExporter {
         Ok(())
     }
 
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        for sqllog in sqllogs {
-            Self::do_insert(&mut stmt, sqllog, None)
-                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
-        Ok(())
-    }
-
-    fn export_batch_with_normalized(
-        &mut self,
-        sqllogs: &[Sqllog<'_>],
-        normalized: &[Option<String>],
-    ) -> Result<()> {
-        if sqllogs.is_empty() {
-            return Ok(());
-        }
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        let normalize = self.normalize;
-        for (sqllog, ns) in sqllogs.iter().zip(normalized.iter()) {
-            let ns_ref = if normalize { ns.as_deref() } else { None };
-            Self::do_insert(&mut stmt, sqllog, ns_ref)
-                .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
-        }
-        self.stats.record_success_batch(sqllogs.len());
-        Ok(())
-    }
-
     fn export_one_normalized(
         &mut self,
         sqllog: &Sqllog<'_>,
@@ -329,7 +285,9 @@ mod tests {
                 false,
             );
             exporter.initialize().unwrap();
-            exporter.export_batch(&records).unwrap();
+            for r in &records {
+                exporter.export_one_normalized(r, None).unwrap();
+            }
             exporter.finalize().unwrap();
         } // exporter drops here, releasing EXCLUSIVE lock
 
@@ -356,7 +314,9 @@ mod tests {
             let mut e =
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), false, false);
             e.initialize().unwrap();
-            e.export_batch(&records).unwrap();
+            for r in &records {
+                e.export_one_normalized(r, None).unwrap();
+            }
             e.finalize().unwrap();
         }
 
@@ -365,7 +325,9 @@ mod tests {
             let mut e =
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
             e.initialize().unwrap();
-            e.export_batch(&records).unwrap();
+            for r in &records {
+                e.export_one_normalized(r, None).unwrap();
+            }
             e.finalize().unwrap();
         }
 
@@ -395,9 +357,9 @@ mod tests {
                 SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
             exporter.normalize = true;
             exporter.initialize().unwrap();
-            exporter
-                .export_batch_with_normalized(&records, &normalized)
-                .unwrap();
+            for (r, ns) in records.iter().zip(normalized.iter()) {
+                exporter.export_one_normalized(r, ns.as_deref()).unwrap();
+            }
             exporter.finalize().unwrap();
         } // exporter drops here, releasing EXCLUSIVE lock
 

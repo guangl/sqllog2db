@@ -13,22 +13,6 @@ pub trait Exporter {
     fn initialize(&mut self) -> Result<()>;
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()>;
 
-    /// 批量导出（仅测试路径使用，生产代码走 `export_one_normalized`）
-    #[allow(dead_code)]
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()>;
-
-    /// 批量导出，同时传入每条记录对应的 `normalized_sql`。
-    /// 默认实现忽略 normalized 参数，直接调用 `export_batch`。
-    #[allow(dead_code)]
-    fn export_batch_with_normalized(
-        &mut self,
-        sqllogs: &[Sqllog<'_>],
-        normalized: &[Option<String>],
-    ) -> Result<()> {
-        let _ = normalized;
-        self.export_batch(sqllogs)
-    }
-
     /// 流式导出单条记录，同时附带 `normalized_sql`（流式路径，无需 batch）。
     /// 默认实现忽略 normalized，调用 `export`。
     fn export_one_normalized(
@@ -82,11 +66,6 @@ impl ExportStats {
         self.exported += 1;
     }
 
-    #[allow(dead_code)]
-    pub fn record_success_batch(&mut self, count: usize) {
-        self.exported += count;
-    }
-
     #[must_use]
     pub fn total(&self) -> usize {
         self.exported + self.skipped + self.failed
@@ -106,13 +85,6 @@ impl Exporter for DryRunExporter {
 
     fn export(&mut self, _sqllog: &Sqllog<'_>) -> Result<()> {
         self.stats.exported += 1;
-        Ok(())
-    }
-
-    fn export_batch(&mut self, sqllogs: &[Sqllog<'_>]) -> Result<()> {
-        self.stats.exported += sqllogs.len();
-        self.stats.flush_operations += 1;
-        self.stats.last_flush_size = sqllogs.len();
         Ok(())
     }
 
@@ -306,14 +278,6 @@ mod tests {
         s.record_success();
         assert_eq!(s.exported, 2);
         assert_eq!(s.total(), 2);
-    }
-
-    #[test]
-    fn test_export_stats_record_success_batch() {
-        let mut s = ExportStats::new();
-        s.record_success_batch(10);
-        assert_eq!(s.exported, 10);
-        assert_eq!(s.total(), 10);
     }
 
     #[test]
