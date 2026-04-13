@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **参数替换 UTF-8 异常**：`compute_normalized` 遇到无效 UTF-8 输出时不再 panic，改为输出 `warn` 日志并跳过该记录，避免在 GB18030 编码文件上崩溃
+- **GB18030 文件参数替换**：`compute_normalized` 遇到无效 UTF-8 时，自动 fallback 到 GB18030 解码并转换为 UTF-8 输出，不再跳过记录。适用于达梦以 GB18030 编码写入的 SQL 日志文件
 
 ---
 

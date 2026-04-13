@@ -337,8 +337,9 @@ fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> String {
 ///
 /// # Panics
 ///
-/// Returns `None` if the substituted SQL contains invalid UTF-8 (can happen when the
-/// upstream parser mis-detects file encoding on GB18030 files with an ASCII-only header).
+/// Returns `None` only if the result contains bytes that are neither valid UTF-8 nor
+/// valid GB18030 (extremely rare). For GB18030 files, the result is automatically
+/// transcoded to UTF-8.
 pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     record: &dm_database_parser_sqllog::Sqllog<'_>,
     meta: &dm_database_parser_sqllog::MetaParts<'_>,
@@ -401,15 +402,26 @@ pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     }
 
     apply_params_into(pm_sql, &params, colon_style, scratch);
-    match std::str::from_utf8(scratch) {
-        Ok(s) => Some(s),
-        Err(e) => {
+
+    // 常规路径：UTF-8 文件，直接返回。
+    // GB18030 fallback：上游 parser 将 GB18030 文件按 UTF-8 解析时，param 替换后
+    // 的字节序列可能含 GB18030 双字节序列（如汉字），导致 UTF-8 校验失败。
+    // GB18030 是 ASCII 的超集，可安全处理纯 ASCII 与混合内容。
+    if std::str::from_utf8(scratch).is_err() {
+        let (decoded, _, had_errors) = encoding_rs::GB18030.decode(scratch);
+        if had_errors {
             log::warn!(
-                "replace_parameters: invalid UTF-8 in normalized SQL ({e}), skipping record"
+                "replace_parameters: GB18030 fallback had unmappable bytes for sql: {}",
+                &pm_sql[..pm_sql.len().min(60)]
             );
-            None
         }
+        // into_owned() 释放对 scratch 的借用，之后才能 clear + 写回
+        let decoded_string = decoded.into_owned();
+        scratch.clear();
+        scratch.extend_from_slice(decoded_string.as_bytes());
     }
+
+    Some(std::str::from_utf8(scratch).expect("scratch contains valid UTF-8"))
 }
 
 #[cfg(test)]

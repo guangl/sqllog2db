@@ -676,6 +676,7 @@ dependencies = [
  "criterion",
  "ctrlc",
  "dm-database-parser-sqllog",
+ "encoding_rs",
  "env_logger",
  "glob",
  "indicatif",
