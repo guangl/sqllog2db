@@ -113,6 +113,7 @@ fn parse_one_entry(s: &str) -> Option<(ParamValue, &str)> {
 /// - `is_colon_style = true`  → `:N` Oracle style; count = highest ordinal seen
 ///
 /// If the SQL contains no recognisable placeholders, returns `(0, false)`.
+#[inline]
 #[must_use]
 pub fn count_placeholders(sql: &str) -> (usize, bool) {
     let bytes = sql.as_bytes();
@@ -190,6 +191,7 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
 /// from `sql` (already valid UTF-8) or are ASCII literals from params.
 /// ASCII bytes (0x00–0x7F) can never appear in the interior of a multi-byte
 /// UTF-8 sequence (continuation bytes are 0x80–0xBF), so no sequence is broken.
+#[inline]
 fn apply_params_into(sql: &str, params: &[ParamValue], colon_style: bool, out: &mut Vec<u8>) {
     out.clear();
     if params.is_empty() {

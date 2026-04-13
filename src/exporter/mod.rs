@@ -45,57 +45,6 @@ pub trait Exporter {
     }
 }
 
-/// 导出统计
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ExportStats {
-    pub exported: usize,
-    pub skipped: usize,
-    pub failed: usize,
-    pub flush_operations: usize,
-    pub last_flush_size: usize,
-}
-
-impl ExportStats {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn record_success(&mut self) {
-        self.exported += 1;
-    }
-
-    #[must_use]
-    pub fn total(&self) -> usize {
-        self.exported + self.skipped + self.failed
-    }
-}
-
-/// 空运行导出器：只计数，不写任何文件（用于 --dry-run 模式）
-#[derive(Debug, Default)]
-pub struct DryRunExporter {
-    stats: ExportStats,
-}
-
-impl Exporter for DryRunExporter {
-    fn initialize(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn export(&mut self, _sqllog: &Sqllog<'_>) -> Result<()> {
-        self.stats.exported += 1;
-        Ok(())
-    }
-
-    fn finalize(&mut self) -> Result<()> {
-        Ok(())
-    }
-
-    fn stats_snapshot(&self) -> Option<ExportStats> {
-        Some(self.stats)
-    }
-}
-
 /// 具体导出器的枚举包装，消除 `Box<dyn Exporter>` 的虚表分发开销，
 /// 使编译器能够内联热路径（`export_one_preparsed` → `write_record_preparsed`）。
 #[derive(Debug)]
@@ -151,6 +100,70 @@ impl ExporterKind {
             Self::Sqlite(e) => e.stats_snapshot(),
             Self::DryRun(e) => e.stats_snapshot(),
         }
+    }
+}
+
+/// 导出统计
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ExportStats {
+    pub exported: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub flush_operations: usize,
+    pub last_flush_size: usize,
+}
+
+impl ExportStats {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_success(&mut self) {
+        self.exported += 1;
+    }
+
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.exported + self.skipped + self.failed
+    }
+}
+
+/// 空运行导出器：只计数，不写任何文件（用于 --dry-run 模式）
+#[derive(Debug, Default)]
+pub struct DryRunExporter {
+    stats: ExportStats,
+}
+
+impl Exporter for DryRunExporter {
+    fn initialize(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn export(&mut self, _sqllog: &Sqllog<'_>) -> Result<()> {
+        self.stats.exported += 1;
+        Ok(())
+    }
+
+    /// 直接计数，跳过两层默认实现（`export_one_normalized` → `export`）。
+    #[inline]
+    fn export_one_preparsed(
+        &mut self,
+        _sqllog: &Sqllog<'_>,
+        _meta: &MetaParts<'_>,
+        _pm: &PerformanceMetrics<'_>,
+        _normalized: Option<&str>,
+    ) -> Result<()> {
+        self.stats.exported += 1;
+        Ok(())
+    }
+
+    fn finalize(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn stats_snapshot(&self) -> Option<ExportStats> {
+        Some(self.stats)
     }
 }
 

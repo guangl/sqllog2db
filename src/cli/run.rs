@@ -508,7 +508,7 @@ fn process_csv_parallel(
                 em.initialize()?;
 
                 let mut params_buf = ParamBuffer::default();
-                let mut ns_scratch = Vec::with_capacity(1024);
+                let mut ns_scratch = Vec::with_capacity(4096);
 
                 let count = process_log_file(
                     &file.to_string_lossy(),
@@ -702,7 +702,7 @@ pub fn handle_run(
         // 跨文件复用分配：process_log_file 在每次调用时 clear() 而不是重建
         let mut params_buffer = ParamBuffer::default();
         // 预分配 1024 字节：避免首条参数化 SQL 触发初始堆分配
-        let mut ns_scratch: Vec<u8> = Vec::with_capacity(1024);
+        let mut ns_scratch: Vec<u8> = Vec::with_capacity(4096);
 
         for (idx, log_file) in log_files.iter().enumerate() {
             if interrupted.load(Ordering::Relaxed) {

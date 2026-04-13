@@ -50,7 +50,9 @@ impl CsvExporter {
             writer: None,
             stats: ExportStats::new(),
             itoa_buf: itoa::Buffer::new(),
-            line_buf: Vec::with_capacity(512),
+            // 预分配 1 KiB：覆盖典型日志行（元数据 ~80 B + SQL ~200 B + normalized ~200 B）
+            // 避免前几条记录触发 Vec 扩容。clear() 保留容量，运行期自动适配长 SQL。
+            line_buf: Vec::with_capacity(1024),
             normalize: true,
         }
     }
