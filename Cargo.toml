@@ -56,7 +56,7 @@ ryu = "1"
 rayon = "1.11"
 ahash = "0.8"
 memchr = "2"
-compact_str = "0.8"
+compact_str = "0.9"
 smallvec = { version = "1", features = ["union"] }
 mimalloc = { version = "0.1", default-features = false }
 rusqlite = { version = "0.39.0", features = [
