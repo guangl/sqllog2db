@@ -239,10 +239,6 @@ impl Exporter for SqliteExporter {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "SQLite"
-    }
-
     fn stats_snapshot(&self) -> Option<ExportStats> {
         Some(self.stats)
     }

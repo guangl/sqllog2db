@@ -28,7 +28,7 @@ pub struct CsvExporter {
     stats: ExportStats,
     itoa_buf: itoa::Buffer,
     line_buf: Vec<u8>,
-    pub(super) normalize: bool,
+    pub(crate) normalize: bool,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -297,10 +297,6 @@ impl Exporter for CsvExporter {
             })?;
         }
         Ok(())
-    }
-
-    fn name(&self) -> &'static str {
-        "CSV"
     }
 
     fn stats_snapshot(&self) -> Option<ExportStats> {

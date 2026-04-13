@@ -76,6 +76,7 @@ fn bench_csv_export(c: &mut Criterion) {
                     80,
                     false,
                     None,
+                    1,
                 )
                 .unwrap();
             });

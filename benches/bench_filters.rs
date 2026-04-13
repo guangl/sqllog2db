@@ -161,6 +161,7 @@ fn bench_filters(c: &mut Criterion) {
                     80,
                     false,
                     None,
+                    1,
                 )
                 .unwrap();
             });

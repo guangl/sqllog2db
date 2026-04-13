@@ -39,7 +39,6 @@ pub trait Exporter {
     }
 
     fn finalize(&mut self) -> Result<()>;
-    fn name(&self) -> &str;
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
         None
@@ -92,35 +91,97 @@ impl Exporter for DryRunExporter {
         Ok(())
     }
 
-    fn name(&self) -> &'static str {
-        "dry-run"
-    }
-
     fn stats_snapshot(&self) -> Option<ExportStats> {
         Some(self.stats)
     }
 }
 
+/// 具体导出器的枚举包装，消除 `Box<dyn Exporter>` 的虚表分发开销，
+/// 使编译器能够内联热路径（`export_one_preparsed` → `write_record_preparsed`）。
+#[derive(Debug)]
+pub enum ExporterKind {
+    Csv(CsvExporter),
+    Sqlite(SqliteExporter),
+    DryRun(DryRunExporter),
+}
+
+impl ExporterKind {
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Csv(_) => "CSV",
+            Self::Sqlite(_) => "SQLite",
+            Self::DryRun(_) => "dry-run",
+        }
+    }
+
+    fn initialize(&mut self) -> Result<()> {
+        match self {
+            Self::Csv(e) => e.initialize(),
+            Self::Sqlite(e) => e.initialize(),
+            Self::DryRun(e) => e.initialize(),
+        }
+    }
+
+    #[inline]
+    fn export_one_preparsed(
+        &mut self,
+        sqllog: &Sqllog<'_>,
+        meta: &MetaParts<'_>,
+        pm: &PerformanceMetrics<'_>,
+        normalized: Option<&str>,
+    ) -> Result<()> {
+        match self {
+            Self::Csv(e) => e.export_one_preparsed(sqllog, meta, pm, normalized),
+            Self::Sqlite(e) => e.export_one_preparsed(sqllog, meta, pm, normalized),
+            Self::DryRun(e) => e.export_one_preparsed(sqllog, meta, pm, normalized),
+        }
+    }
+
+    fn finalize(&mut self) -> Result<()> {
+        match self {
+            Self::Csv(e) => e.finalize(),
+            Self::Sqlite(e) => e.finalize(),
+            Self::DryRun(e) => e.finalize(),
+        }
+    }
+
+    fn stats_snapshot(&self) -> Option<ExportStats> {
+        match self {
+            Self::Csv(e) => e.stats_snapshot(),
+            Self::Sqlite(e) => e.stats_snapshot(),
+            Self::DryRun(e) => e.stats_snapshot(),
+        }
+    }
+}
+
 /// 导出器管理器
 pub struct ExporterManager {
-    exporter: Box<dyn Exporter>,
+    exporter: ExporterKind,
 }
 
 impl std::fmt::Debug for ExporterManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExporterManager")
-            .field("exporter", &self.exporter.name())
+            .field("exporter", &self.exporter.kind_name())
             .finish()
     }
 }
 
 impl ExporterManager {
+    /// 从已构建的 `CsvExporter` 创建管理器（并行处理时每个任务独立调用）。
+    #[must_use]
+    pub fn from_csv(exporter: CsvExporter) -> Self {
+        Self {
+            exporter: ExporterKind::Csv(exporter),
+        }
+    }
+
     /// 创建空运行导出器，只统计记录数不写文件
     #[must_use]
     pub fn dry_run() -> Self {
         info!("Dry-run mode: no output will be written");
         Self {
-            exporter: Box::new(DryRunExporter::default()),
+            exporter: ExporterKind::DryRun(DryRunExporter::default()),
         }
     }
 
@@ -138,7 +199,7 @@ impl ExporterManager {
             let mut exporter = CsvExporter::from_config(cfg);
             exporter.normalize = normalize;
             return Ok(Self {
-                exporter: Box::new(exporter),
+                exporter: ExporterKind::Csv(exporter),
             });
         }
 
@@ -147,7 +208,7 @@ impl ExporterManager {
             let mut exporter = SqliteExporter::from_config(cfg);
             exporter.normalize = normalize;
             return Ok(Self {
-                exporter: Box::new(exporter),
+                exporter: ExporterKind::Sqlite(exporter),
             });
         }
 
@@ -162,6 +223,7 @@ impl ExporterManager {
     }
 
     /// 热路径：使用预解析的 meta/pm，避免导出器内部重复解析。
+    #[inline]
     pub fn export_one_preparsed(
         &mut self,
         sqllog: &Sqllog<'_>,
@@ -182,7 +244,7 @@ impl ExporterManager {
 
     #[must_use]
     pub fn name(&self) -> &str {
-        self.exporter.name()
+        self.exporter.kind_name()
     }
 
     pub fn log_stats(&self) {

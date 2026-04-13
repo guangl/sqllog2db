@@ -74,6 +74,9 @@ pub enum Commands {
         /// Override the state file path used by --resume (default: `.sqllog2db_state.toml`)
         #[arg(long = "state-file", value_name = "PATH", requires = "resume")]
         state_file: Option<String>,
+        /// Number of parallel threads for processing multiple files (default: CPU count)
+        #[arg(short = 'j', long = "jobs", value_name = "N")]
+        jobs: Option<usize>,
     },
     /// Generate a default configuration file
     Init {

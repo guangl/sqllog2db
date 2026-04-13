@@ -64,7 +64,7 @@ fn test_handle_run_dry_run_empty_dir() {
         ..Default::default()
     };
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn test_handle_run_dry_run_with_log_files() {
     };
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn test_handle_run_dry_run_with_limit() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit to 5 records
-    handle_run(&cfg, Some(5), true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, Some(5), true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn test_handle_run_real_csv_export() {
     let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, false, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 1).unwrap();
 
     let content = std::fs::read_to_string(&csv_file).unwrap();
     // header + 10 data rows
@@ -139,7 +139,7 @@ fn test_handle_run_interrupted() {
 
     // Pre-set interrupted flag — run should return Err(Interrupted)
     let interrupted = Arc::new(AtomicBool::new(true));
-    let result = handle_run(&cfg, None, true, true, &interrupted, 80, false, None);
+    let result = handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1);
     // Either Ok (no files processed) or Err(Interrupted) depending on timing
     let _ = result;
 }
@@ -171,6 +171,7 @@ fn test_resume_skips_processed_files() {
         80,
         true,
         Some(state_path.to_str().unwrap()),
+        1,
     )
     .unwrap();
     let rows_first = std::fs::read_to_string(&csv1).unwrap().lines().count();
@@ -194,6 +195,7 @@ fn test_resume_skips_processed_files() {
         80,
         true,
         Some(state_path.to_str().unwrap()),
+        1,
     )
     .unwrap();
 
@@ -233,6 +235,7 @@ fn test_resume_reprocesses_changed_file() {
         80,
         true,
         Some(state_path.to_str().unwrap()),
+        1,
     )
     .unwrap();
     assert!(state_path.exists());
@@ -252,6 +255,7 @@ fn test_resume_reprocesses_changed_file() {
         80,
         true,
         Some(state_path.to_str().unwrap()),
+        1,
     )
     .unwrap();
 
@@ -746,7 +750,7 @@ fn test_handle_run_non_quiet_prints_summary() {
     let cfg = make_run_config(&log_dir, &csv_file);
     let interrupted = Arc::new(AtomicBool::new(false));
     // quiet=false exercises the summary print path
-    handle_run(&cfg, None, true, false, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, false, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -767,7 +771,7 @@ fn test_handle_run_with_filters_builds_pipeline() {
         ..Default::default()
     });
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -780,7 +784,7 @@ fn test_handle_run_with_limit_mid_file() {
     let cfg = make_run_config(&log_dir, &csv_file);
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit=5 stops partway through the file — exercises the limit check in process_log_file
-    handle_run(&cfg, Some(5), false, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, Some(5), false, true, &interrupted, 80, false, None, 1).unwrap();
     let content = std::fs::read_to_string(&csv_file).unwrap();
     let data_lines = content.lines().count().saturating_sub(1); // minus header
     assert!(data_lines <= 5, "expected ≤5 records, got {data_lines}");
@@ -806,7 +810,7 @@ fn test_handle_run_with_transaction_filters_prescans() {
         ..Default::default()
     });
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 #[test]
@@ -828,7 +832,7 @@ fn test_handle_run_with_min_runtime_filter() {
         ..Default::default()
     });
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
 }
 
 // ── handle_show_config tests (via integration) ───────────────────────────────
@@ -869,7 +873,7 @@ fn test_csv_throughput_baseline() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let start = std::time::Instant::now();
-    handle_run(&cfg, None, false, true, &interrupted, 80, false, None).unwrap();
+    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 1).unwrap();
     let elapsed = start.elapsed().as_secs_f64();
 
     #[allow(clippy::cast_precision_loss)]
