@@ -172,6 +172,7 @@ fn run() -> Result<()> {
             progress_interval,
             resume,
             state_file,
+            jobs,
         }) => {
             let mut cfg = load_config(config)?;
             // --output is a shorthand applied before --set so --set can override
@@ -206,6 +207,9 @@ fn run() -> Result<()> {
             })
             .ok();
 
+            let jobs = jobs.unwrap_or_else(|| {
+                std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+            });
             cli::run::handle_run(
                 &cfg,
                 *limit,
@@ -215,6 +219,7 @@ fn run() -> Result<()> {
                 *progress_interval,
                 *resume,
                 state_file.as_deref(),
+                jobs,
             )
         }
         Some(cli::opts::Commands::Validate { config, set }) => {

@@ -83,6 +83,7 @@ fn bench_sqlite_export(c: &mut Criterion) {
                     80,
                     false,
                     None,
+                    1,
                 )
                 .unwrap();
             });

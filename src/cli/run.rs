@@ -2,7 +2,7 @@ use crate::color;
 use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
-use crate::exporter::ExporterManager;
+use crate::exporter::{CsvExporter, ExporterManager};
 use crate::features::filters::RecordMeta;
 use crate::features::replace_parameters::ParamBuffer;
 use crate::features::{LogProcessor, Pipeline};
@@ -12,6 +12,7 @@ use compact_str::CompactString;
 use dm_database_parser_sqllog::{LogParser, MetaParts};
 use indicatif::{HumanCount, ProgressBar, ProgressStyle};
 use log::{info, warn};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -97,6 +98,7 @@ impl LogProcessor for FilterProcessor {
 /// 处理单个日志文件，返回本文件实际导出的记录数。
 ///
 /// `limit`: 最多再导出多少条记录（跨文件的剩余配额），`None` 表示不限制。
+/// `reset_pb`: 是否在文件开始时重置进度条计数；并行模式传 `false`，避免多线程互相重置。
 fn process_log_file(
     file_path: &str,
     file_index: usize,
@@ -110,6 +112,7 @@ fn process_log_file(
     placeholder_override: Option<bool>,
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
+    reset_pb: bool,
 ) -> Result<usize> {
     // 清除上一个文件留下的残余参数，同时复用已分配的 HashMap 容量。
     params_buffer.clear();
@@ -121,9 +124,11 @@ fn process_log_file(
         |n| n.to_string_lossy().into_owned(),
     );
 
-    pb.set_prefix(format!("{file_index}/{total_files}"));
-    pb.set_message(file_name);
-    pb.reset();
+    if reset_pb {
+        pb.set_prefix(format!("{file_index}/{total_files}"));
+        pb.set_message(file_name.clone());
+        pb.reset();
+    }
 
     let parser = LogParser::from_path(file_path).map_err(|e| {
         Error::Parser(ParserError::InvalidPath {
@@ -358,6 +363,221 @@ fn make_progress_bar(quiet: bool, interval_ms: u64) -> ProgressBar {
     pb
 }
 
+/// 将 N 个已处理的临时 CSV 文件按顺序拼接到最终输出路径。
+/// 第一个文件保留 header；后续文件跳过第一行。
+/// `append_to_existing`=true 时所有文件都跳过 header（目标文件已有 header）。
+fn concat_csv_parts(
+    parts: &[(PathBuf, usize)],
+    output_path: &Path,
+    overwrite: bool,
+    append_to_existing: bool,
+) -> Result<()> {
+    use std::fs::OpenOptions;
+    use std::io::BufReader;
+
+    // 无任何 part（如 resume 模式下全部文件已跳过）时不触碰输出文件，
+    // 避免 overwrite=true 把已有数据清空。
+    if parts.is_empty() {
+        return Ok(());
+    }
+
+    let file = if append_to_existing {
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(output_path)?
+    } else {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(overwrite)
+            .open(output_path)?
+    };
+    let mut writer = std::io::BufWriter::with_capacity(16 * 1024 * 1024, file);
+
+    for (idx, (part_path, _)) in parts.iter().enumerate() {
+        let part_file = std::fs::File::open(part_path)?;
+        let mut reader = BufReader::new(part_file);
+
+        // 第一个 part（且非追加模式）保留 header；其余情况跳过 header 行
+        let skip_header = idx > 0 || append_to_existing;
+        if skip_header {
+            let mut discard = String::new();
+            std::io::BufRead::read_line(&mut reader, &mut discard)?;
+        }
+
+        std::io::copy(&mut reader, &mut writer)?;
+        std::fs::remove_file(part_path)?;
+    }
+
+    use std::io::Write as _;
+    writer.flush()?;
+    Ok(())
+}
+
+/// 并行 CSV 处理：每个文件独立跑在 rayon 线程上，各写一个临时 CSV，
+/// 最终按文件原始顺序拼接成一个完整 CSV。
+///
+/// 返回：`(已处理文件列表, 跳过文件数)`，已处理列表顺序与 `log_files` 一致。
+/// 适用条件：CSV 导出 + 多文件 + jobs > 1 + 无 limit。
+fn process_csv_parallel(
+    log_files: &[PathBuf],
+    cfg: &Config,
+    pipeline: &Pipeline,
+    jobs: usize,
+    pb: &ProgressBar,
+    interrupted: &Arc<AtomicBool>,
+    resume_state: Option<&crate::resume::ResumeState>,
+    quiet: bool,
+    do_normalize: bool,
+    placeholder_override: Option<bool>,
+) -> Result<(Vec<(PathBuf, usize)>, usize)> {
+    use rayon::prelude::*;
+
+    let csv_cfg = cfg
+        .exporter
+        .csv
+        .as_ref()
+        .expect("parallel CSV requires CSV exporter");
+    let output_path = Path::new(&csv_cfg.file);
+    let append_to_existing = csv_cfg.append && output_path.exists();
+
+    // 临时目录与最终输出文件相邻，避免跨设备 copy；
+    // 若父目录不可写（如 /dev/null），退回到系统临时目录。
+    let parts_dir = {
+        let stem = output_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let dir_name = format!(".{stem}_parts_{}", std::process::id());
+        let preferred = output_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        if let Some(parent) = output_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        let candidate = preferred.join(&dir_name);
+        if std::fs::create_dir_all(&candidate).is_ok() {
+            candidate
+        } else {
+            let fallback = std::env::temp_dir().join(&dir_name);
+            std::fs::create_dir_all(&fallback)?;
+            fallback
+        }
+    };
+
+    let total_files = log_files.len();
+
+    // 构建独立线程池，避免干扰全局 rayon 池（预扫描阶段已用）
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+
+    // 每个任务返回 Some((orig_path, temp_path, count)) 或 None（跳过/中断）
+    type TaskResult = Option<(PathBuf, PathBuf, usize)>;
+    let results: Vec<Result<TaskResult>> = pool.install(|| {
+        log_files
+            .par_iter()
+            .enumerate()
+            .map(|(idx, file)| {
+                if let Some(state) = resume_state {
+                    if state.is_processed(file) {
+                        if !quiet {
+                            pb.println(format!(
+                                "{} [{}/{}] {} — skipped (already processed)",
+                                color::dim("⏭"),
+                                idx + 1,
+                                total_files,
+                                file.display(),
+                            ));
+                        }
+                        return Ok(None);
+                    }
+                }
+
+                if interrupted.load(Ordering::Relaxed) {
+                    return Ok(None);
+                }
+
+                let temp_path = parts_dir.join(format!("{idx:08}.csv"));
+                let mut exporter = CsvExporter::new(&temp_path);
+                exporter.normalize = do_normalize;
+                let mut em = ExporterManager::from_csv(exporter);
+                em.initialize()?;
+
+                let mut params_buf = ParamBuffer::default();
+                let mut ns_scratch = Vec::with_capacity(1024);
+
+                let count = process_log_file(
+                    &file.to_string_lossy(),
+                    idx + 1,
+                    total_files,
+                    &mut em,
+                    pipeline,
+                    pb,
+                    None,
+                    interrupted,
+                    do_normalize,
+                    placeholder_override,
+                    &mut params_buf,
+                    &mut ns_scratch,
+                    false, // 并行模式：不重置进度条，避免多线程互相重置计数
+                )?;
+
+                em.finalize()?;
+                Ok(Some((file.clone(), temp_path, count)))
+            })
+            .collect()
+    });
+
+    // 收集成功的任务；遇到错误先清理再返回
+    // (orig, temp, count) 三元组，保持 rayon 的原始文件顺序
+    let mut parts_info: Vec<(PathBuf, PathBuf, usize)> = Vec::with_capacity(log_files.len());
+    let mut first_err: Option<Error> = None;
+    let mut skipped = 0usize;
+    for result in results {
+        match result {
+            Ok(Some(p)) => parts_info.push(p),
+            Ok(None) => skipped += 1,
+            Err(e) if first_err.is_none() => first_err = Some(e),
+            Err(_) => {}
+        }
+    }
+    if let Some(e) = first_err {
+        for (_, temp, _) in &parts_info {
+            let _ = std::fs::remove_file(temp);
+        }
+        let _ = std::fs::remove_dir_all(&parts_dir);
+        return Err(e);
+    }
+
+    // 拼接：只用 (temp_path, count) 传给 concat_csv_parts
+    let parts_for_concat: Vec<(PathBuf, usize)> = parts_info
+        .iter()
+        .map(|(_, temp, count)| (temp.clone(), *count))
+        .collect();
+    let concat_result = concat_csv_parts(
+        &parts_for_concat,
+        output_path,
+        csv_cfg.overwrite,
+        append_to_existing,
+    );
+    // 无论拼接成功与否都清理临时目录，避免磁盘满等错误导致残留
+    let _ = std::fs::remove_dir_all(&parts_dir);
+    concat_result?;
+
+    // 返回 (已处理文件列表, 跳过文件数)，供 handle_run 更新 resume state 及摘要行
+    Ok((
+        parts_info
+            .into_iter()
+            .map(|(orig, _, count)| (orig, count))
+            .collect(),
+        skipped,
+    ))
+}
+
 pub fn handle_run(
     cfg: &Config,
     limit: Option<usize>,
@@ -367,6 +587,7 @@ pub fn handle_run(
     progress_interval: u64,
     resume: bool,
     state_file_override: Option<&str>,
+    jobs: usize,
 ) -> Result<()> {
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
@@ -410,101 +631,149 @@ pub fn handle_run(
     };
 
     let pipeline = build_pipeline(final_cfg);
-    let mut exporter_manager = if dry_run {
-        ExporterManager::dry_run()
-    } else {
-        ExporterManager::from_config(final_cfg)?
-    };
-    exporter_manager.initialize()?;
 
     let do_normalize = final_cfg
         .features
         .replace_parameters
         .as_ref()
         .is_none_or(|r| r.enable);
-
     let placeholder_override = final_cfg
         .features
         .replace_parameters
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
 
-    if dry_run {
-        info!("Dry-run: parsing SQL logs without writing output...");
-    } else {
-        info!("Parsing and exporting SQL logs...");
-    }
-
     let pb = make_progress_bar(quiet, progress_interval);
     let mut total_records = 0usize;
     let mut skipped_files = 0usize;
-    // 跨文件复用 ParamBuffer 分配：process_log_file 在每次调用时 clear() 而不是重建，
-    // 避免为每个日志文件重新触发 HashMap 的初始分配。
-    let mut params_buffer = ParamBuffer::default();
-    // 跨记录复用 normalized SQL 的输出缓冲，消除每条参数化 SQL 的 String 堆分配。
-    let mut ns_scratch: Vec<u8> = Vec::new();
 
-    for (idx, log_file) in log_files.iter().enumerate() {
-        if interrupted.load(Ordering::Relaxed) {
-            break;
-        }
+    // 并行 CSV 路径：多文件 + 无 limit + CSV 导出器 + jobs > 1
+    let use_parallel = !dry_run
+        && jobs > 1
+        && log_files.len() > 1
+        && limit.is_none()
+        && final_cfg.exporter.csv.is_some();
 
-        let remaining = limit.map(|l| l.saturating_sub(total_records));
-        if remaining == Some(0) {
-            break;
-        }
+    if use_parallel {
+        info!("Parsing and exporting SQL logs (parallel, {jobs} jobs)...");
 
-        // 断点续传：跳过已完整处理的文件
-        if let Some(state) = &resume_state {
-            if state.is_processed(log_file) {
-                skipped_files += 1;
-                pb.println(format!(
-                    "{} [{}/{}] {} — skipped (already processed)",
-                    color::dim("⏭"),
-                    idx + 1,
-                    log_files.len(),
-                    log_file.display(),
-                ));
-                continue;
-            }
-        }
-
-        let processed = process_log_file(
-            &log_file.to_string_lossy(),
-            idx + 1,
-            log_files.len(),
-            &mut exporter_manager,
+        let (processed_files, parallel_skipped) = process_csv_parallel(
+            &log_files,
+            final_cfg,
             &pipeline,
+            jobs,
             &pb,
-            remaining,
             interrupted,
+            resume_state.as_ref(),
+            quiet,
             do_normalize,
             placeholder_override,
-            &mut params_buffer,
-            &mut ns_scratch,
         )?;
 
-        // 处理完成后立即持久化状态（dry-run 不更新）
-        if !dry_run {
+        total_records = processed_files.iter().map(|(_, c)| *c).sum();
+        skipped_files = parallel_skipped;
+
+        // 更新断点续传状态（并行路径完成后统一写入）。
+        // 若被中断则不写入：并行任务无法区分"完整处理"与"中途截断"，
+        // 保守地不标记任何文件为已完成，与顺序路径行为一致。
+        if !interrupted.load(Ordering::Relaxed) {
             if let Some(state) = &mut resume_state {
-                state.mark_processed(log_file, processed as u64)?;
+                for (file, count) in &processed_files {
+                    state.mark_processed(file, *count as u64)?;
+                }
                 state.save(&state_path)?;
             }
         }
+    } else {
+        // 顺序路径
+        let mut exporter_manager = if dry_run {
+            ExporterManager::dry_run()
+        } else {
+            ExporterManager::from_config(final_cfg)?
+        };
+        exporter_manager.initialize()?;
 
-        total_records += processed;
-        if limit.is_some_and(|l| total_records >= l) {
-            break;
+        if dry_run {
+            info!("Dry-run: parsing SQL logs without writing output...");
+        } else {
+            info!("Parsing and exporting SQL logs...");
+        }
+
+        // 跨文件复用分配：process_log_file 在每次调用时 clear() 而不是重建
+        let mut params_buffer = ParamBuffer::default();
+        // 预分配 1024 字节：避免首条参数化 SQL 触发初始堆分配
+        let mut ns_scratch: Vec<u8> = Vec::with_capacity(1024);
+
+        for (idx, log_file) in log_files.iter().enumerate() {
+            if interrupted.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let remaining = limit.map(|l| l.saturating_sub(total_records));
+            if remaining == Some(0) {
+                break;
+            }
+
+            if let Some(state) = &resume_state {
+                if state.is_processed(log_file) {
+                    skipped_files += 1;
+                    pb.println(format!(
+                        "{} [{}/{}] {} — skipped (already processed)",
+                        color::dim("⏭"),
+                        idx + 1,
+                        log_files.len(),
+                        log_file.display(),
+                    ));
+                    continue;
+                }
+            }
+
+            let processed = process_log_file(
+                &log_file.to_string_lossy(),
+                idx + 1,
+                log_files.len(),
+                &mut exporter_manager,
+                &pipeline,
+                &pb,
+                remaining,
+                interrupted,
+                do_normalize,
+                placeholder_override,
+                &mut params_buffer,
+                &mut ns_scratch,
+                true, // 顺序模式：每个文件开始时重置进度条
+            )?;
+
+            if !dry_run {
+                if let Some(state) = &mut resume_state {
+                    state.mark_processed(log_file, processed as u64)?;
+                    state.save(&state_path)?;
+                }
+            }
+
+            total_records += processed;
+            if limit.is_some_and(|l| total_records >= l) {
+                break;
+            }
+        }
+
+        exporter_manager.finalize()?;
+        if !quiet {
+            exporter_manager.log_stats();
         }
     }
 
     pb.finish_and_clear();
 
-    exporter_manager.finalize()?;
-
     if !quiet {
         let elapsed = total_start.elapsed().as_secs_f64();
-        let mode_label = if dry_run { " [dry-run]" } else { "" };
+        let mode_label = if dry_run {
+            " [dry-run]"
+        } else if use_parallel {
+            " [parallel]"
+        } else {
+            ""
+        };
         let skip_label = if skipped_files > 0 {
             format!(", {} skipped", color::dim(HumanCount(skipped_files as u64)))
         } else {
@@ -515,7 +784,6 @@ pub fn handle_run(
             color::green("✓"),
             color::green(HumanCount(total_records as u64)),
         );
-        exporter_manager.log_stats();
     }
 
     if interrupted.load(Ordering::Relaxed) {
