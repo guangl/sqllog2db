@@ -50,9 +50,9 @@ impl CsvExporter {
             writer: None,
             stats: ExportStats::new(),
             itoa_buf: itoa::Buffer::new(),
-            // 预分配 1 KiB：覆盖典型日志行（元数据 ~80 B + SQL ~200 B + normalized ~200 B）
+            // 预分配 2 KiB：覆盖典型日志行（元数据 ~120 B + SQL ~500 B + normalized ~500 B）
             // 避免前几条记录触发 Vec 扩容。clear() 保留容量，运行期自动适配长 SQL。
-            line_buf: Vec::with_capacity(1024),
+            line_buf: Vec::with_capacity(2048),
             normalize: true,
         }
     }
@@ -83,6 +83,16 @@ impl CsvExporter {
         normalized_sql: Option<&str>,
     ) -> Result<()> {
         line_buf.clear();
+        // SQL 길이 기반 동적 reserve: clear() 후 len==0 이므로
+        // reserve(n)은 capacity >= n을 보장한다. capacity가 이미 충분하면 no-op(비교 1회).
+        // 공식: 고정 메타 ~120B + SQL + optional normalized SQL + CSV 오버헤드
+        let sql_len = pm.sql.len();
+        let ns_len = if normalize {
+            normalized_sql.map_or(0, str::len)
+        } else {
+            0
+        };
+        line_buf.reserve(120 + sql_len + ns_len + 8);
 
         line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
         line_buf.push(b',');

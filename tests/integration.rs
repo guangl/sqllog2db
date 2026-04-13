@@ -704,7 +704,7 @@ fn test_handle_validate_with_filters_all_fields() {
                     ..Default::default()
                 },
                 indicators: IndicatorFilters {
-                    exec_ids: Some(vec![42]),
+                    exec_ids: Some([42_i64].into_iter().collect()),
                     min_runtime_ms: Some(100),
                     min_row_count: Some(10),
                 },
@@ -803,7 +803,7 @@ fn test_handle_run_with_transaction_filters_prescans() {
         enable: true,
         meta: MetaFilters::default(),
         indicators: dm_database_sqllog2db::features::filters::IndicatorFilters {
-            exec_ids: Some(vec![0, 1, 2]),
+            exec_ids: Some([0_i64, 1, 2].into_iter().collect()),
             min_runtime_ms: None,
             min_row_count: None,
         },

@@ -29,6 +29,14 @@ where
     Ok(v.map(|items| items.into_iter().map(CompactString::from).collect()))
 }
 
+fn vec_to_i64_hashset<'de, D>(deserializer: D) -> Result<Option<AHashSet<i64>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v: Option<Vec<i64>> = Option::deserialize(deserializer)?;
+    Ok(v.map(|items| items.into_iter().collect()))
+}
+
 /// 过滤器配置 (重构后)
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FiltersFeature {
@@ -64,7 +72,10 @@ pub struct MetaFilters {
 /// 指标过滤器 (Transaction-level)
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct IndicatorFilters {
-    pub exec_ids: Option<Vec<i64>>,
+    /// 使用 `AHashSet<i64>` 代替 `Vec<i64>`，将 `matches()` 热路径中的
+    /// `.contains()` 从 O(n) 降为 O(1)。
+    #[serde(default, deserialize_with = "vec_to_i64_hashset")]
+    pub exec_ids: Option<AHashSet<i64>>,
     pub min_runtime_ms: Option<u32>,
     pub min_row_count: Option<u32>,
 }
@@ -329,7 +340,7 @@ mod tests {
     #[test]
     fn test_has_transaction_filters_with_exec_ids() {
         let mut f = make_feature(true);
-        f.indicators.exec_ids = Some(vec![1, 2, 3]);
+        f.indicators.exec_ids = Some([1_i64, 2, 3].into_iter().collect());
         assert!(f.has_transaction_filters());
     }
 
@@ -442,7 +453,7 @@ mod tests {
     #[test]
     fn test_indicator_matches_exec_id() {
         let f = IndicatorFilters {
-            exec_ids: Some(vec![42]),
+            exec_ids: Some([42_i64].into_iter().collect()),
             min_runtime_ms: None,
             min_row_count: None,
         };

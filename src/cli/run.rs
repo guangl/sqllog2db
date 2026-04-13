@@ -254,25 +254,23 @@ fn process_log_file(
     Ok(records_in_file)
 }
 
-fn scan_log_file_for_trxids(
-    file_path: &str,
-    cfg: &Config,
-    remaining_exec_ids: &mut AHashSet<i64>,
-    found_trxids: &mut AHashSet<CompactString>,
-) {
+/// 扫描单个日志文件，返回满足事务级过滤条件的 `(trxid, exec_id)` 列表。
+///
+/// 文件内部使用 `par_iter()` 并行处理各行，无共享可变状态，
+/// 可被上层跨文件的 `par_iter()` 安全调用（两级 rayon 嵌套并行）。
+fn scan_log_file_for_matches(file_path: &str, cfg: &Config) -> Vec<(CompactString, Option<i64>)> {
     use rayon::prelude::*;
 
     let Ok(parser) = LogParser::from_path(file_path) else {
-        return;
+        return Vec::new();
     };
     let filters = match &cfg.features.filters {
         Some(f) if f.has_transaction_filters() => f,
-        _ => return,
+        _ => return Vec::new(),
     };
 
-    // 并行扫描：各 CPU 核心独立处理文件分片，收集匹配的 (trxid, exec_id)
     // trxid 用 CompactString：数字字符串 ≤23 字节，内联存储，无堆分配。
-    let matched: Vec<(CompactString, Option<i64>)> = parser
+    parser
         .par_iter()
         .filter_map(std::result::Result::ok)
         .filter_map(|result| {
@@ -297,54 +295,32 @@ fn scan_log_file_for_trxids(
                 None
             }
         })
-        .collect();
-
-    for (trxid, exec_id) in matched {
-        found_trxids.insert(trxid);
-        if let Some(id) = exec_id {
-            remaining_exec_ids.remove(&id);
-        }
-    }
+        .collect()
 }
 
 fn scan_for_trxids_by_transaction_filters(
     log_files: &[std::path::PathBuf],
     cfg: &Config,
 ) -> AHashSet<CompactString> {
-    let mut found_trxids = AHashSet::default();
-    let mut remaining_exec_ids: AHashSet<i64> = cfg
-        .features
-        .filters
-        .as_ref()
-        .and_then(|f| f.indicators.exec_ids.as_deref())
-        .unwrap_or_default()
-        .iter()
-        .copied()
-        .collect();
+    use rayon::prelude::*;
 
     eprintln!(
         "Pre-scanning {} files for transaction-level filters...",
         log_files.len()
     );
 
-    for log_file in log_files {
-        scan_log_file_for_trxids(
-            &log_file.to_string_lossy(),
-            cfg,
-            &mut remaining_exec_ids,
-            &mut found_trxids,
-        );
-        if remaining_exec_ids.is_empty()
-            && !cfg.features.filters.as_ref().is_some_and(|f| {
-                f.indicators.min_runtime_ms.is_some()
-                    || f.indicators.min_row_count.is_some()
-                    || f.sql.has_filters()
-            })
-        {
-            break;
-        }
-    }
-    found_trxids
+    // 跨文件并行预扫描：外层 par_iter() 跨文件调度，
+    // 内层 scan_log_file_for_matches 内部已使用 par_iter()。
+    // rayon 的 work-stealing 调度器自动处理两级嵌套并行。
+    // 以全并行换取了原来基于 remaining_exec_ids 的逐文件早退，
+    // 对 min_runtime_ms / sql 等常见场景无影响（本就需要扫全部文件）。
+    let matched: Vec<CompactString> = log_files
+        .par_iter()
+        .flat_map(|file| scan_log_file_for_matches(&file.to_string_lossy(), cfg))
+        .map(|(trxid, _)| trxid)
+        .collect();
+
+    matched.into_iter().collect()
 }
 
 fn make_progress_bar(quiet: bool, interval_ms: u64) -> ProgressBar {
