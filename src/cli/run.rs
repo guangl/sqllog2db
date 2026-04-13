@@ -254,11 +254,14 @@ fn process_log_file(
     Ok(records_in_file)
 }
 
-/// 扫描单个日志文件，返回满足事务级过滤条件的 `(trxid, exec_id)` 列表。
+/// 扫描单个日志文件，返回满足事务级过滤条件的去重 `trxid` 列表。
 ///
 /// 文件内部使用 `par_iter()` 并行处理各行，无共享可变状态，
 /// 可被上层跨文件的 `par_iter()` 安全调用（两级 rayon 嵌套并行）。
-fn scan_log_file_for_matches(file_path: &str, cfg: &Config) -> Vec<(CompactString, Option<i64>)> {
+///
+/// 结果在文件内去重：同一事务 ID 可能出现在数百条记录中，
+/// 提前去重可显著减少跨文件合并时的中间数据量。
+fn scan_log_file_for_matches(file_path: &str, cfg: &Config) -> Vec<CompactString> {
     use rayon::prelude::*;
 
     let Ok(parser) = LogParser::from_path(file_path) else {
@@ -270,32 +273,33 @@ fn scan_log_file_for_matches(file_path: &str, cfg: &Config) -> Vec<(CompactStrin
     };
 
     // trxid 用 CompactString：数字字符串 ≤23 字节，内联存储，无堆分配。
-    parser
+    // 收集到 HashSet 实现文件内去重，rayon 支持并行 collect 到 std::HashSet。
+    let trxids: std::collections::HashSet<CompactString> = parser
         .par_iter()
         .filter_map(std::result::Result::ok)
         .filter_map(|result| {
-            let mut matched_exec_id: Option<i64> = None;
-            let mut sql_matched = false;
+            let mut matched = false;
 
             if let Some(ind) = result.parse_indicators() {
                 if filters
                     .indicators
                     .matches(ind.exec_id, ind.exectime, i64::from(ind.rowcount))
                 {
-                    matched_exec_id = Some(ind.exec_id);
+                    matched = true;
                 }
             }
-            if matched_exec_id.is_none() && filters.sql.has_filters() {
-                sql_matched = filters.sql.matches(result.body().as_ref());
+            if !matched && filters.sql.has_filters() {
+                matched = filters.sql.matches(result.body().as_ref());
             }
-            if matched_exec_id.is_some() || sql_matched {
+            if matched {
                 let meta = result.parse_meta();
-                Some((CompactString::from(meta.trxid.as_ref()), matched_exec_id))
+                Some(CompactString::from(meta.trxid.as_ref()))
             } else {
                 None
             }
         })
-        .collect()
+        .collect();
+    trxids.into_iter().collect()
 }
 
 fn scan_for_trxids_by_transaction_filters(
@@ -317,7 +321,6 @@ fn scan_for_trxids_by_transaction_filters(
     let matched: Vec<CompactString> = log_files
         .par_iter()
         .flat_map(|file| scan_log_file_for_matches(&file.to_string_lossy(), cfg))
-        .map(|(trxid, _)| trxid)
         .collect();
 
     matched.into_iter().collect()
@@ -378,8 +381,10 @@ fn concat_csv_parts(
         // 第一个 part（且非追加模式）保留 header；其余情况跳过 header 行
         let skip_header = idx > 0 || append_to_existing;
         if skip_header {
-            let mut discard = String::new();
-            std::io::BufRead::read_line(&mut reader, &mut discard)?;
+            // 用 Vec<u8> + read_until 而非 String + read_line：
+            // 省去 UTF-8 验证，预分配避免 header 超 capacity 时的二次分配。
+            let mut discard = Vec::with_capacity(256);
+            std::io::BufRead::read_until(&mut reader, b'\n', &mut discard)?;
         }
 
         std::io::copy(&mut reader, &mut writer)?;
