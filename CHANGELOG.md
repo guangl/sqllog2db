@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.5] - 2026-04-13
+
+### Changed
+
+- **依赖升级**：`dm-database-parser-sqllog` 从 `0.9.0` 升级至 `0.9.1`，解析层单线程性能提升约 20.5%
+  - 上游优化：`find_indicators_split()` 中的 `memrchr` 循环改为预构建 SIMD `FinderRev`
+  - UTF-8 文件跳过每条记录的 `simdutf8` 重复校验（已在 `from_path` 阶段完成）
+  - `EXECTIME` 浮点解析从 `str::parse::<f32>()` 改为 `fast-float`
+- **`:N` 占位符数字解析优化**：`count_placeholders` 与 `apply_params_into` 中的序号解析从 `from_utf8 + str::parse::<usize>()` 改为直接字节累加，消除 UTF-8 验证和字符串 parse 开销
+
+### Performance
+
+- `filters/trxid_small`：**−7.5%** 耗时（约提升 8.1%）
+- `filters/trxid_large`：**−7.6%** 耗时（约提升 8.2%）
+- `filters/no_pipeline`：**−2.0%** 耗时
+- `filters/pipeline_passthrough`：**−1.7%** 耗时
+- `filters/indicator_prescan`：**−2.3%** 耗时
+
+---
+
 ## [0.10.2] - 2026-04-12
 
 ### Changed

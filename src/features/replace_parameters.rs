@@ -158,12 +158,11 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
                     j += 1;
                 }
                 if j > start {
-                    if let Some(n) = std::str::from_utf8(&bytes[start..j])
-                        .ok()
-                        .and_then(|s| s.parse::<usize>().ok())
-                    {
-                        max_colon_ordinal = max_colon_ordinal.max(n);
-                    }
+                    // `:N` 内的字节均为 ASCII 数字（已 while 保证），直接累加避免 from_utf8 + parse 开销
+                    let n: usize = bytes[start..j]
+                        .iter()
+                        .fold(0usize, |acc, &b| acc * 10 + (b - b'0') as usize);
+                    max_colon_ordinal = max_colon_ordinal.max(n);
                     i = j;
                 } else {
                     i += 1;
@@ -263,10 +262,10 @@ fn apply_params_into(sql: &str, params: &[ParamValue], colon_style: bool, out: &
                     j += 1;
                 }
                 if j > start {
-                    let n: usize = std::str::from_utf8(&bytes[start..j])
-                        .unwrap_or("0")
-                        .parse()
-                        .unwrap_or(0);
+                    // `:N` 内的字节均为 ASCII 数字，直接累加避免 from_utf8 + parse 开销
+                    let n: usize = bytes[start..j]
+                        .iter()
+                        .fold(0usize, |acc, &b| acc * 10 + (b - b'0') as usize);
                     // :N is 1-indexed
                     if let Some(p) = n.checked_sub(1).and_then(|idx| params.get(idx)) {
                         out.extend_from_slice(p.as_sql().as_bytes());

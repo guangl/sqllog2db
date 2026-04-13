@@ -40,7 +40,7 @@ Input .log files (sqllogs/)
 
 ### Key Modules
 
-- **`cli/run.rs`** — main orchestration: loads config, builds pipeline, pre-scans for transaction filters, processes files in 5000-record batches
+- **`cli/run.rs`** — main orchestration: loads config, builds pipeline, pre-scans for transaction filters, streams records file by file
 - **`exporter/mod.rs`** — `Exporter` trait + `ExporterManager` factory; only one exporter is active per run (priority: CSV > SQLite)
 - **`features/mod.rs`** — `LogProcessor` trait + `Pipeline`; `pipeline.is_empty()` enables a zero-overhead fast path when no filters are configured
 - **`features/filters.rs`** — two-pass design: pre-scan finds matching transaction IDs, main pass applies all filters
@@ -51,8 +51,8 @@ Input .log files (sqllogs/)
 - Single-threaded streaming — constant memory regardless of file size
 - 16MB `BufWriter` + `itoa` crate for zero-allocation CSV formatting
 - `pipeline.is_empty()` check in the hot loop avoids filter overhead when disabled
-- Binary: LTO + strip + `panic=abort` + `opt-level=z`
-- Benchmark: ~1.55M records/sec on a 1.1GB file
+- Binary: LTO (`fat`) + strip + `panic=abort` + `opt-level=3`
+- Benchmark: ~5.2M records/sec (synthetic CSV, criterion); ~1.55M records/sec on a real 1.1GB file
 
 ### Error Handling
 

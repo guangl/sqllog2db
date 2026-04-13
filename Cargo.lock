@@ -649,12 +649,13 @@ dependencies = [
 
 [[package]]
 name = "dm-database-parser-sqllog"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "268d63d37b37470eedb8c0dbb03fa5a356d32b21dbdc4a5e7d1ec96ac74ac4ab"
+checksum = "fa883d22bb9979c74d2fd55c9aa21be750d26b5c586d5656a75cf40efa2f8d3e"
 dependencies = [
  "atoi",
  "encoding",
+ "fast-float",
  "memchr",
  "memmap2",
  "rayon",
@@ -869,6 +870,12 @@ name = "fallible-streaming-iterator"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
+name = "fast-float"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
 
 [[package]]
 name = "fastrand"
