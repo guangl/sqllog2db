@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.7] - 2026-04-13
+
+### Fixed
+
+- **参数替换 UTF-8 异常**：`compute_normalized` 遇到无效 UTF-8 输出时不再 panic，改为输出 `warn` 日志并跳过该记录，避免在 GB18030 编码文件上崩溃
+
+---
+
 ## [0.10.5] - 2026-04-13
 
 ### Changed

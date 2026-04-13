@@ -337,8 +337,8 @@ fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> String {
 ///
 /// # Panics
 ///
-/// Will not panic in practice: the substituted SQL is valid UTF-8. The `expect`
-/// is an internal consistency assertion.
+/// Returns `None` if the substituted SQL contains invalid UTF-8 (can happen when the
+/// upstream parser mis-detects file encoding on GB18030 files with an ASCII-only header).
 pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     record: &dm_database_parser_sqllog::Sqllog<'_>,
     meta: &dm_database_parser_sqllog::MetaParts<'_>,
@@ -401,7 +401,15 @@ pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     }
 
     apply_params_into(pm_sql, &params, colon_style, scratch);
-    Some(std::str::from_utf8(scratch).expect("compute_normalized produced invalid UTF-8"))
+    match std::str::from_utf8(scratch) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            log::warn!(
+                "replace_parameters: invalid UTF-8 in normalized SQL ({e}), skipping record"
+            );
+            None
+        }
+    }
 }
 
 #[cfg(test)]
