@@ -844,6 +844,84 @@ fn test_handle_show_config_integration() {
     handle_show_config(&cfg, "/path/to/config.toml", false);
 }
 
+// ── parallel CSV tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_handle_run_parallel_csv_multiple_files() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    // Create 3 log files to trigger the parallel path
+    write_test_log(&log_dir.join("a.log"), 10);
+    write_test_log(&log_dir.join("b.log"), 10);
+    write_test_log(&log_dir.join("c.log"), 10);
+
+    let csv_file = dir.path().join("out.csv");
+    let cfg = make_run_config(&log_dir, &csv_file);
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    // jobs=2, multiple files, no limit, CSV exporter → triggers process_csv_parallel
+    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 2).unwrap();
+
+    let content = std::fs::read_to_string(&csv_file).unwrap();
+    let data_lines = content.lines().count().saturating_sub(1);
+    assert_eq!(data_lines, 30, "expected 30 records from 3 × 10");
+}
+
+#[test]
+fn test_handle_run_parallel_csv_with_resume() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let log_dir = dir.path().join("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    write_test_log(&log_dir.join("a.log"), 5);
+    write_test_log(&log_dir.join("b.log"), 5);
+
+    let csv_file = dir.path().join("out.csv");
+    let state_file = dir.path().join("state.toml");
+    let cfg = make_run_config(&log_dir, &csv_file);
+    let interrupted = Arc::new(AtomicBool::new(false));
+
+    // First parallel run: processes both files and records state
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_file.to_str().unwrap()),
+        2,
+    )
+    .unwrap();
+    assert!(state_file.exists());
+
+    // Second run: all files already processed → output empty (no data rows)
+    let csv2 = dir.path().join("out2.csv");
+    let mut cfg2 = make_run_config(&log_dir, &csv2);
+    cfg2.exporter.csv.as_mut().unwrap().append = true;
+    cfg2.exporter.csv.as_mut().unwrap().overwrite = false;
+    handle_run(
+        &cfg2,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        true,
+        Some(state_file.to_str().unwrap()),
+        2,
+    )
+    .unwrap();
+    // csv2 should have at most a header (all files skipped)
+    let rows = if csv2.exists() {
+        std::fs::read_to_string(&csv2).unwrap().lines().count()
+    } else {
+        0
+    };
+    assert!(rows <= 1, "expected ≤1 rows in second run, got {rows}");
+}
+
 // ── performance baseline ─────────────────────────────────────────────────────
 //
 // Lightweight sanity check — NOT a substitute for `cargo bench`.

@@ -287,3 +287,83 @@ fn print_json(
         serde_json::to_string_pretty(&output).unwrap_or_default()
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_by_parse_count() {
+        assert_eq!(SortBy::parse("count"), Some(SortBy::Count));
+    }
+
+    #[test]
+    fn test_sort_by_parse_exec() {
+        assert_eq!(SortBy::parse("exec"), Some(SortBy::Exec));
+    }
+
+    #[test]
+    fn test_sort_by_parse_invalid() {
+        assert_eq!(SortBy::parse("unknown"), None);
+        assert_eq!(SortBy::parse(""), None);
+    }
+
+    #[test]
+    fn test_fp_map_len_before_filter() {
+        let entries = vec![
+            DigestEntry {
+                rank: 1,
+                fingerprint: "fp1".into(),
+                count: 5,
+                total_exec_ms: 10.0,
+                avg_exec_ms: 2.0,
+                max_exec_ms: 5.0,
+                example_sql: "SELECT ?".into(),
+                first_seen: "2025-01-01".into(),
+            },
+            DigestEntry {
+                rank: 2,
+                fingerprint: "fp2".into(),
+                count: 3,
+                total_exec_ms: 6.0,
+                avg_exec_ms: 2.0,
+                max_exec_ms: 3.0,
+                example_sql: "INSERT ?".into(),
+                first_seen: "2025-01-02".into(),
+            },
+        ];
+        assert_eq!(fp_map_len_before_filter(&entries), 2);
+    }
+
+    #[test]
+    fn test_fingerprint_accumulator_default() {
+        let acc = FingerprintAccumulator::default();
+        assert_eq!(acc.count, 0);
+        assert!(acc.total_exec_ms.abs() < f64::EPSILON);
+        assert!(acc.max_exec_ms.abs() < f32::EPSILON);
+        assert!(acc.example_sql.is_empty());
+        assert!(acc.first_seen.is_empty());
+    }
+
+    #[test]
+    fn test_print_table_empty() {
+        // empty entries → prints "No SQL fingerprints found."
+        print_table(&[], SortBy::Count);
+    }
+
+    #[test]
+    fn test_print_table_exec_sort() {
+        let entry = DigestEntry {
+            rank: 1,
+            fingerprint: "SELECT ?".into(),
+            count: 2,
+            total_exec_ms: 4.0,
+            avg_exec_ms: 2.0,
+            max_exec_ms: 3.0,
+            example_sql: "SELECT 1".into(),
+            first_seen: "2025-01-01".into(),
+        };
+        // SortBy::Exec branch → sort_label = "total exec time"
+        print_table(&[entry], SortBy::Exec);
+    }
+}

@@ -222,4 +222,33 @@ mod tests {
             assert!(init_logging(&cfg, false).is_ok());
         }
     }
+
+    #[test]
+    fn test_init_logging_with_stdout() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let cfg = make_logging_config(dir.path(), "warn");
+        // log_to_stdout=true exercises the stdout write path in SimpleLogger::log
+        let result = init_logging(&cfg, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_log_level_all() {
+        for level in &["trace", "debug", "info", "warn", "error"] {
+            assert!(parse_log_level(level).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_parse_log_level_uppercase() {
+        // parse_log_level lowercases, so uppercase should also work
+        assert!(parse_log_level("INFO").is_ok());
+        assert!(parse_log_level("DEBUG").is_ok());
+    }
+
+    #[test]
+    fn test_parse_log_level_invalid() {
+        assert!(parse_log_level("verbose").is_err());
+        assert!(parse_log_level("").is_err());
+    }
 }

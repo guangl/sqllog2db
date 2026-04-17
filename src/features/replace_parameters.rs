@@ -586,4 +586,58 @@ mod tests {
         assert_eq!(count, 0);
         assert!(!colon_style);
     }
+
+    #[test]
+    fn test_count_placeholders_unclosed_string() {
+        // Unclosed string literal — covers the `None` branch in the inner loop
+        let (count, _) = count_placeholders("SELECT 'unclosed");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_count_placeholders_escaped_quote() {
+        // SQL with '' (escaped quote inside string) — covers the '' escape branch
+        let (count, _) = count_placeholders("WHERE name = 'O''Brien' AND id = ?");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_count_placeholders_colon_not_followed_by_digit() {
+        // ':' not followed by digits → i += 1 branch (line 168)
+        let (count, colon_style) = count_placeholders("SELECT a::text");
+        assert_eq!(count, 0);
+        assert!(!colon_style);
+    }
+
+    #[test]
+    fn test_apply_params_empty_params_returns_sql_unchanged() {
+        // Empty params list → early return with sql copy (lines 197-198)
+        let result = apply_params("SELECT * FROM t", &[], false);
+        assert_eq!(result, "SELECT * FROM t");
+    }
+
+    #[test]
+    fn test_apply_params_with_string_literal_verbatim_copy() {
+        // String literal in SQL is copied verbatim, ? inside is NOT replaced
+        let params = vec![bare("42")];
+        let result = apply_params("WHERE code = '?' AND id = ?", &params, false);
+        assert_eq!(result, "WHERE code = '?' AND id = 42");
+    }
+
+    #[test]
+    fn test_apply_params_escaped_quote_in_literal() {
+        // '' escape inside a string literal — covers lines 242-243
+        let params = vec![bare("1")];
+        let result = apply_params("WHERE name = 'O''Brien' AND id = ?", &params, false);
+        assert_eq!(result, "WHERE name = 'O''Brien' AND id = 1");
+    }
+
+    #[test]
+    fn test_apply_params_unclosed_string_literal() {
+        // Unclosed string literal in SQL — covers lines 235-237 in apply_params_into
+        let params = vec![bare("1")];
+        let result = apply_params("SELECT 'unclosed", &params, false);
+        // Unclosed string: no ? found outside literal, result == original sql
+        assert_eq!(result, "SELECT 'unclosed");
+    }
 }

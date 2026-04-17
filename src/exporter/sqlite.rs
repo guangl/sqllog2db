@@ -365,4 +365,145 @@ mod tests {
             .unwrap();
         assert_eq!(ns, Some("SELECT * FROM t WHERE id=?".to_string()));
     }
+
+    #[test]
+    fn test_sqlite_from_config() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("cfg.db");
+        let cfg = crate::config::SqliteExporter {
+            database_url: dbfile.to_string_lossy().into_owned(),
+            table_name: "records".to_string(),
+            overwrite: true,
+            append: false,
+        };
+        let mut exporter = SqliteExporter::from_config(&cfg);
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap();
+        assert!(dbfile.exists());
+    }
+
+    #[test]
+    fn test_sqlite_export_method() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("export.db");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            exporter.initialize().unwrap();
+            for r in &records {
+                // Use export() instead of export_one_normalized
+                exporter.export(r).unwrap();
+            }
+            exporter.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_sqlite_export_one_preparsed() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("preparsed.db");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            exporter.initialize().unwrap();
+            for r in &records {
+                let meta = r.parse_meta();
+                let pm = r.parse_performance_metrics();
+                exporter.export_one_preparsed(r, &meta, &pm, None).unwrap();
+            }
+            exporter.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_sqlite_stats_snapshot() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("stats.db");
+        write_test_log(&logfile, 4);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        let mut exporter =
+            SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+        exporter.initialize().unwrap();
+        for r in &records {
+            exporter.export(r).unwrap();
+        }
+        let snap = exporter.stats_snapshot().unwrap();
+        assert_eq!(snap.exported, 4);
+        exporter.finalize().unwrap();
+    }
+
+    #[test]
+    fn test_sqlite_debug_format() {
+        let exporter =
+            SqliteExporter::new("/tmp/debug.db".to_string(), "tbl".to_string(), true, false);
+        let s = format!("{exporter:?}");
+        assert!(s.contains("SqliteExporter"));
+    }
+
+    #[test]
+    fn test_sqlite_append_mode() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("append.db");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        // First run: create table with 3 rows
+        {
+            let mut e =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), false, false);
+            e.initialize().unwrap();
+            for r in &records {
+                e.export(r).unwrap();
+            }
+            e.finalize().unwrap();
+        }
+
+        // Second run with append=true: adds 3 more rows
+        {
+            let mut e =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), false, true);
+            e.initialize().unwrap();
+            for r in &records {
+                e.export(r).unwrap();
+            }
+            e.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 6);
+    }
 }

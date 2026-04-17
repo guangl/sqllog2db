@@ -479,4 +479,62 @@ file = "out.csv"
         assert_eq!(cfg.sqllog.path, "sqllogs");
         assert_eq!(cfg.exporter.csv.unwrap().file, "out.csv");
     }
+
+    #[test]
+    fn test_from_file_invalid_toml_returns_error() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("bad.toml");
+        std::fs::write(&path, "not valid toml ][[").unwrap();
+        let result = Config::from_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_overrides_csv_append() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.csv.append=true".into()])
+            .unwrap();
+        assert!(cfg.exporter.csv.unwrap().append);
+    }
+
+    #[test]
+    fn test_apply_overrides_sqlite_table_name() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.sqlite.table_name=my_table".into()])
+            .unwrap();
+        assert_eq!(cfg.exporter.sqlite.unwrap().table_name, "my_table");
+    }
+
+    #[test]
+    fn test_apply_overrides_sqlite_overwrite() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.sqlite.overwrite=false".into()])
+            .unwrap();
+        assert!(!cfg.exporter.sqlite.unwrap().overwrite);
+    }
+
+    #[test]
+    fn test_apply_overrides_sqlite_append() {
+        let mut cfg = default_config();
+        cfg.apply_overrides(&["exporter.sqlite.append=true".into()])
+            .unwrap();
+        assert!(cfg.exporter.sqlite.unwrap().append);
+    }
+
+    #[test]
+    fn test_default_logging_config_values() {
+        let cfg = LoggingConfig::default();
+        assert_eq!(cfg.file, "logs/sqllog2db.log");
+        assert_eq!(cfg.level, "info");
+        assert_eq!(cfg.retention_days, 7);
+    }
+
+    #[test]
+    fn test_default_sqlite_exporter_values() {
+        let cfg = SqliteExporter::default();
+        assert_eq!(cfg.table_name, "sqllog_records");
+        assert_eq!(cfg.database_url, "export/sqllog2db.db");
+        assert!(cfg.overwrite);
+        assert!(!cfg.append);
+    }
 }
