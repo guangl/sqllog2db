@@ -92,6 +92,13 @@ impl SqllogParser {
 
     /// 使用 glob 模式扫描日志文件
     fn scan_glob(&self, pattern: &str) -> Result<Vec<PathBuf>> {
+        // Windows 路径用反斜杠，glob crate 只接受正斜杠，统一替换
+        #[cfg(windows)]
+        let pattern_normalized = pattern.replace('\\', "/");
+        #[cfg(not(windows))]
+        let pattern_normalized = pattern.to_owned();
+        let pattern = pattern_normalized.as_str();
+
         let mut log_files: Vec<PathBuf> = glob::glob(pattern)
             .map_err(|e| {
                 Error::Parser(ParserError::InvalidPath {

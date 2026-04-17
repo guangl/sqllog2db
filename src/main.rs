@@ -184,12 +184,12 @@ fn run() -> Result<()> {
             cfg.apply_overrides(&all_set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
             cfg.validate()?;
-            info!("Configuration validation passed");
 
             apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             // run 命令使用进度条，日志只写文件不写 stdout
             logging::init_logging(&cfg.logging, false)?;
             info!("Application started");
+            info!("Configuration validation passed");
 
             // preflight：日志目录 + 输出可写性
             if !*dry_run {
@@ -226,12 +226,12 @@ fn run() -> Result<()> {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             cfg.validate()?;
-            info!("Configuration validation passed");
 
             apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             // validate 命令无进度条，日志同时输出到 stdout
             logging::init_logging(&cfg.logging, true)?;
             info!("Application started");
+            info!("Configuration validation passed");
 
             cli::validate::handle_validate(&cfg);
             Ok(())
