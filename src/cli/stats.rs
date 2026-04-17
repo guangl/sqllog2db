@@ -306,7 +306,7 @@ pub fn handle_stats(
     let rate = total_records / elapsed.as_secs().max(1);
 
     let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
-    slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
+    slow_entries.sort_by_key(|e| std::cmp::Reverse(e.exec_time_bits));
 
     let group_sections = build_group_sections(&group_fields, group_maps);
     let time_bucket_section = build_bucket_section(bucket_field, bucket_map);
