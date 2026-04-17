@@ -48,9 +48,12 @@ pub struct FiltersFeature {
     /// 指标过滤器 (事务级: 命中即保留整笔事务 - 需要预扫描)
     #[serde(default)]
     pub indicators: IndicatorFilters,
-    /// SQL 内容过滤器 (事务级: 未来扩展)
+    /// SQL 内容过滤器 (事务级: 预扫描阶段匹配 SQL，保留整笔事务)
     #[serde(default)]
     pub sql: SqlFilters,
+    /// SQL 记录级过滤器 (记录级: 在主扫描阶段对每条 DML 记录的 SQL 独立判断)
+    #[serde(default)]
+    pub record_sql: SqlFilters,
 }
 
 /// 元数据过滤器 (Record-level)
@@ -99,6 +102,7 @@ impl FiltersFeature {
             || self.meta.has_filters()
             || self.indicators.has_filters()
             || self.sql.has_filters()
+            || self.record_sql.has_filters()
     }
 
     /// 检查是否提供了需要预扫描的过滤器 (Transaction-level)
@@ -278,6 +282,7 @@ mod tests {
             meta: MetaFilters::default(),
             indicators: IndicatorFilters::default(),
             sql: SqlFilters::default(),
+            record_sql: SqlFilters::default(),
         }
     }
 

@@ -201,6 +201,7 @@ mod tests {
                     placeholders: vec!["?".to_string()],
                 }),
                 filters: None,
+                fields: None,
             },
             ..Default::default()
         };
@@ -216,6 +217,7 @@ mod tests {
                     enable: true,
                     ..Default::default()
                 }),
+                fields: None,
             },
             ..Default::default()
         };

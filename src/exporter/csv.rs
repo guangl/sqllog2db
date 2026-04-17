@@ -29,6 +29,7 @@ pub struct CsvExporter {
     itoa_buf: itoa::Buffer,
     line_buf: Vec<u8>,
     pub(crate) normalize: bool,
+    pub(crate) field_mask: crate::features::FieldMask,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -54,6 +55,7 @@ impl CsvExporter {
             // 避免前几条记录触发 Vec 扩容。clear() 保留容量，运行期自动适配长 SQL。
             line_buf: Vec::with_capacity(2048),
             normalize: true,
+            field_mask: crate::features::FieldMask::ALL,
         }
     }
 
@@ -81,11 +83,9 @@ impl CsvExporter {
         path: &Path,
         normalize: bool,
         normalized_sql: Option<&str>,
+        field_mask: crate::features::FieldMask,
     ) -> Result<()> {
         line_buf.clear();
-        // SQL 길이 기반 동적 reserve: clear() 후 len==0 이므로
-        // reserve(n)은 capacity >= n을 보장한다. capacity가 이미 충분하면 no-op(비교 1회).
-        // 공식: 고정 메타 ~120B + SQL + optional normalized SQL + CSV 오버헤드
         let sql_len = pm.sql.len();
         let ns_len = if normalize {
             normalized_sql.map_or(0, str::len)
@@ -94,49 +94,144 @@ impl CsvExporter {
         };
         line_buf.reserve(120 + sql_len + ns_len + 8);
 
-        line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.username.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.statement.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
-        line_buf.push(b',');
-        line_buf.extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
-        line_buf.push(b',');
-        if let Some(tag) = &sqllog.tag {
-            line_buf.extend_from_slice(tag.as_ref().as_bytes());
-        }
-        line_buf.push(b',');
-        line_buf.push(b'"');
-        write_csv_escaped(line_buf, pm.sql.as_bytes());
-        line_buf.push(b'"');
-        line_buf.push(b',');
-        if pm.exec_id != 0 || pm.exectime > 0.0 {
-            line_buf.extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
+        // 全量掩码快速路径：所有字段直接顺序写入，无分支判断
+        if field_mask == crate::features::FieldMask::ALL {
+            line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
             line_buf.push(b',');
-            line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
+            line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
             line_buf.push(b',');
-            line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
+            line_buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(meta.username.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(meta.statement.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
+            line_buf.push(b',');
+            line_buf.extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
+            line_buf.push(b',');
+            if let Some(tag) = &sqllog.tag {
+                line_buf.extend_from_slice(tag.as_ref().as_bytes());
+            }
+            line_buf.push(b',');
+            line_buf.push(b'"');
+            write_csv_escaped(line_buf, pm.sql.as_bytes());
+            line_buf.push(b'"');
+            line_buf.push(b',');
+            if pm.exec_id != 0 || pm.exectime > 0.0 {
+                line_buf.extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
+                line_buf.push(b',');
+                line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
+                line_buf.push(b',');
+                line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
+            } else {
+                line_buf.extend_from_slice(b",,");
+            }
+            if normalize {
+                line_buf.push(b',');
+                if let Some(ns) = normalized_sql {
+                    line_buf.push(b'"');
+                    write_csv_escaped(line_buf, ns.as_bytes());
+                    line_buf.push(b'"');
+                }
+            }
         } else {
-            line_buf.extend_from_slice(b",,");
-        }
+            // 投影路径：按 field_mask 选择性写入字段
+            let mut need_sep = false;
 
-        if normalize {
-            line_buf.push(b',');
-            if let Some(ns) = normalized_sql {
+            macro_rules! w_sep {
+                () => {
+                    if need_sep {
+                        line_buf.push(b',');
+                    }
+                    need_sep = true;
+                };
+            }
+
+            if field_mask.is_active(0) {
+                w_sep!();
+                line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
+            }
+            if field_mask.is_active(1) {
+                w_sep!();
+                line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
+            }
+            if field_mask.is_active(2) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
+            }
+            if field_mask.is_active(3) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
+            }
+            if field_mask.is_active(4) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.username.as_ref().as_bytes());
+            }
+            if field_mask.is_active(5) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
+            }
+            if field_mask.is_active(6) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.statement.as_ref().as_bytes());
+            }
+            if field_mask.is_active(7) {
+                w_sep!();
+                line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
+            }
+            if field_mask.is_active(8) {
+                w_sep!();
+                line_buf.extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
+            }
+            if field_mask.is_active(9) {
+                w_sep!();
+                if let Some(tag) = &sqllog.tag {
+                    line_buf.extend_from_slice(tag.as_ref().as_bytes());
+                }
+            }
+            if field_mask.is_active(10) {
+                w_sep!();
                 line_buf.push(b'"');
-                write_csv_escaped(line_buf, ns.as_bytes());
+                write_csv_escaped(line_buf, pm.sql.as_bytes());
                 line_buf.push(b'"');
             }
+            let has_metrics = pm.exec_id != 0 || pm.exectime > 0.0;
+            if field_mask.is_active(11) {
+                w_sep!();
+                if has_metrics {
+                    line_buf.extend_from_slice(
+                        itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes(),
+                    );
+                }
+            }
+            if field_mask.is_active(12) {
+                w_sep!();
+                if has_metrics {
+                    line_buf
+                        .extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
+                }
+            }
+            if field_mask.is_active(13) {
+                w_sep!();
+                if has_metrics {
+                    line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
+                }
+            }
+            if normalize && field_mask.is_active(14) {
+                w_sep!();
+                if let Some(ns) = normalized_sql {
+                    line_buf.push(b'"');
+                    write_csv_escaped(line_buf, ns.as_bytes());
+                    line_buf.push(b'"');
+                }
+            }
+            // 消费 need_sep，避免"最后一次赋值从未被读取"的编译警告
+            let _ = need_sep;
         }
 
         line_buf.push(b'\n');
@@ -159,6 +254,7 @@ impl CsvExporter {
         path: &Path,
         normalize: bool,
         normalized_sql: Option<&str>,
+        field_mask: crate::features::FieldMask,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -172,7 +268,30 @@ impl CsvExporter {
             path,
             normalize,
             normalized_sql,
+            field_mask,
         )
+    }
+
+    /// 根据 `field_mask` 和 `normalize` 标志生成 CSV 头行
+    fn build_header(&self) -> Vec<u8> {
+        use crate::features::FIELD_NAMES;
+        let mut header = Vec::with_capacity(128);
+        let mut first = true;
+        for (i, name) in FIELD_NAMES.iter().enumerate() {
+            // 字段 14 (normalized_sql) 在 normalize=false 时跳过
+            if i == 14 && !self.normalize {
+                continue;
+            }
+            if self.field_mask.is_active(i) {
+                if !first {
+                    header.push(b',');
+                }
+                first = false;
+                header.extend_from_slice(name.as_bytes());
+            }
+        }
+        header.push(b'\n');
+        header
     }
 }
 
@@ -210,12 +329,8 @@ impl Exporter for CsvExporter {
         let mut writer = BufWriter::with_capacity(16 * 1024 * 1024, file);
 
         if !append_mode || !file_exists {
-            let header: &[u8] = if self.normalize {
-                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id,normalized_sql\n"
-            } else {
-                b"ts,ep,sess_id,thrd_id,username,trx_id,statement,appname,client_ip,tag,sql,exec_time_ms,row_count,exec_id\n"
-            };
-            writer.write_all(header).map_err(|e| {
+            let header = self.build_header();
+            writer.write_all(&header).map_err(|e| {
                 Error::Export(ExportError::WriteFailed {
                     path: self.path.clone(),
                     reason: format!("write header failed: {e}"),
@@ -242,6 +357,7 @@ impl Exporter for CsvExporter {
             &self.path,
             self.normalize,
             None,
+            self.field_mask,
         )?;
         self.stats.record_success();
         Ok(())
@@ -266,6 +382,7 @@ impl Exporter for CsvExporter {
             &self.path,
             self.normalize,
             normalized,
+            self.field_mask,
         )?;
         self.stats.record_success();
         Ok(())
@@ -294,6 +411,7 @@ impl Exporter for CsvExporter {
             &self.path,
             self.normalize,
             normalized,
+            self.field_mask,
         )?;
         self.stats.record_success();
         Ok(())

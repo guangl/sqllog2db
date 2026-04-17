@@ -3,9 +3,9 @@ use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
 use crate::exporter::{CsvExporter, ExporterManager};
-use crate::features::filters::RecordMeta;
+use crate::features::filters::{RecordMeta, SqlFilters};
 use crate::features::replace_parameters::ParamBuffer;
-use crate::features::{LogProcessor, Pipeline};
+use crate::features::{FieldMask, LogProcessor, Pipeline};
 use crate::parser::SqllogParser;
 use ahash::HashSet as AHashSet;
 use compact_str::CompactString;
@@ -113,6 +113,7 @@ fn process_log_file(
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
     reset_pb: bool,
+    sql_record_filter: Option<&SqlFilters>,
 ) -> Result<usize> {
     // 清除上一个文件留下的残余参数，同时复用已分配的 HashMap 容量。
     params_buffer.clear();
@@ -168,45 +169,53 @@ fn process_log_file(
                         // DML 或通过过滤的 PARAMS：需要完整 pm 用于导出。
                         let pm = record.parse_performance_metrics();
 
-                        // 快速路径：params_buffer 为空且当前是 DML 记录（有 tag），
-                        // 则不可能存在待替换参数，完全跳过 compute_normalized。
-                        let ns = if do_normalize
-                            && (!params_buffer.is_empty() || record.tag.is_none())
-                        {
-                            crate::features::compute_normalized(
-                                &record,
-                                &meta,
-                                pm.sql.as_ref(),
-                                params_buffer,
-                                placeholder_override,
-                                ns_scratch,
-                            )
+                        // SQL 记录级过滤：只对 DML 记录（有 tag）生效，PARAMS 记录始终通过。
+                        // 被过滤掉的 DML 直接丢弃，不影响 params_buffer。
+                        if sql_record_filter.is_some_and(|f| {
+                            record.tag.is_some() && !f.matches(pm.sql.as_ref())
+                        }) {
+                            // 记录 SQL 内容不匹配，跳过导出
                         } else {
-                            None
-                        };
+                            // 快速路径：params_buffer 为空且当前是 DML 记录（有 tag），
+                            // 则不可能存在待替换参数，完全跳过 compute_normalized。
+                            let ns = if do_normalize
+                                && (!params_buffer.is_empty() || record.tag.is_none())
+                            {
+                                crate::features::compute_normalized(
+                                    &record,
+                                    &meta,
+                                    pm.sql.as_ref(),
+                                    params_buffer,
+                                    placeholder_override,
+                                    ns_scratch,
+                                )
+                            } else {
+                                None
+                            };
 
-                        // 检查是否即将超出本文件的剩余配额
-                        if let Some(remaining) = limit {
-                            if records_in_file >= remaining {
+                            // 检查是否即将超出本文件的剩余配额
+                            if let Some(remaining) = limit {
+                                if records_in_file >= remaining {
+                                    break 'outer;
+                                }
+                            }
+
+                            exporter_manager.export_one_preparsed(&record, &meta, &pm, ns)?;
+                            records_in_file += 1;
+                            pb_pending += 1;
+
+                            // 每 4096 条更新一次进度条（减少原子操作频率）
+                            if pb_pending >= 4096 {
+                                pb.inc(pb_pending);
+                                pb_pending = 0;
+                            }
+
+                            // 每 1024 条检查一次中断信号
+                            if records_in_file.trailing_zeros() >= 10
+                                && interrupted.load(Ordering::Relaxed)
+                            {
                                 break 'outer;
                             }
-                        }
-
-                        exporter_manager.export_one_preparsed(&record, &meta, &pm, ns)?;
-                        records_in_file += 1;
-                        pb_pending += 1;
-
-                        // 每 4096 条更新一次进度条（减少原子操作频率）
-                        if pb_pending >= 4096 {
-                            pb.inc(pb_pending);
-                            pb_pending = 0;
-                        }
-
-                        // 每 1024 条检查一次中断信号
-                        if records_in_file.trailing_zeros() >= 10
-                            && interrupted.load(Ordering::Relaxed)
-                        {
-                            break 'outer;
                         }
                     } else {
                         // 被过滤掉的 PARAMS 记录（needs_pm 成立说明 do_normalize &&
@@ -417,6 +426,8 @@ fn process_csv_parallel(
     quiet: bool,
     do_normalize: bool,
     placeholder_override: Option<bool>,
+    field_mask: FieldMask,
+    sql_record_filter: Option<&SqlFilters>,
 ) -> Result<(Vec<(PathBuf, usize)>, usize)> {
     use rayon::prelude::*;
 
@@ -490,6 +501,7 @@ fn process_csv_parallel(
                 let temp_path = parts_dir.join(format!("{idx:08}.csv"));
                 let mut exporter = CsvExporter::new(&temp_path);
                 exporter.normalize = do_normalize;
+                exporter.field_mask = field_mask;
                 let mut em = ExporterManager::from_csv(exporter);
                 em.initialize()?;
 
@@ -510,6 +522,7 @@ fn process_csv_parallel(
                     &mut params_buf,
                     &mut ns_scratch,
                     false, // 并行模式：不重置进度条，避免多线程互相重置计数
+                    sql_record_filter,
                 )?;
 
                 em.finalize()?;
@@ -618,16 +631,25 @@ pub fn handle_run(
 
     let pipeline = build_pipeline(final_cfg);
 
-    let do_normalize = final_cfg
-        .features
-        .replace_parameters
-        .as_ref()
-        .is_none_or(|r| r.enable);
+    let field_mask = final_cfg.features.field_mask();
+    // 如果字段投影排除了 normalized_sql（字段 14），则禁用参数替换计算
+    let do_normalize = field_mask.includes_normalized_sql()
+        && final_cfg
+            .features
+            .replace_parameters
+            .as_ref()
+            .is_none_or(|r| r.enable);
     let placeholder_override = final_cfg
         .features
         .replace_parameters
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
+    let sql_record_filter: Option<&SqlFilters> = final_cfg
+        .features
+        .filters
+        .as_ref()
+        .filter(|f| f.enable && f.record_sql.has_filters())
+        .map(|f| &f.record_sql);
 
     let pb = make_progress_bar(quiet, progress_interval);
     let mut total_records = 0usize;
@@ -654,6 +676,8 @@ pub fn handle_run(
             quiet,
             do_normalize,
             placeholder_override,
+            field_mask,
+            sql_record_filter,
         )?;
 
         total_records = processed_files.iter().map(|(_, c)| *c).sum();
@@ -728,6 +752,7 @@ pub fn handle_run(
                 &mut params_buffer,
                 &mut ns_scratch,
                 true, // 顺序模式：每个文件开始时重置进度条
+                sql_record_filter,
             )?;
 
             if !dry_run {

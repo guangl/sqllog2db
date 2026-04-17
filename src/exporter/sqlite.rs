@@ -15,6 +15,7 @@ pub struct SqliteExporter {
     conn: Option<Connection>,
     stats: ExportStats,
     pub(super) normalize: bool,
+    pub(super) field_mask: crate::features::FieldMask,
 }
 
 impl std::fmt::Debug for SqliteExporter {
@@ -42,7 +43,58 @@ impl SqliteExporter {
             conn: None,
             stats: ExportStats::new(),
             normalize: true,
+            field_mask: crate::features::FieldMask::ALL,
         }
+    }
+
+    /// 根据字段掩码生成 INSERT SQL
+    fn build_insert_sql(table_name: &str, field_mask: crate::features::FieldMask) -> String {
+        use crate::features::FIELD_NAMES;
+        if field_mask == crate::features::FieldMask::ALL {
+            return format!(
+                "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+        }
+        let selected: Vec<&str> = FIELD_NAMES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| field_mask.is_active(*i))
+            .map(|(_, name)| *name)
+            .collect();
+        let placeholders = vec!["?"; selected.len()].join(", ");
+        format!(
+            "INSERT INTO {table_name} ({}) VALUES ({placeholders})",
+            selected.join(", ")
+        )
+    }
+
+    /// 根据字段掩码生成 CREATE TABLE SQL
+    fn build_create_sql(table_name: &str, field_mask: crate::features::FieldMask) -> String {
+        use crate::features::FIELD_NAMES;
+        const COL_TYPES: &[&str] = &[
+            "TEXT NOT NULL",    // ts
+            "INTEGER NOT NULL", // ep
+            "TEXT NOT NULL",    // sess_id
+            "TEXT NOT NULL",    // thrd_id
+            "TEXT NOT NULL",    // username
+            "TEXT NOT NULL",    // trx_id
+            "TEXT",             // statement
+            "TEXT",             // appname
+            "TEXT",             // client_ip
+            "TEXT",             // tag
+            "TEXT NOT NULL",    // sql
+            "REAL",             // exec_time_ms
+            "INTEGER",          // row_count
+            "INTEGER",          // exec_id
+            "TEXT",             // normalized_sql
+        ];
+        let cols: Vec<String> = FIELD_NAMES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| field_mask.is_active(*i))
+            .map(|(i, name)| format!("{name} {}", COL_TYPES[i]))
+            .collect();
+        format!("CREATE TABLE IF NOT EXISTS {table_name} ({})", cols.join(", "))
     }
 
     #[must_use]
@@ -61,18 +113,16 @@ impl SqliteExporter {
         })
     }
 
-    /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接插入，
-    /// 避免在函数内部重复调用 `parse_meta()` / `parse_performance_metrics()`。
+    /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接插入。
+    /// 全量掩码走 `params![]` 快速路径；投影掩码走动态 Value 路径。
     fn do_insert_preparsed(
         stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
         meta: &MetaParts<'_>,
         pm: &PerformanceMetrics<'_>,
         normalized_sql: Option<&str>,
+        field_mask: crate::features::FieldMask,
     ) -> std::result::Result<(), rusqlite::Error> {
-        // 直接从 pm 推断指标是否存在，避免再次调用 parse_indicators()。
-        // 极罕见的边界情况：exec_id=0 且 exectime=0.0 且 rowcount=0 的记录
-        // 会被存为 NULL 而非 0，这对分析查询影响可忽略不计。
         let (exec_time, row_count, exec_id) =
             if pm.exec_id != 0 || pm.exectime > 0.0 || pm.rowcount != 0 {
                 (Some(pm.exectime), Some(pm.rowcount), Some(pm.exec_id))
@@ -80,24 +130,54 @@ impl SqliteExporter {
                 (None, None, None)
             };
 
-        stmt.execute(params![
-            sqllog.ts.as_ref(),
-            meta.ep,
-            meta.sess_id.as_ref(),
-            meta.thrd_id.as_ref(),
-            meta.username.as_ref(),
-            meta.trxid.as_ref(),
-            meta.statement.as_ref(),
-            meta.appname.as_ref(),
-            strip_ip_prefix(meta.client_ip.as_ref()),
-            sqllog.tag.as_deref(),
-            pm.sql.as_ref(),
-            exec_time,
-            row_count,
-            exec_id,
-            normalized_sql
-        ])?;
+        if field_mask == crate::features::FieldMask::ALL {
+            // 全量掩码快速路径：直接绑定全部 15 个参数
+            stmt.execute(params![
+                sqllog.ts.as_ref(),
+                meta.ep,
+                meta.sess_id.as_ref(),
+                meta.thrd_id.as_ref(),
+                meta.username.as_ref(),
+                meta.trxid.as_ref(),
+                meta.statement.as_ref(),
+                meta.appname.as_ref(),
+                strip_ip_prefix(meta.client_ip.as_ref()),
+                sqllog.tag.as_deref(),
+                pm.sql.as_ref(),
+                exec_time,
+                row_count,
+                exec_id,
+                normalized_sql
+            ])?;
+            return Ok(());
+        }
 
+        // 投影路径：按 field_mask 动态构建 Value 列表
+        use rusqlite::types::Value;
+        let all: [Value; 15] = [
+            Value::Text(sqllog.ts.as_ref().to_string()),
+            Value::Integer(i64::from(meta.ep)),
+            Value::Text(meta.sess_id.as_ref().to_string()),
+            Value::Text(meta.thrd_id.as_ref().to_string()),
+            Value::Text(meta.username.as_ref().to_string()),
+            Value::Text(meta.trxid.as_ref().to_string()),
+            Value::Text(meta.statement.as_ref().to_string()),
+            Value::Text(meta.appname.as_ref().to_string()),
+            Value::Text(strip_ip_prefix(meta.client_ip.as_ref()).to_string()),
+            sqllog.tag.as_deref().map_or(Value::Null, |t| Value::Text(t.to_string())),
+            Value::Text(pm.sql.as_ref().to_string()),
+            exec_time.map_or(Value::Null, |v| Value::Real(f64::from(v))),
+            row_count.map_or(Value::Null, |v| Value::Integer(i64::from(v))),
+            exec_id.map_or(Value::Null, Value::Integer),
+            normalized_sql.map_or(Value::Null, |s| Value::Text(s.to_string())),
+        ];
+        let selected: Vec<Value> = all
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| field_mask.is_active(*i))
+            .map(|(_, v)| v)
+            .collect();
+        stmt.execute(rusqlite::params_from_iter(selected))?;
         Ok(())
     }
 
@@ -106,10 +186,11 @@ impl SqliteExporter {
         stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
         normalized_sql: Option<&str>,
+        field_mask: crate::features::FieldMask,
     ) -> std::result::Result<(), rusqlite::Error> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
-        Self::do_insert_preparsed(stmt, sqllog, &meta, &pm, normalized_sql)
+        Self::do_insert_preparsed(stmt, sqllog, &meta, &pm, normalized_sql, field_mask)
     }
 }
 
@@ -150,19 +231,11 @@ impl Exporter for SqliteExporter {
             let _ = conn.execute(&format!("DELETE FROM {}", self.table_name), []);
         }
 
+        // 根据 field_mask 重新生成 insert_sql（field_mask 可在 new() 后被外部修改）
+        self.insert_sql = Self::build_insert_sql(&self.table_name, self.field_mask);
+
         let conn = self.conn.as_ref().unwrap();
-        let create_sql = format!(
-            "CREATE TABLE IF NOT EXISTS {} (
-                ts TEXT NOT NULL, ep INTEGER NOT NULL,
-                sess_id TEXT NOT NULL, thrd_id TEXT NOT NULL,
-                username TEXT NOT NULL, trx_id TEXT NOT NULL,
-                statement TEXT, appname TEXT, client_ip TEXT, tag TEXT,
-                sql TEXT NOT NULL,
-                exec_time_ms REAL, row_count INTEGER, exec_id INTEGER,
-                normalized_sql TEXT
-            )",
-            self.table_name
-        );
+        let create_sql = Self::build_create_sql(&self.table_name, self.field_mask);
         conn.execute(&create_sql, [])
             .map_err(|e| Self::db_err(format!("create table failed: {e}")))?;
 
@@ -181,7 +254,7 @@ impl Exporter for SqliteExporter {
         let mut stmt = conn
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        Self::do_insert(&mut stmt, sqllog, None)
+        Self::do_insert(&mut stmt, sqllog, None, self.field_mask)
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
@@ -200,7 +273,7 @@ impl Exporter for SqliteExporter {
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert(&mut stmt, sqllog, ns_ref)
+        Self::do_insert(&mut stmt, sqllog, ns_ref, self.field_mask)
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
@@ -221,7 +294,7 @@ impl Exporter for SqliteExporter {
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert_preparsed(&mut stmt, sqllog, meta, pm, ns_ref)
+        Self::do_insert_preparsed(&mut stmt, sqllog, meta, pm, ns_ref, self.field_mask)
             .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())

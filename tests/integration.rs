@@ -740,6 +740,7 @@ fn test_handle_validate_with_filters_all_fields() {
                     include_patterns: Some(vec!["SELECT".to_string()]),
                     exclude_patterns: Some(vec!["DROP".to_string()]),
                 },
+                record_sql: SqlFilters::default(),
             }),
             ..Default::default()
         },

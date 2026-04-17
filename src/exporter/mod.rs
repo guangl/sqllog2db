@@ -207,10 +207,13 @@ impl ExporterManager {
             .as_ref()
             .is_none_or(|r| r.enable);
 
+        let field_mask = config.features.field_mask();
+
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
             let mut exporter = CsvExporter::from_config(cfg);
             exporter.normalize = normalize;
+            exporter.field_mask = field_mask;
             return Ok(Self {
                 exporter: ExporterKind::Csv(exporter),
             });
@@ -220,6 +223,7 @@ impl ExporterManager {
             info!("Using SQLite exporter: {}", cfg.database_url);
             let mut exporter = SqliteExporter::from_config(cfg);
             exporter.normalize = normalize;
+            exporter.field_mask = field_mask;
             return Ok(Self {
                 exporter: ExporterKind::Sqlite(exporter),
             });

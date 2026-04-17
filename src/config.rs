@@ -55,6 +55,20 @@ impl Config {
         self.logging.validate()?;
         self.exporter.validate()?;
         self.sqllog.validate()?;
+        if let Some(names) = &self.features.fields {
+            for name in names {
+                if !crate::features::FIELD_NAMES.contains(&name.as_str()) {
+                    return Err(Error::Config(ConfigError::InvalidValue {
+                        field: "features.fields".to_string(),
+                        value: name.clone(),
+                        reason: format!(
+                            "unknown field '{name}'; valid fields: {}",
+                            crate::features::FIELD_NAMES.join(", ")
+                        ),
+                    }));
+                }
+            }
+        }
         Ok(())
     }
 
