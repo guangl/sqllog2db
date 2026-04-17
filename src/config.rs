@@ -216,6 +216,13 @@ impl Default for LoggingConfig {
 
 impl LoggingConfig {
     pub fn validate(&self) -> Result<()> {
+        if self.file.trim().is_empty() {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "logging.file".to_string(),
+                value: self.file.clone(),
+                reason: "Log file path cannot be empty".to_string(),
+            }));
+        }
         if !LOG_LEVELS
             .iter()
             .any(|&l| l.eq_ignore_ascii_case(&self.level))
@@ -251,6 +258,12 @@ impl ExporterConfig {
         if !self.has_any() {
             return Err(Error::Config(ConfigError::NoExporters));
         }
+        if let Some(csv) = &self.csv {
+            csv.validate()?;
+        }
+        if let Some(sqlite) = &self.sqlite {
+            sqlite.validate()?;
+        }
         Ok(())
     }
 }
@@ -283,6 +296,19 @@ impl Default for CsvExporter {
     }
 }
 
+impl CsvExporter {
+    pub fn validate(&self) -> Result<()> {
+        if self.file.trim().is_empty() {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "exporter.csv.file".to_string(),
+                value: self.file.clone(),
+                reason: "CSV output file path cannot be empty".to_string(),
+            }));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct SqliteExporter {
     pub database_url: String,
@@ -309,6 +335,26 @@ impl Default for SqliteExporter {
     }
 }
 
+impl SqliteExporter {
+    pub fn validate(&self) -> Result<()> {
+        if self.database_url.trim().is_empty() {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "exporter.sqlite.database_url".to_string(),
+                value: self.database_url.clone(),
+                reason: "SQLite database URL cannot be empty".to_string(),
+            }));
+        }
+        if self.table_name.trim().is_empty() {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "exporter.sqlite.table_name".to_string(),
+                value: self.table_name.clone(),
+                reason: "SQLite table name cannot be empty".to_string(),
+            }));
+        }
+        Ok(())
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -325,6 +371,45 @@ mod tests {
     #[test]
     fn test_validate_default_config_passes() {
         assert!(default_config().validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_empty_logging_file() {
+        let mut cfg = default_config();
+        cfg.logging.file = "  ".into();
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_empty_csv_file() {
+        let mut cfg = default_config();
+        cfg.exporter.csv = Some(CsvExporter {
+            file: "  ".into(),
+            ..CsvExporter::default()
+        });
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_empty_sqlite_database_url() {
+        let mut cfg = default_config();
+        cfg.exporter.csv = None;
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "  ".into(),
+            ..SqliteExporter::default()
+        });
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_empty_sqlite_table_name() {
+        let mut cfg = default_config();
+        cfg.exporter.csv = None;
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            table_name: "  ".into(),
+            ..SqliteExporter::default()
+        });
+        assert!(cfg.validate().is_err());
     }
 
     #[test]
