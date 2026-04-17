@@ -467,4 +467,81 @@ mod tests {
         let content = std::fs::read_to_string(&outfile).unwrap();
         assert_eq!(content.lines().count(), 1);
     }
+
+    #[test]
+    fn test_csv_debug_format() {
+        let exporter = CsvExporter::new("/tmp/debug.csv");
+        let s = format!("{exporter:?}");
+        assert!(s.contains("CsvExporter"));
+    }
+
+    #[test]
+    fn test_csv_export_method() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.initialize().unwrap();
+        for r in &records {
+            // Use export() directly instead of export_one_normalized
+            exporter.export(r).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let lines = std::fs::read_to_string(&outfile).unwrap().lines().count();
+        assert_eq!(lines, records.len() + 1); // data + header
+    }
+
+    #[test]
+    fn test_csv_stats_snapshot() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 5);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.initialize().unwrap();
+        for r in &records {
+            exporter.export(r).unwrap();
+        }
+        let snap = exporter.stats_snapshot().unwrap();
+        assert_eq!(snap.exported, 5);
+        exporter.finalize().unwrap();
+    }
+
+    #[test]
+    fn test_write_csv_escaped_with_quotes() {
+        // write_csv_escaped handles '"' characters by doubling them
+        let mut buf = Vec::new();
+        write_csv_escaped(&mut buf, b"say \"hello\"");
+        assert_eq!(buf, b"say \"\"hello\"\"");
+    }
+
+    #[test]
+    fn test_write_csv_escaped_no_quotes() {
+        let mut buf = Vec::new();
+        write_csv_escaped(&mut buf, b"no quotes here");
+        assert_eq!(buf, b"no quotes here");
+    }
+
+    #[test]
+    fn test_csv_from_config() {
+        use crate::config;
+        let cfg = config::CsvExporter {
+            file: "/tmp/cfg.csv".to_string(),
+            overwrite: true,
+            append: false,
+        };
+        let exporter = CsvExporter::from_config(&cfg);
+        let s = format!("{exporter:?}");
+        assert!(s.contains("CsvExporter"));
+    }
 }

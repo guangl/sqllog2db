@@ -182,4 +182,58 @@ mod tests {
         assert!(cfg.filters.is_none());
         assert!(cfg.replace_parameters.is_none());
     }
+
+    #[test]
+    fn test_replace_parameters_config_default() {
+        let cfg = ReplaceParametersConfig::default();
+        assert!(cfg.enable);
+        assert!(cfg.placeholders.is_empty());
+    }
+
+    #[test]
+    fn test_default_true_via_serde() {
+        // TOML without `enable` field → serde calls default_true() → true
+        let cfg: ReplaceParametersConfig = toml::from_str("").unwrap();
+        assert!(cfg.enable);
+    }
+
+    #[test]
+    fn test_process_with_meta_default_delegates_to_process() {
+        use dm_database_parser_sqllog::LogParser;
+
+        #[derive(Debug)]
+        struct AlwaysPass;
+        impl LogProcessor for AlwaysPass {
+            fn process(&self, _: &dm_database_parser_sqllog::Sqllog) -> bool {
+                true
+            }
+            // No process_with_meta override → uses default which calls process()
+        }
+
+        #[derive(Debug)]
+        struct AlwaysFail;
+        impl LogProcessor for AlwaysFail {
+            fn process(&self, _: &dm_database_parser_sqllog::Sqllog) -> bool {
+                false
+            }
+        }
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("t.log");
+        std::fs::write(&log, "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n").unwrap();
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().flatten().collect();
+        assert!(!records.is_empty());
+
+        let record = &records[0];
+        let meta = record.parse_meta();
+
+        let mut p = Pipeline::new();
+        p.add(Box::new(AlwaysPass));
+        assert!(p.run_with_meta(record, &meta));
+
+        let mut p2 = Pipeline::new();
+        p2.add(Box::new(AlwaysFail));
+        assert!(!p2.run_with_meta(record, &meta));
+    }
 }

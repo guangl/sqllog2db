@@ -202,4 +202,12 @@ mod tests {
         state.save(&state_path).unwrap();
         assert!(state_path.exists());
     }
+
+    #[test]
+    fn test_is_processed_returns_false_for_nonexistent_file() {
+        // metadata() will fail for nonexistent path → returns false (line 71)
+        let state = ResumeState::default();
+        let result = state.is_processed(Path::new("/nonexistent/file/that/does/not/exist.log"));
+        assert!(!result);
+    }
 }

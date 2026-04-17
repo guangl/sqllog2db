@@ -34,18 +34,6 @@ jobs:
             artifact: sqllog2db-aarch64-macos
             use_cross: false
     steps:
-      - name: Free Disk Space (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - uses: actions/checkout@v6
 
       - name: Install Rust

@@ -169,3 +169,95 @@ fn zh_digest(s: Command) -> Command {
         })
         .mut_arg("json", |a| a.help("以 JSON 格式输出结果（到 stdout）"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::opts::Cli;
+    use clap::CommandFactory;
+
+    #[test]
+    fn test_lang_parse_zh_variants() {
+        assert_eq!(Lang::parse("zh"), Some(Lang::Zh));
+        assert_eq!(Lang::parse("ZH"), Some(Lang::Zh));
+        assert_eq!(Lang::parse("zh_cn"), Some(Lang::Zh));
+        assert_eq!(Lang::parse("zh_tw"), Some(Lang::Zh));
+        assert_eq!(Lang::parse("zh_hk"), Some(Lang::Zh));
+        assert_eq!(Lang::parse("chinese"), Some(Lang::Zh));
+    }
+
+    #[test]
+    fn test_lang_parse_en_variants() {
+        assert_eq!(Lang::parse("en"), Some(Lang::En));
+        assert_eq!(Lang::parse("EN"), Some(Lang::En));
+        assert_eq!(Lang::parse("en_us"), Some(Lang::En));
+        assert_eq!(Lang::parse("en_gb"), Some(Lang::En));
+        assert_eq!(Lang::parse("english"), Some(Lang::En));
+    }
+
+    #[test]
+    fn test_lang_parse_invalid() {
+        assert_eq!(Lang::parse("fr"), None);
+        assert_eq!(Lang::parse(""), None);
+        assert_eq!(Lang::parse("ja"), None);
+    }
+
+    #[test]
+    fn test_detect_with_lang_flag_zh() {
+        let args: Vec<String> = vec!["--lang".into(), "zh".into()];
+        assert_eq!(detect(&args), Lang::Zh);
+    }
+
+    #[test]
+    fn test_detect_with_lang_flag_en() {
+        let args: Vec<String> = vec!["--lang".into(), "en".into()];
+        assert_eq!(detect(&args), Lang::En);
+    }
+
+    #[test]
+    fn test_detect_with_lang_equals_form() {
+        let args: Vec<String> = vec!["--lang=zh".into()];
+        assert_eq!(detect(&args), Lang::Zh);
+    }
+
+    #[test]
+    fn test_detect_with_invalid_lang_falls_through() {
+        // --lang=invalid → from_args returns None → falls through to from_env
+        let args: Vec<String> = vec!["--lang=invalid".into()];
+        let result = detect(&args);
+        // Result depends on env; just verify it doesn't panic and returns a valid Lang
+        assert!(result == Lang::En || result == Lang::Zh);
+    }
+
+    #[test]
+    fn test_detect_no_args_uses_env() {
+        // No --lang flag → calls from_env; result depends on environment
+        let result = detect(&[]);
+        assert!(result == Lang::En || result == Lang::Zh);
+    }
+
+    #[test]
+    fn test_detect_skips_unrelated_args() {
+        let args: Vec<String> = vec!["run".into(), "-c".into(), "config.toml".into()];
+        let result = detect(&args);
+        assert!(result == Lang::En || result == Lang::Zh);
+    }
+
+    #[test]
+    fn test_apply_zh_smoke() {
+        // Verify apply_zh can be called without panicking and returns a Command
+        let cmd = Cli::command();
+        let zh_cmd = apply_zh(cmd);
+        // Check that the about string was updated
+        assert!(
+            zh_cmd
+                .get_about()
+                .is_some_and(|s| s.to_string().contains("达梦"))
+        );
+    }
+
+    #[test]
+    fn test_lang_default_is_en() {
+        assert_eq!(Lang::default(), Lang::En);
+    }
+}

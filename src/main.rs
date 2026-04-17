@@ -315,3 +315,145 @@ fn load_config(config_path: &str) -> Result<Config> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{ConfigError, ExportError, FileError, ParserError, UpdateError};
+
+    #[test]
+    fn test_exit_code_config_error() {
+        let e = error::Error::Config(ConfigError::NoExporters);
+        assert_eq!(exit_code_for(&e), EXIT_CONFIG);
+    }
+
+    #[test]
+    fn test_exit_code_file_error() {
+        let e = error::Error::File(FileError::CreateDirectoryFailed {
+            path: "/tmp".into(),
+            reason: "test".into(),
+        });
+        assert_eq!(exit_code_for(&e), EXIT_IO);
+    }
+
+    #[test]
+    fn test_exit_code_parser_error() {
+        let e = error::Error::Parser(ParserError::PathNotFound {
+            path: "/tmp".into(),
+        });
+        assert_eq!(exit_code_for(&e), EXIT_IO);
+    }
+
+    #[test]
+    fn test_exit_code_io_error() {
+        let e = error::Error::Io(std::io::Error::other("test io"));
+        assert_eq!(exit_code_for(&e), EXIT_IO);
+    }
+
+    #[test]
+    fn test_exit_code_export_error() {
+        let e = error::Error::Export(ExportError::DatabaseFailed {
+            reason: "test".into(),
+        });
+        assert_eq!(exit_code_for(&e), EXIT_EXPORT);
+    }
+
+    #[test]
+    fn test_exit_code_interrupted() {
+        assert_eq!(exit_code_for(&error::Error::Interrupted), EXIT_INTERRUPTED);
+    }
+
+    #[test]
+    fn test_exit_code_update_error() {
+        let e = error::Error::Update(UpdateError::UpdateFailed("test".into()));
+        assert_eq!(exit_code_for(&e), 1);
+    }
+
+    #[test]
+    fn test_apply_cli_flags_verbose() {
+        let mut cfg = Config::default();
+        apply_cli_flags_to_config(&mut cfg, true, false);
+        assert_eq!(cfg.logging.level, "debug");
+    }
+
+    #[test]
+    fn test_apply_cli_flags_quiet() {
+        let mut cfg = Config::default();
+        apply_cli_flags_to_config(&mut cfg, false, true);
+        assert_eq!(cfg.logging.level, "error");
+    }
+
+    #[test]
+    fn test_apply_cli_flags_neither() {
+        let mut cfg = Config::default();
+        let original = cfg.logging.level.clone();
+        apply_cli_flags_to_config(&mut cfg, false, false);
+        assert_eq!(cfg.logging.level, original);
+    }
+
+    #[test]
+    fn test_apply_date_range_both() {
+        let mut cfg = Config::default();
+        apply_date_range(&mut cfg, Some("2025-01-01"), Some("2025-12-31"));
+        let f = cfg.features.filters.unwrap();
+        assert_eq!(f.meta.start_ts.as_deref(), Some("2025-01-01"));
+        assert_eq!(f.meta.end_ts.as_deref(), Some("2025-12-31"));
+        assert!(f.enable);
+    }
+
+    #[test]
+    fn test_apply_date_range_from_only() {
+        let mut cfg = Config::default();
+        apply_date_range(&mut cfg, Some("2025-06-01"), None);
+        let f = cfg.features.filters.unwrap();
+        assert_eq!(f.meta.start_ts.as_deref(), Some("2025-06-01"));
+        assert!(f.meta.end_ts.is_none());
+    }
+
+    #[test]
+    fn test_apply_date_range_to_only() {
+        let mut cfg = Config::default();
+        apply_date_range(&mut cfg, None, Some("2025-06-30"));
+        let f = cfg.features.filters.unwrap();
+        assert!(f.meta.start_ts.is_none());
+        assert_eq!(f.meta.end_ts.as_deref(), Some("2025-06-30"));
+    }
+
+    #[test]
+    fn test_apply_date_range_neither() {
+        let mut cfg = Config::default();
+        apply_date_range(&mut cfg, None, None);
+        assert!(cfg.features.filters.is_none());
+    }
+
+    #[test]
+    fn test_load_config_not_found_returns_default() {
+        let result = load_config("/nonexistent/path/config.toml");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_load_config_invalid_toml_returns_error() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("bad.toml");
+        std::fs::write(&path, "not valid toml ][[[").unwrap();
+        let result = load_config(path.to_str().unwrap());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_init_simple_logging_info() {
+        // May silently fail if logger already set — that is fine
+        init_simple_logging(false, false);
+    }
+
+    #[test]
+    fn test_init_simple_logging_verbose() {
+        init_simple_logging(true, false);
+    }
+
+    #[test]
+    fn test_init_simple_logging_quiet() {
+        init_simple_logging(false, true);
+    }
+}

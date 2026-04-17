@@ -203,4 +203,12 @@ mod tests {
         let files = p.log_files().unwrap();
         assert!(files.is_empty());
     }
+
+    #[test]
+    fn test_log_files_invalid_glob_pattern() {
+        // '[' without closing ']' is an invalid glob pattern
+        let p = SqllogParser::new("/tmp/[invalid");
+        let result = p.log_files();
+        assert!(result.is_err());
+    }
 }

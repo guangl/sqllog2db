@@ -526,4 +526,41 @@ mod tests {
         assert!(!f.matches("SELECT * FROM t WHERE id=0"));
         assert!(!f.matches("SELECT * FROM other"));
     }
+
+    #[test]
+    fn test_sql_filters_empty_include_patterns_with_exclude() {
+        // include_patterns is Some but empty → line 248 path ("true" branch)
+        // exclude_patterns is non-empty so has_filters() returns true
+        let f = SqlFilters {
+            include_patterns: Some(vec![]),
+            exclude_patterns: Some(vec!["DROP".into()]),
+        };
+        // SQL doesn't match exclude → passes
+        assert!(f.matches("SELECT 1"));
+        // SQL matches exclude → filtered
+        assert!(!f.matches("DROP TABLE t"));
+    }
+
+    #[test]
+    fn test_filters_toml_deserialization_with_trxids_and_exec_ids() {
+        // Exercises vec_to_hashset (lines 22-29) and vec_to_i64_hashset (lines 32-37)
+        use crate::config::Config;
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+trxids = ["123", "456"]
+[features.filters.indicators]
+exec_ids = [1, 2, 3]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let filters = cfg.features.filters.unwrap();
+        assert!(filters.meta.trxids.is_some());
+        assert_eq!(filters.meta.trxids.unwrap().len(), 2);
+        assert!(filters.indicators.exec_ids.is_some());
+        assert_eq!(filters.indicators.exec_ids.unwrap().len(), 3);
+    }
 }

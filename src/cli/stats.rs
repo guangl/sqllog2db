@@ -306,7 +306,7 @@ pub fn handle_stats(
     let rate = total_records / elapsed.as_secs().max(1);
 
     let mut slow_entries: Vec<SlowEntry> = slow_heap.into_iter().map(|Reverse(e)| e).collect();
-    slow_entries.sort_by(|a, b| b.exec_time_bits.cmp(&a.exec_time_bits));
+    slow_entries.sort_by_key(|e| std::cmp::Reverse(e.exec_time_bits));
 
     let group_sections = build_group_sections(&group_fields, group_maps);
     let time_bucket_section = build_bucket_section(bucket_field, bucket_map);
@@ -711,4 +711,238 @@ fn print_json(output: &StatsJson) {
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // ── GroupBy ───────────────────────────────────────────────────
+    #[test]
+    fn test_group_by_from_str_valid() {
+        assert_eq!(GroupBy::from_str("user"), Some(GroupBy::User));
+        assert_eq!(GroupBy::from_str("app"), Some(GroupBy::App));
+        assert_eq!(GroupBy::from_str("ip"), Some(GroupBy::Ip));
+    }
+
+    #[test]
+    fn test_group_by_from_str_invalid() {
+        assert_eq!(GroupBy::from_str("unknown"), None);
+        assert_eq!(GroupBy::from_str(""), None);
+    }
+
+    #[test]
+    fn test_group_by_label() {
+        assert_eq!(GroupBy::User.label(), "User");
+        assert_eq!(GroupBy::App.label(), "App");
+        assert_eq!(GroupBy::Ip.label(), "IP");
+    }
+
+    // ── Bucket ────────────────────────────────────────────────────
+    #[test]
+    fn test_bucket_from_str_valid() {
+        assert_eq!(Bucket::from_str("hour"), Some(Bucket::Hour));
+        assert_eq!(Bucket::from_str("minute"), Some(Bucket::Minute));
+    }
+
+    #[test]
+    fn test_bucket_from_str_invalid() {
+        assert_eq!(Bucket::from_str("day"), None);
+        assert_eq!(Bucket::from_str(""), None);
+    }
+
+    #[test]
+    fn test_bucket_label() {
+        assert_eq!(Bucket::Hour.label(), "hour");
+        assert_eq!(Bucket::Minute.label(), "minute");
+    }
+
+    #[test]
+    fn test_bucket_truncate_hour() {
+        let ts = "2025-01-15 10:30:28";
+        assert_eq!(Bucket::Hour.truncate(ts), "2025-01-15 10");
+    }
+
+    #[test]
+    fn test_bucket_truncate_minute() {
+        let ts = "2025-01-15 10:30:28";
+        assert_eq!(Bucket::Minute.truncate(ts), "2025-01-15 10:30");
+    }
+
+    #[test]
+    fn test_bucket_truncate_short_ts() {
+        // Shorter than expected → clamped to full string
+        let ts = "2025";
+        assert_eq!(Bucket::Hour.truncate(ts), "2025");
+    }
+
+    // ── GroupEntry ────────────────────────────────────────────────
+    #[test]
+    fn test_group_entry_from_acc_zero_count() {
+        let acc = GroupAccumulator {
+            count: 0,
+            total_exec_ms: 0.0,
+            max_exec_ms: 0.0,
+        };
+        let entry = GroupEntry::from_acc("key".into(), acc);
+        assert!(entry.avg_exec_ms.abs() < f64::EPSILON);
+        assert_eq!(entry.count, 0);
+    }
+
+    #[test]
+    fn test_group_entry_from_acc_nonzero() {
+        let acc = GroupAccumulator {
+            count: 4,
+            total_exec_ms: 8.0,
+            max_exec_ms: 5.0,
+        };
+        let entry = GroupEntry::from_acc("u1".into(), acc);
+        assert!((entry.avg_exec_ms - 2.0).abs() < f64::EPSILON);
+        assert_eq!(entry.count, 4);
+    }
+
+    // ── make_bar ─────────────────────────────────────────────────
+    #[test]
+    fn test_make_bar_zero_max() {
+        assert_eq!(make_bar(0, 0), "");
+    }
+
+    #[test]
+    fn test_make_bar_full() {
+        let bar = make_bar(10, 10);
+        assert_eq!(bar.chars().count(), BAR_WIDTH);
+    }
+
+    #[test]
+    fn test_make_bar_half() {
+        let bar = make_bar(5, 10);
+        assert_eq!(bar.chars().count(), BAR_WIDTH / 2);
+    }
+
+    // ── parse_group_fields ────────────────────────────────────────
+    #[test]
+    fn test_parse_group_fields_empty() {
+        let result = parse_group_fields(&[]);
+        assert_eq!(result, Some(vec![]));
+    }
+
+    #[test]
+    fn test_parse_group_fields_valid() {
+        let result = parse_group_fields(&["user".to_string(), "ip".to_string()]);
+        assert_eq!(result, Some(vec![GroupBy::User, GroupBy::Ip]));
+    }
+
+    #[test]
+    fn test_parse_group_fields_duplicate_deduped() {
+        let result = parse_group_fields(&["app".to_string(), "app".to_string()]);
+        assert_eq!(result, Some(vec![GroupBy::App]));
+    }
+
+    #[test]
+    fn test_parse_group_fields_unknown_returns_none() {
+        let result = parse_group_fields(&["bad".to_string()]);
+        assert!(result.is_none());
+    }
+
+    // ── SlowEntry ─────────────────────────────────────────────────
+    #[test]
+    fn test_slow_entry_exec_time_ms_roundtrip() {
+        let val = 123.45_f32;
+        let entry = SlowEntry {
+            exec_time_bits: val.to_bits(),
+            ts: "t".into(),
+            sql_snippet: "s".into(),
+            file_name: "f".into(),
+        };
+        assert!((entry.exec_time_ms() - val).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_slow_entry_ordering() {
+        let small = SlowEntry {
+            exec_time_bits: 1.0_f32.to_bits(),
+            ts: "t".into(),
+            sql_snippet: "s".into(),
+            file_name: "f".into(),
+        };
+        let large = SlowEntry {
+            exec_time_bits: 100.0_f32.to_bits(),
+            ts: "t".into(),
+            sql_snippet: "s".into(),
+            file_name: "f".into(),
+        };
+        assert!(small < large);
+        assert_eq!(small.partial_cmp(&large), Some(std::cmp::Ordering::Less));
+    }
+
+    // ── build_bucket_section ──────────────────────────────────────
+    #[test]
+    fn test_build_bucket_section_none_field() {
+        let result = build_bucket_section(None, BTreeMap::new());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_build_bucket_section_empty_map() {
+        let result = build_bucket_section(Some(Bucket::Hour), BTreeMap::new());
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_build_bucket_section_with_data() {
+        let mut map = BTreeMap::new();
+        map.insert(
+            "2025-01-15 10".to_string(),
+            BucketAccumulator {
+                count: 5,
+                total_exec_ms: 50.0,
+                max_exec_ms: 20.0,
+            },
+        );
+        let result = build_bucket_section(Some(Bucket::Hour), map);
+        assert!(result.is_some());
+        let section = result.unwrap();
+        assert_eq!(section.granularity, "hour");
+        assert_eq!(section.entries.len(), 1);
+        assert_eq!(section.entries[0].count, 5);
+        assert!((section.entries[0].avg_exec_ms - 10.0).abs() < f64::EPSILON);
+    }
+
+    // ── build_group_sections ──────────────────────────────────────
+    #[test]
+    fn test_build_group_sections_empty() {
+        let result = build_group_sections(&[], vec![]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_build_group_sections_with_data() {
+        let mut map: HashMap<String, GroupAccumulator> = HashMap::new();
+        map.insert(
+            "alice".to_string(),
+            GroupAccumulator {
+                count: 3,
+                total_exec_ms: 6.0,
+                max_exec_ms: 4.0,
+            },
+        );
+        let result = build_group_sections(&[GroupBy::User], vec![map]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].field, "user");
+        assert_eq!(result[0].entries[0].key, "alice");
+    }
+
+    // ── print_slow_queries ────────────────────────────────────────
+    #[test]
+    fn test_print_slow_queries_zero_top_n() {
+        // top_n == 0 → returns immediately, no panic
+        print_slow_queries(&[], 0);
+    }
+
+    #[test]
+    fn test_print_slow_queries_empty_entries_with_top() {
+        // top_n > 0 but no entries → prints "No execution time data"
+        print_slow_queries(&[], 3);
+    }
 }

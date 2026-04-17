@@ -448,4 +448,117 @@ mod tests {
         let snap = e.stats_snapshot().unwrap();
         assert_eq!(snap.exported, 5);
     }
+
+    // ── ExporterManager constructors ───────────────────────────
+    #[test]
+    fn test_from_csv_constructor() {
+        let exporter = CsvExporter::new(std::path::PathBuf::from("/tmp/test.csv"));
+        let manager = ExporterManager::from_csv(exporter);
+        assert_eq!(manager.name(), "CSV");
+    }
+
+    #[test]
+    fn test_dry_run_constructor() {
+        let manager = ExporterManager::dry_run();
+        assert_eq!(manager.name(), "dry-run");
+    }
+
+    #[test]
+    fn test_from_config_sqlite_path() {
+        use crate::config::SqliteExporter as SqliteExporterCfg;
+        use crate::config::{Config, ExporterConfig, SqllogConfig};
+        let cfg = Config {
+            exporter: ExporterConfig {
+                csv: None,
+                sqlite: Some(SqliteExporterCfg {
+                    database_url: "/tmp/test_mod.db".to_string(),
+                    table_name: "records".to_string(),
+                    overwrite: true,
+                    append: false,
+                }),
+            },
+            sqllog: SqllogConfig {
+                path: "sqllogs".to_string(),
+            },
+            ..Default::default()
+        };
+        let manager = ExporterManager::from_config(&cfg).unwrap();
+        assert_eq!(manager.name(), "SQLite");
+    }
+
+    #[test]
+    fn test_from_config_no_exporters_error() {
+        use crate::config::{Config, ExporterConfig, SqllogConfig};
+        let cfg = Config {
+            exporter: ExporterConfig {
+                csv: None,
+                sqlite: None,
+            },
+            sqllog: SqllogConfig {
+                path: "sqllogs".to_string(),
+            },
+            ..Default::default()
+        };
+        let result = ExporterManager::from_config(&cfg);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_log_stats_with_flush_operations() {
+        let mut stats = ExportStats::new();
+        stats.exported = 10;
+        stats.flush_operations = 2;
+        stats.last_flush_size = 5;
+        // log_stats reads from the exporter kind — use DryRunExporter and manually check
+        let e = DryRunExporter { stats };
+        let snap = e.stats_snapshot().unwrap();
+        assert_eq!(snap.flush_operations, 2);
+        assert_eq!(snap.last_flush_size, 5);
+    }
+
+    #[test]
+    fn test_exporter_manager_log_stats_no_panic() {
+        let manager = ExporterManager::dry_run();
+        // Just verify it doesn't panic
+        manager.log_stats();
+    }
+
+    #[test]
+    fn test_exporter_manager_debug_format() {
+        let manager = ExporterManager::dry_run();
+        let s = format!("{manager:?}");
+        assert!(s.contains("ExporterManager"));
+    }
+
+    #[test]
+    fn test_dry_run_export_via_trait() {
+        use dm_database_parser_sqllog::LogParser;
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("t.log");
+        std::fs::write(&log, "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n").unwrap();
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().flatten().collect();
+
+        let mut e = DryRunExporter::default();
+        e.initialize().unwrap();
+        for r in &records {
+            e.export(r).unwrap();
+        }
+        e.finalize().unwrap();
+        let snap = e.stats_snapshot().unwrap();
+        assert_eq!(snap.exported, records.len());
+    }
+
+    #[test]
+    fn test_f32_ms_to_i64_large_positive() {
+        // Value larger than i64::MAX should return i64::MAX
+        let result = f32_ms_to_i64(f32::MAX);
+        assert_eq!(result, i64::MAX);
+    }
+
+    #[test]
+    fn test_strip_ip_prefix_colon_non_ffff() {
+        // Starts with ':' but not the exact ffff prefix
+        assert_eq!(strip_ip_prefix("::1"), "::1");
+    }
 }
