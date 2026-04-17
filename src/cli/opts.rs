@@ -149,6 +149,12 @@ pub enum Commands {
         /// Aggregate records into time buckets: hour, minute
         #[arg(long = "bucket", value_name = "GRANULARITY")]
         bucket: Option<String>,
+        /// Skip files already processed in a previous run
+        #[arg(long = "resume")]
+        resume: bool,
+        /// Override the state file path used by --resume (default: `.sqllog2db_stats_state.toml`)
+        #[arg(long = "state-file", value_name = "PATH", requires = "resume")]
+        state_file: Option<String>,
     },
     /// Fingerprint SQL queries and aggregate by structure
     Digest {
@@ -181,6 +187,12 @@ pub enum Commands {
         /// Output results as JSON (goes to stdout)
         #[arg(long = "json")]
         json: bool,
+        /// Skip files already processed in a previous run
+        #[arg(long = "resume")]
+        resume: bool,
+        /// Override the state file path used by --resume (default: `.sqllog2db_digest_state.toml`)
+        #[arg(long = "state-file", value_name = "PATH", requires = "resume")]
+        state_file: Option<String>,
     },
     /// Generate shell completion scripts
     Completions {

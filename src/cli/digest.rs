@@ -39,6 +39,7 @@ struct DigestJson {
     elapsed_secs: f64,
     rate_per_sec: u64,
     fingerprints: usize,
+    skipped_files: usize,
     entries: Vec<DigestEntry>,
 }
 
@@ -59,6 +60,9 @@ impl SortBy {
     }
 }
 
+pub const DEFAULT_DIGEST_STATE: &str = ".sqllog2db_digest_state.toml";
+
+/// `resume_state_file`: `None` 表示不启用增量模式；`Some(path)` 表示启用并使用该路径作为状态文件。
 pub fn handle_digest(
     cfg: &Config,
     quiet: bool,
@@ -66,6 +70,7 @@ pub fn handle_digest(
     sort: SortBy,
     min_count: u64,
     json: bool,
+    resume_state_file: Option<&str>,
 ) {
     let start = Instant::now();
     let log_files = match SqllogParser::new(&cfg.sqllog.path).log_files() {
@@ -80,13 +85,36 @@ pub fn handle_digest(
         return;
     }
 
+    let state_path_opt: Option<std::path::PathBuf> =
+        resume_state_file.map(std::path::PathBuf::from);
+    let mut resume_state: Option<crate::resume::ResumeState> = state_path_opt
+        .as_deref()
+        .map(crate::resume::ResumeState::load);
+
     let pb = make_progress_bar(quiet);
     let total_files = log_files.len();
     let mut total_records: u64 = 0;
     let mut total_errors: u64 = 0;
+    let mut skipped_files = 0usize;
     let mut fp_map: HashMap<String, FingerprintAccumulator> = HashMap::new();
 
     for (idx, log_file) in log_files.iter().enumerate() {
+        if let Some(state) = &resume_state {
+            if state.is_processed(log_file) {
+                skipped_files += 1;
+                if !quiet {
+                    pb.println(format!(
+                        "{} [{}/{}] {} — skipped (already processed)",
+                        color::dim("⏭"),
+                        idx + 1,
+                        total_files,
+                        log_file.display(),
+                    ));
+                }
+                continue;
+            }
+        }
+
         let file_name = log_file
             .file_name()
             .map_or_else(|| log_file.to_string_lossy(), |n| n.to_string_lossy())
@@ -98,6 +126,8 @@ pub fn handle_digest(
             total_errors += 1;
             continue;
         };
+
+        let records_before = total_records;
 
         for result in parser.iter() {
             match result {
@@ -123,6 +153,21 @@ pub fn handle_digest(
                     pb.inc(1);
                 }
                 Err(_) => total_errors += 1,
+            }
+        }
+
+        let file_records = total_records - records_before;
+        if let (Some(state), Some(path)) = (&mut resume_state, &state_path_opt) {
+            if let Err(e) = state.mark_processed(log_file, file_records) {
+                eprintln!(
+                    "{} Failed to mark file as processed: {e}",
+                    color::yellow("Warning:")
+                );
+            } else if let Err(e) = state.save(path) {
+                eprintln!(
+                    "{} Failed to save resume state: {e}",
+                    color::yellow("Warning:")
+                );
             }
         }
     }
@@ -176,16 +221,24 @@ pub fn handle_digest(
 
     if json {
         print_json(
-            total_files,
+            total_files - skipped_files,
             total_records,
             total_errors,
             elapsed_secs,
             rate,
             fp_map_len_before_filter(&entries),
+            skipped_files,
             entries,
         );
     } else {
-        print_summary(total_files, total_records, total_errors, elapsed_secs, rate);
+        print_summary(
+            total_files - skipped_files,
+            total_records,
+            total_errors,
+            elapsed_secs,
+            rate,
+            skipped_files,
+        );
         print_table(&entries, sort);
     }
 }
@@ -211,11 +264,17 @@ fn make_progress_bar(quiet: bool) -> ProgressBar {
     pb
 }
 
-fn print_summary(files: usize, records: u64, errors: u64, elapsed: f64, rate: u64) {
+fn print_summary(files: usize, records: u64, errors: u64, elapsed: f64, rate: u64, skipped: usize) {
+    let skip_label = if skipped > 0 {
+        format!("  ({} skipped)", color::dim(HumanCount(skipped as u64)))
+    } else {
+        String::new()
+    };
     eprintln!(
-        "\n{} {} files  {}  {} errors  {:.2}s  {}/s",
+        "\n{} {} files{}  {}  {} errors  {:.2}s  {}/s",
         color::cyan("✔"),
         files,
+        skip_label,
         HumanCount(records),
         if errors > 0 {
             color::yellow(HumanCount(errors))
@@ -271,6 +330,7 @@ fn print_json(
     elapsed: f64,
     rate: u64,
     fingerprints: usize,
+    skipped_files: usize,
     entries: Vec<DigestEntry>,
 ) {
     let output = DigestJson {
@@ -280,6 +340,7 @@ fn print_json(
         elapsed_secs: elapsed,
         rate_per_sec: rate,
         fingerprints,
+        skipped_files,
         entries,
     };
     println!(
