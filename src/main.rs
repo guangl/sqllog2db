@@ -251,10 +251,21 @@ fn run() -> Result<()> {
             json,
             group_by,
             bucket,
+            resume,
+            state_file,
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
+            let resume_state_file = if *resume {
+                Some(
+                    state_file
+                        .as_deref()
+                        .unwrap_or(cli::stats::DEFAULT_STATS_STATE),
+                )
+            } else {
+                None
+            };
             cli::stats::handle_stats(
                 &cfg,
                 cli.quiet,
@@ -263,6 +274,7 @@ fn run() -> Result<()> {
                 *json,
                 group_by,
                 bucket.as_deref(),
+                resume_state_file,
             );
             Ok(())
         }
@@ -275,6 +287,8 @@ fn run() -> Result<()> {
             sort,
             min_count,
             json,
+            resume,
+            state_file,
         }) => {
             let mut cfg = load_config(config)?;
             cfg.apply_overrides(set)?;
@@ -287,7 +301,24 @@ fn run() -> Result<()> {
                 );
                 std::process::exit(EXIT_CONFIG);
             };
-            cli::digest::handle_digest(&cfg, cli.quiet, *top, sort_by, *min_count, *json);
+            let resume_state_file = if *resume {
+                Some(
+                    state_file
+                        .as_deref()
+                        .unwrap_or(cli::digest::DEFAULT_DIGEST_STATE),
+                )
+            } else {
+                None
+            };
+            cli::digest::handle_digest(
+                &cfg,
+                cli.quiet,
+                *top,
+                sort_by,
+                *min_count,
+                *json,
+                resume_state_file,
+            );
             Ok(())
         }
         None => {

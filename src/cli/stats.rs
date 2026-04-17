@@ -25,6 +25,7 @@ struct StatsJson {
     errors: u64,
     elapsed_secs: f64,
     rate_per_sec: u64,
+    skipped_files: usize,
     per_file: Vec<FileStats>,
     slow_queries: Vec<SlowQueryJson>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -202,6 +203,9 @@ impl PartialOrd for SlowEntry {
 
 // ── 主入口 ───────────────────────────────────────────────────────────────────
 
+pub const DEFAULT_STATS_STATE: &str = ".sqllog2db_stats_state.toml";
+
+/// `resume_state_file`: `None` 表示不启用增量模式；`Some(path)` 表示启用并使用该路径作为状态文件。
 pub fn handle_stats(
     cfg: &Config,
     quiet: bool,
@@ -210,6 +214,7 @@ pub fn handle_stats(
     json: bool,
     group_by: &[String],
     bucket: Option<&str>,
+    resume_state_file: Option<&str>,
 ) {
     let Some(group_fields) = parse_group_fields(group_by) else {
         return;
@@ -243,10 +248,17 @@ pub fn handle_stats(
         return;
     }
 
+    let state_path_opt: Option<std::path::PathBuf> =
+        resume_state_file.map(std::path::PathBuf::from);
+    let mut resume_state: Option<crate::resume::ResumeState> = state_path_opt
+        .as_deref()
+        .map(crate::resume::ResumeState::load);
+
     let pb = make_progress_bar(quiet);
     let total_files = log_files.len();
     let mut total_records: u64 = 0;
     let mut total_errors: u64 = 0;
+    let mut skipped_files = 0usize;
     let mut file_stats: Vec<FileStats> = Vec::with_capacity(total_files);
     let top_n = top.unwrap_or(0);
     let mut slow_heap: BinaryHeap<Reverse<SlowEntry>> = BinaryHeap::with_capacity(top_n + 1);
@@ -255,6 +267,22 @@ pub fn handle_stats(
     let mut bucket_map: BTreeMap<String, BucketAccumulator> = BTreeMap::new();
 
     for (idx, log_file) in log_files.iter().enumerate() {
+        if let Some(state) = &resume_state {
+            if state.is_processed(log_file) {
+                skipped_files += 1;
+                if !quiet {
+                    pb.println(format!(
+                        "{} [{}/{}] {} — skipped (already processed)",
+                        color::dim("⏭"),
+                        idx + 1,
+                        total_files,
+                        log_file.display(),
+                    ));
+                }
+                continue;
+            }
+        }
+
         let file_name = log_file
             .file_name()
             .map_or_else(|| log_file.to_string_lossy(), |n| n.to_string_lossy())
@@ -294,6 +322,20 @@ pub fn handle_stats(
             records: file_records,
             errors: file_errors,
         });
+
+        if let (Some(state), Some(path)) = (&mut resume_state, &state_path_opt) {
+            if let Err(e) = state.mark_processed(log_file, file_records) {
+                eprintln!(
+                    "{} Failed to mark file as processed: {e}",
+                    color::yellow("Warning:")
+                );
+            } else if let Err(e) = state.save(path) {
+                eprintln!(
+                    "{} Failed to save resume state: {e}",
+                    color::yellow("Warning:")
+                );
+            }
+        }
     }
 
     pb.finish_and_clear();
@@ -324,11 +366,12 @@ pub fn handle_stats(
             })
             .collect();
         print_json(&StatsJson {
-            files: total_files,
+            files: total_files - skipped_files,
             records: total_records,
             errors: total_errors,
             elapsed_secs,
             rate_per_sec: rate,
+            skipped_files,
             per_file: file_stats,
             slow_queries,
             group_sections,
@@ -341,10 +384,16 @@ pub fn handle_stats(
         print_file_table(&file_stats);
     }
 
+    let skip_label = if skipped_files > 0 {
+        format!(", {} skipped", color::dim(HumanCount(skipped_files as u64)))
+    } else {
+        String::new()
+    };
     eprintln!(
-        "\n{} Stats — {} files, {} records, {} parse errors  ({}/s, {elapsed_secs:.2}s)",
+        "\n{} Stats — {} files{}, {} records, {} parse errors  ({}/s, {elapsed_secs:.2}s)",
         color::green("✓"),
-        color::green(HumanCount(total_files as u64)),
+        color::green(HumanCount((total_files - skipped_files) as u64)),
+        skip_label,
         color::green(HumanCount(total_records)),
         if total_errors > 0 {
             color::yellow(HumanCount(total_errors))

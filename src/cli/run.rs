@@ -305,6 +305,7 @@ fn scan_log_file_for_matches(file_path: &str, cfg: &Config) -> Vec<CompactString
 fn scan_for_trxids_by_transaction_filters(
     log_files: &[std::path::PathBuf],
     cfg: &Config,
+    jobs: usize,
 ) -> AHashSet<CompactString> {
     use rayon::prelude::*;
 
@@ -313,15 +314,19 @@ fn scan_for_trxids_by_transaction_filters(
         log_files.len()
     );
 
-    // 跨文件并行预扫描：外层 par_iter() 跨文件调度，
-    // 内层 scan_log_file_for_matches 内部已使用 par_iter()。
-    // rayon 的 work-stealing 调度器自动处理两级嵌套并行。
-    // 以全并行换取了原来基于 remaining_exec_ids 的逐文件早退，
-    // 对 min_runtime_ms / sql 等常见场景无影响（本就需要扫全部文件）。
-    let matched: Vec<CompactString> = log_files
-        .par_iter()
-        .flat_map(|file| scan_log_file_for_matches(&file.to_string_lossy(), cfg))
-        .collect();
+    // 使用与主流程相同的线程数（jobs），避免预扫描阶段无限制占用 CPU。
+    // pool.install() 使内层 scan_log_file_for_matches 的 par_iter() 也在同一池内调度。
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(jobs)
+        .build()
+        .expect("failed to build pre-scan thread pool");
+
+    let matched: Vec<CompactString> = pool.install(|| {
+        log_files
+            .par_iter()
+            .flat_map(|file| scan_log_file_for_matches(&file.to_string_lossy(), cfg))
+            .collect()
+    });
 
     matched.into_iter().collect()
 }
@@ -599,7 +604,7 @@ pub fn handle_run(
         .as_ref()
         .is_some_and(crate::features::FiltersFeature::has_transaction_filters)
     {
-        let extra_trxids = scan_for_trxids_by_transaction_filters(&log_files, cfg);
+        let extra_trxids = scan_for_trxids_by_transaction_filters(&log_files, cfg, jobs);
         let mut tmp = cfg.clone();
         if let Some(f) = &mut tmp.features.filters {
             // into_iter() yields CompactString; merge_found_trxids 接受 Vec<CompactString>

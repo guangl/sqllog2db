@@ -279,7 +279,7 @@ fn test_handle_stats_empty_dir() {
         ..Default::default()
     };
     // No log files → prints "No log files found" and returns without panic
-    handle_stats(&cfg, true, false, None, false, &[], None);
+    handle_stats(&cfg, true, false, None, false, &[], None, None);
 }
 
 #[test]
@@ -295,7 +295,7 @@ fn test_handle_stats_with_log_files() {
         },
         ..Default::default()
     };
-    handle_stats(&cfg, true, false, None, false, &[], None); // quiet=true to suppress progress bar
+    handle_stats(&cfg, true, false, None, false, &[], None, None); // quiet=true to suppress progress bar
 }
 
 #[test]
@@ -307,7 +307,7 @@ fn test_handle_stats_nonexistent_dir() {
         ..Default::default()
     };
     // Should not panic — prints an error and returns
-    handle_stats(&cfg, true, false, None, false, &[], None);
+    handle_stats(&cfg, true, false, None, false, &[], None, None);
 }
 
 fn write_test_log_multi_ts(path: &std::path::Path, timestamps: &[&str]) {
@@ -341,7 +341,16 @@ fn test_handle_stats_group_by_user() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 20);
     let cfg = make_stats_cfg(dir.path());
-    handle_stats(&cfg, true, false, None, false, &["user".to_string()], None);
+    handle_stats(
+        &cfg,
+        true,
+        false,
+        None,
+        false,
+        &["user".to_string()],
+        None,
+        None,
+    );
 }
 
 #[test]
@@ -351,7 +360,7 @@ fn test_handle_stats_group_by_multiple() {
     write_test_log(&dir.path().join("data.log"), 20);
     let cfg = make_stats_cfg(dir.path());
     let fields = vec!["user".to_string(), "app".to_string(), "ip".to_string()];
-    handle_stats(&cfg, true, false, None, false, &fields, None);
+    handle_stats(&cfg, true, false, None, false, &fields, None, None);
 }
 
 #[test]
@@ -369,6 +378,7 @@ fn test_handle_stats_group_by_invalid() {
         false,
         &["badfield".to_string()],
         None,
+        None,
     );
 }
 
@@ -378,7 +388,7 @@ fn test_handle_stats_top_slow() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 30);
     let cfg = make_stats_cfg(dir.path());
-    handle_stats(&cfg, true, false, Some(5), false, &[], None);
+    handle_stats(&cfg, true, false, Some(5), false, &[], None, None);
 }
 
 #[test]
@@ -395,7 +405,7 @@ fn test_handle_stats_bucket_hour() {
     ];
     write_test_log_multi_ts(&dir.path().join("data.log"), ts);
     let cfg = make_stats_cfg(dir.path());
-    handle_stats(&cfg, true, false, None, false, &[], Some("hour"));
+    handle_stats(&cfg, true, false, None, false, &[], Some("hour"), None);
 }
 
 #[test]
@@ -410,7 +420,7 @@ fn test_handle_stats_bucket_minute() {
     ];
     write_test_log_multi_ts(&dir.path().join("data.log"), ts);
     let cfg = make_stats_cfg(dir.path());
-    handle_stats(&cfg, true, false, None, false, &[], Some("minute"));
+    handle_stats(&cfg, true, false, None, false, &[], Some("minute"), None);
 }
 
 #[test]
@@ -420,7 +430,7 @@ fn test_handle_stats_bucket_invalid() {
     write_test_log(&dir.path().join("data.log"), 5);
     let cfg = make_stats_cfg(dir.path());
     // invalid granularity — should print error and return without panic
-    handle_stats(&cfg, true, false, None, false, &[], Some("week"));
+    handle_stats(&cfg, true, false, None, false, &[], Some("week"), None);
 }
 
 #[test]
@@ -429,7 +439,7 @@ fn test_handle_stats_json_basic() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 10);
     let cfg = make_stats_cfg(dir.path());
-    handle_stats(&cfg, true, false, None, true, &[], None);
+    handle_stats(&cfg, true, false, None, true, &[], None, None);
 }
 
 #[test]
@@ -445,7 +455,16 @@ fn test_handle_stats_json_with_group_and_bucket() {
     write_test_log_multi_ts(&dir.path().join("data.log"), ts);
     let cfg = make_stats_cfg(dir.path());
     let fields = vec!["user".to_string(), "ip".to_string()];
-    handle_stats(&cfg, true, false, Some(3), true, &fields, Some("hour"));
+    handle_stats(
+        &cfg,
+        true,
+        false,
+        Some(3),
+        true,
+        &fields,
+        Some("hour"),
+        None,
+    );
 }
 
 #[test]
@@ -455,7 +474,7 @@ fn test_handle_stats_verbose() {
     write_test_log(&dir.path().join("data.log"), 10);
     let cfg = make_stats_cfg(dir.path());
     // quiet=false, verbose=true — exercises the file table path
-    handle_stats(&cfg, false, true, None, false, &[], None);
+    handle_stats(&cfg, false, true, None, false, &[], None, None);
 }
 
 #[test]
@@ -471,7 +490,16 @@ fn test_handle_stats_group_and_bucket_non_quiet() {
     let cfg = make_stats_cfg(dir.path());
     let fields = vec!["user".to_string()];
     // quiet=false — exercises print_group_table and print_bucket_table
-    handle_stats(&cfg, false, false, Some(2), false, &fields, Some("hour"));
+    handle_stats(
+        &cfg,
+        false,
+        false,
+        Some(2),
+        false,
+        &fields,
+        Some("hour"),
+        None,
+    );
 }
 
 // ── handle_digest tests ──────────────────────────────────────────────────────
@@ -487,7 +515,7 @@ fn test_handle_digest_empty_dir() {
         ..Default::default()
     };
     // No log files → prints message and returns without panic
-    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false, None);
 }
 
 #[test]
@@ -496,7 +524,7 @@ fn test_handle_digest_basic() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 20);
     let cfg = make_stats_cfg(dir.path());
-    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false, None);
 }
 
 #[test]
@@ -505,7 +533,7 @@ fn test_handle_digest_sort_exec() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 20);
     let cfg = make_stats_cfg(dir.path());
-    handle_digest(&cfg, true, None, SortBy::Exec, 1, false);
+    handle_digest(&cfg, true, None, SortBy::Exec, 1, false, None);
 }
 
 #[test]
@@ -514,7 +542,7 @@ fn test_handle_digest_top_n() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 30);
     let cfg = make_stats_cfg(dir.path());
-    handle_digest(&cfg, true, Some(5), SortBy::Count, 1, false);
+    handle_digest(&cfg, true, Some(5), SortBy::Count, 1, false, None);
 }
 
 #[test]
@@ -524,7 +552,7 @@ fn test_handle_digest_min_count() {
     write_test_log(&dir.path().join("data.log"), 20);
     let cfg = make_stats_cfg(dir.path());
     // min_count=100 filters out everything — should print "No SQL fingerprints found."
-    handle_digest(&cfg, true, None, SortBy::Count, 100, false);
+    handle_digest(&cfg, true, None, SortBy::Count, 100, false, None);
 }
 
 #[test]
@@ -533,7 +561,7 @@ fn test_handle_digest_json() {
     std::fs::create_dir_all(dir.path()).unwrap();
     write_test_log(&dir.path().join("data.log"), 10);
     let cfg = make_stats_cfg(dir.path());
-    handle_digest(&cfg, true, None, SortBy::Count, 1, true);
+    handle_digest(&cfg, true, None, SortBy::Count, 1, true, None);
 }
 
 #[test]
@@ -545,7 +573,7 @@ fn test_handle_digest_nonexistent_dir() {
         ..Default::default()
     };
     // Should not panic
-    handle_digest(&cfg, true, None, SortBy::Count, 1, false);
+    handle_digest(&cfg, true, None, SortBy::Count, 1, false, None);
 }
 
 #[test]
@@ -564,7 +592,7 @@ fn test_handle_digest_aggregates_same_fingerprint() {
     }
     std::fs::write(dir.path().join("data.log"), buf).unwrap();
     let cfg = make_stats_cfg(dir.path());
-    handle_digest(&cfg, true, None, SortBy::Count, 1, true);
+    handle_digest(&cfg, true, None, SortBy::Count, 1, true, None);
 }
 
 // ── handle_init tests ────────────────────────────────────────────────────────
