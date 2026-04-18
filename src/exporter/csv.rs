@@ -204,16 +204,14 @@ impl CsvExporter {
             if field_mask.is_active(11) {
                 w_sep!();
                 if has_metrics {
-                    line_buf.extend_from_slice(
-                        itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes(),
-                    );
+                    line_buf
+                        .extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
                 }
             }
             if field_mask.is_active(12) {
                 w_sep!();
                 if has_metrics {
-                    line_buf
-                        .extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
+                    line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
                 }
             }
             if field_mask.is_active(13) {

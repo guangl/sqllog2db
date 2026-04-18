@@ -55,6 +55,11 @@ impl Config {
         self.logging.validate()?;
         self.exporter.validate()?;
         self.sqllog.validate()?;
+        if let Some(filters) = &self.features.filters {
+            if filters.enable {
+                filters.validate_regexes()?;
+            }
+        }
         if let Some(names) = &self.features.fields {
             for name in names {
                 if !crate::features::FIELD_NAMES.contains(&name.as_str()) {
@@ -635,5 +640,42 @@ file = "out.csv"
         assert_eq!(cfg.database_url, "export/sqllog2db.db");
         assert!(cfg.overwrite);
         assert!(!cfg.append);
+    }
+
+    // ── regex validation ───────────────────────────────────────
+    #[test]
+    fn test_validate_invalid_regex_in_filters() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["[invalid"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("features.filters.usernames"),
+            "error should mention field name, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_valid_regex_in_filters() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["^admin.*"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.validate().is_ok());
     }
 }

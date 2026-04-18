@@ -62,8 +62,6 @@ impl FieldMask {
     pub fn includes_normalized_sql(self) -> bool {
         self.is_active(14)
     }
-
-
 }
 
 impl Default for FieldMask {
