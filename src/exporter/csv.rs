@@ -30,6 +30,7 @@ pub struct CsvExporter {
     line_buf: Vec<u8>,
     pub(crate) normalize: bool,
     pub(crate) field_mask: crate::features::FieldMask,
+    pub(crate) ordered_indices: Vec<usize>,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -56,6 +57,7 @@ impl CsvExporter {
             line_buf: Vec::with_capacity(2048),
             normalize: true,
             field_mask: crate::features::FieldMask::ALL,
+            ordered_indices: (0..crate::features::FIELD_NAMES.len()).collect(),
         }
     }
 
@@ -84,6 +86,7 @@ impl CsvExporter {
         normalize: bool,
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
+        ordered_indices: &[usize],
     ) -> Result<()> {
         line_buf.clear();
         let sql_len = pm.sql.len();
@@ -140,7 +143,7 @@ impl CsvExporter {
                 }
             }
         } else {
-            // 投影路径：按 field_mask 选择性写入字段
+            // 投影路径：按 ordered_indices 指定的字段顺序写入
             let mut need_sep = false;
 
             macro_rules! w_sep {
@@ -152,80 +155,92 @@ impl CsvExporter {
                 };
             }
 
-            if field_mask.is_active(0) {
-                w_sep!();
-                line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
-            }
-            if field_mask.is_active(1) {
-                w_sep!();
-                line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
-            }
-            if field_mask.is_active(2) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
-            }
-            if field_mask.is_active(3) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
-            }
-            if field_mask.is_active(4) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.username.as_ref().as_bytes());
-            }
-            if field_mask.is_active(5) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
-            }
-            if field_mask.is_active(6) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.statement.as_ref().as_bytes());
-            }
-            if field_mask.is_active(7) {
-                w_sep!();
-                line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
-            }
-            if field_mask.is_active(8) {
-                w_sep!();
-                line_buf.extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
-            }
-            if field_mask.is_active(9) {
-                w_sep!();
-                if let Some(tag) = &sqllog.tag {
-                    line_buf.extend_from_slice(tag.as_ref().as_bytes());
-                }
-            }
-            if field_mask.is_active(10) {
-                w_sep!();
-                line_buf.push(b'"');
-                write_csv_escaped(line_buf, pm.sql.as_bytes());
-                line_buf.push(b'"');
-            }
             let has_metrics = pm.exec_id != 0 || pm.exectime > 0.0;
-            if field_mask.is_active(11) {
-                w_sep!();
-                if has_metrics {
-                    line_buf
-                        .extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
-                }
-            }
-            if field_mask.is_active(12) {
-                w_sep!();
-                if has_metrics {
-                    line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
-                }
-            }
-            if field_mask.is_active(13) {
-                w_sep!();
-                if has_metrics {
-                    line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
-                }
-            }
-            if normalize && field_mask.is_active(14) {
-                w_sep!();
-                if let Some(ns) = normalized_sql {
-                    line_buf.push(b'"');
-                    write_csv_escaped(line_buf, ns.as_bytes());
-                    line_buf.push(b'"');
+            for &idx in ordered_indices {
+                match idx {
+                    0 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(sqllog.ts.as_ref().as_bytes());
+                    }
+                    1 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(itoa_buf.format(meta.ep).as_bytes());
+                    }
+                    2 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.sess_id.as_ref().as_bytes());
+                    }
+                    3 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.thrd_id.as_ref().as_bytes());
+                    }
+                    4 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.username.as_ref().as_bytes());
+                    }
+                    5 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.trxid.as_ref().as_bytes());
+                    }
+                    6 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.statement.as_ref().as_bytes());
+                    }
+                    7 => {
+                        w_sep!();
+                        line_buf.extend_from_slice(meta.appname.as_ref().as_bytes());
+                    }
+                    8 => {
+                        w_sep!();
+                        line_buf
+                            .extend_from_slice(strip_ip_prefix(meta.client_ip.as_ref()).as_bytes());
+                    }
+                    9 => {
+                        w_sep!();
+                        if let Some(tag) = &sqllog.tag {
+                            line_buf.extend_from_slice(tag.as_ref().as_bytes());
+                        }
+                    }
+                    10 => {
+                        w_sep!();
+                        line_buf.push(b'"');
+                        write_csv_escaped(line_buf, pm.sql.as_bytes());
+                        line_buf.push(b'"');
+                    }
+                    11 => {
+                        w_sep!();
+                        if has_metrics {
+                            line_buf.extend_from_slice(
+                                itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes(),
+                            );
+                        }
+                    }
+                    12 => {
+                        w_sep!();
+                        if has_metrics {
+                            line_buf.extend_from_slice(
+                                itoa_buf.format(i64::from(pm.rowcount)).as_bytes(),
+                            );
+                        }
+                    }
+                    13 => {
+                        w_sep!();
+                        if has_metrics {
+                            line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
+                        }
+                    }
+                    14 => {
+                        // D-03：normalize=false 时跳过 normalized_sql，与 header 逻辑一致
+                        if normalize {
+                            w_sep!();
+                            if let Some(ns) = normalized_sql {
+                                line_buf.push(b'"');
+                                write_csv_escaped(line_buf, ns.as_bytes());
+                                line_buf.push(b'"');
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             // 消费 need_sep，避免"最后一次赋值从未被读取"的编译警告
@@ -253,6 +268,7 @@ impl CsvExporter {
         normalize: bool,
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
+        ordered_indices: &[usize],
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -267,26 +283,25 @@ impl CsvExporter {
             normalize,
             normalized_sql,
             field_mask,
+            ordered_indices,
         )
     }
 
-    /// 根据 `field_mask` 和 `normalize` 标志生成 CSV 头行
+    /// 根据 `ordered_indices` 和 `normalize` 标志生成 CSV 头行
     fn build_header(&self) -> Vec<u8> {
         use crate::features::FIELD_NAMES;
         let mut header = Vec::with_capacity(128);
         let mut first = true;
-        for (i, name) in FIELD_NAMES.iter().enumerate() {
-            // 字段 14 (normalized_sql) 在 normalize=false 时跳过
-            if i == 14 && !self.normalize {
+        for &idx in &self.ordered_indices {
+            // idx 14 (normalized_sql) 在 normalize=false 时跳过（与全量路径行为一致）
+            if idx == 14 && !self.normalize {
                 continue;
             }
-            if self.field_mask.is_active(i) {
-                if !first {
-                    header.push(b',');
-                }
-                first = false;
-                header.extend_from_slice(name.as_bytes());
+            if !first {
+                header.push(b',');
             }
+            first = false;
+            header.extend_from_slice(FIELD_NAMES[idx].as_bytes());
         }
         header.push(b'\n');
         header
@@ -356,6 +371,7 @@ impl Exporter for CsvExporter {
             self.normalize,
             None,
             self.field_mask,
+            &self.ordered_indices,
         )?;
         self.stats.record_success();
         Ok(())
@@ -381,6 +397,7 @@ impl Exporter for CsvExporter {
             self.normalize,
             normalized,
             self.field_mask,
+            &self.ordered_indices,
         )?;
         self.stats.record_success();
         Ok(())
@@ -410,6 +427,7 @@ impl Exporter for CsvExporter {
             self.normalize,
             normalized,
             self.field_mask,
+            &self.ordered_indices,
         )?;
         self.stats.record_success();
         Ok(())
@@ -659,5 +677,121 @@ mod tests {
         let exporter = CsvExporter::from_config(&cfg);
         let s = format!("{exporter:?}");
         assert!(s.contains("CsvExporter"));
+    }
+
+    #[test]
+    fn test_csv_header_field_order() {
+        use crate::features::FieldMask;
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&path);
+        exporter.field_mask =
+            FieldMask::from_names(&["sql".to_string(), "username".to_string()]).unwrap();
+        exporter.ordered_indices = vec![10, 4]; // sql=10, username=4
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap(); // flush BufWriter before reading
+        let content = std::fs::read_to_string(&path).unwrap();
+        let header_line = content.lines().next().unwrap();
+        assert_eq!(header_line, "sql,username");
+    }
+
+    #[test]
+    fn test_csv_header_full_order() {
+        use crate::features::FIELD_NAMES;
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&path);
+        exporter.normalize = true;
+        // ordered_indices 默认全量 [0..14]，无需修改
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap(); // flush BufWriter before reading
+        let content = std::fs::read_to_string(&path).unwrap();
+        let header_line = content.lines().next().unwrap();
+        let expected: Vec<&str> = FIELD_NAMES.to_vec();
+        assert_eq!(header_line, expected.join(","));
+    }
+
+    #[test]
+    fn test_csv_header_no_normalized_sql_when_normalize_false() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&path);
+        exporter.normalize = false;
+        // ordered_indices 默认全量，但 idx=14 应被跳过
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap(); // flush BufWriter before reading
+        let content = std::fs::read_to_string(&path).unwrap();
+        let header_line = content.lines().next().unwrap();
+        assert!(!header_line.contains("normalized_sql"));
+        assert!(header_line.contains("sql")); // idx=10 的 "sql" 字段仍存在
+    }
+
+    #[test]
+    fn test_csv_field_order() {
+        // 验证数据行按 ordered_indices=[10,4] 顺序输出（sql, username 两列）
+        use crate::features::FieldMask;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("t.log");
+        std::fs::write(
+            &log,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:testuser trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+
+        let out = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&out);
+        exporter.normalize = false;
+        exporter.field_mask =
+            FieldMask::from_names(&["sql".to_string(), "username".to_string()]).unwrap();
+        exporter.ordered_indices = vec![10, 4]; // sql=10, username=4
+        exporter.initialize().unwrap();
+
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        for record in parser.iter().flatten() {
+            exporter.export(&record).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&out).unwrap();
+        let mut lines = content.lines();
+        let header = lines.next().unwrap();
+        let data = lines.next().unwrap();
+
+        assert_eq!(header, "sql,username");
+        // 数据行第一列是 sql 内容（含引号），第二列是 username=testuser
+        assert!(data.ends_with(",testuser"), "data line: {data}");
+    }
+
+    #[test]
+    fn test_csv_field_order_normalized_sql_skipped_when_normalize_false() {
+        use crate::features::FieldMask;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("t.log");
+        std::fs::write(
+            &log,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+
+        let out = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&out);
+        exporter.normalize = false;
+        // ordered_indices 含 14（normalized_sql），但 normalize=false 时应跳过（D-03）
+        exporter.ordered_indices = vec![10, 14]; // sql, normalized_sql（后者被跳过）
+        exporter.field_mask = FieldMask::from_names(&["sql".to_string()]).unwrap();
+        exporter.initialize().unwrap();
+
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        for record in parser.iter().flatten() {
+            exporter.export(&record).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&out).unwrap();
+        let header = content.lines().next().unwrap();
+        // normalize=false 时 normalized_sql 不出现在 header 中
+        assert!(!header.contains("normalized_sql"), "header: {header}");
     }
 }
