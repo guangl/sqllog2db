@@ -38,6 +38,6 @@
 
 | REQ-ID | Phase | Plan |
 |--------|-------|------|
-| FILTER-01 | — | — |
-| FILTER-02 | — | — |
-| FIELD-01 | — | — |
+| FILTER-01 | Phase 1 | — |
+| FILTER-02 | Phase 1 | — |
+| FIELD-01 | Phase 2 | — |
