@@ -11,7 +11,7 @@
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: 正则字段过滤** - 支持对任意字段配置正则表达式条件，多条件 AND 语义 (Completed: 2026-04-18)
-- [ ] **Phase 2: 输出字段控制** - 用户可在 config.toml 中指定导出哪些字段
+- [x] **Phase 2: 输出字段控制** - 用户可在 config.toml 中指定导出哪些字段 (Completed: 2026-04-18)
 
 ## Phase Details
 
@@ -41,10 +41,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — FeaturesConfig::ordered_field_indices() 方法 + 单元测试
-- [ ] 02-02-PLAN.md — CsvExporter：ordered_indices 字段 + build_header + write_record_preparsed 投影路径
-- [ ] 02-03-PLAN.md — SqliteExporter：ordered_indices 字段 + build_create_sql + build_insert_sql + do_insert_preparsed 投影路径
-- [ ] 02-04-PLAN.md — 接线：ExporterManager::from_config 注入 + 并行路径 process_csv_parallel 传递
+- [x] 02-01-PLAN.md — FeaturesConfig::ordered_field_indices() 方法 + 单元测试
+- [x] 02-02-PLAN.md — CsvExporter：ordered_indices 字段 + build_header + write_record_preparsed 投影路径
+- [x] 02-03-PLAN.md — SqliteExporter：ordered_indices 字段 + build_create_sql + build_insert_sql + do_insert_preparsed 投影路径
+- [x] 02-04-PLAN.md — 接线：ExporterManager::from_config 注入 + 并行路径 process_csv_parallel 传递
 
 ## Progress
 
@@ -54,4 +54,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 正则字段过滤 | 2/2 | Complete | 2026-04-18 |
-| 2. 输出字段控制 | 0/4 | Not started | - |
+| 2. 输出字段控制 | 4/4 | Complete | 2026-04-18 |
