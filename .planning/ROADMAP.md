@@ -24,7 +24,11 @@
   2. 配置多个过滤条件时，只有全部条件同时满足的记录才被保留（AND 语义）
   3. 未配置任何过滤条件时，行为与之前完全一致（无性能损耗，pipeline.is_empty() 快路径生效）
   4. 正则表达式格式错误时，工具在启动阶段报错并给出明确提示，而非在运行时静默失败
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — 正则核心实现：regex 依赖 + CompiledMetaFilters/CompiledSqlFilters + 验证 + 测试
+- [ ] 01-02-PLAN.md — 热路径集成：FilterProcessor 使用编译后的正则结构
 
 ### Phase 2: 输出字段控制
 **Goal**: 用户可以在 config.toml 中指定一个字段列表，导出结果只包含列出的字段；未指定则导出全部字段
@@ -43,5 +47,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 正则字段过滤 | 0/? | Not started | - |
+| 1. 正则字段过滤 | 0/2 | Not started | - |
 | 2. 输出字段控制 | 0/? | Not started | - |
