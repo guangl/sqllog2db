@@ -433,6 +433,7 @@ fn process_csv_parallel(
     do_normalize: bool,
     placeholder_override: Option<bool>,
     field_mask: FieldMask,
+    ordered_indices: &[usize],
     sql_record_filter: Option<&CompiledSqlFilters>,
 ) -> Result<(Vec<(PathBuf, usize)>, usize)> {
     use rayon::prelude::*;
@@ -508,6 +509,7 @@ fn process_csv_parallel(
                 let mut exporter = CsvExporter::new(&temp_path);
                 exporter.normalize = do_normalize;
                 exporter.field_mask = field_mask;
+                exporter.ordered_indices = ordered_indices.to_vec();
                 let mut em = ExporterManager::from_csv(exporter);
                 em.initialize()?;
 
@@ -638,6 +640,7 @@ pub fn handle_run(
     let pipeline = build_pipeline(final_cfg);
 
     let field_mask = final_cfg.features.field_mask();
+    let ordered_indices = final_cfg.features.ordered_field_indices();
     // 如果字段投影排除了 normalized_sql（字段 14），则禁用参数替换计算
     let do_normalize = field_mask.includes_normalized_sql()
         && final_cfg
@@ -684,6 +687,7 @@ pub fn handle_run(
             do_normalize,
             placeholder_override,
             field_mask,
+            &ordered_indices,
             sql_record_filter,
         )?;
 

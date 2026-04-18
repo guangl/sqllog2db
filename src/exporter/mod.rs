@@ -208,12 +208,14 @@ impl ExporterManager {
             .is_none_or(|r| r.enable);
 
         let field_mask = config.features.field_mask();
+        let ordered_indices = config.features.ordered_field_indices();
 
         if let Some(cfg) = &config.exporter.csv {
             info!("Using CSV exporter: {}", cfg.file);
             let mut exporter = CsvExporter::from_config(cfg);
             exporter.normalize = normalize;
             exporter.field_mask = field_mask;
+            exporter.ordered_indices.clone_from(&ordered_indices);
             return Ok(Self {
                 exporter: ExporterKind::Csv(exporter),
             });
@@ -224,6 +226,7 @@ impl ExporterManager {
             let mut exporter = SqliteExporter::from_config(cfg);
             exporter.normalize = normalize;
             exporter.field_mask = field_mask;
+            exporter.ordered_indices = ordered_indices;
             return Ok(Self {
                 exporter: ExporterKind::Sqlite(exporter),
             });

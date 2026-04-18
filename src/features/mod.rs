@@ -138,8 +138,6 @@ impl FeaturesConfig {
     /// 按用户配置顺序返回字段索引列表，供 exporter 写入时按序遍历。
     /// - `None` 或空列表 → `[0, 1, ..., 14]`（全量原始顺序，对应 D-02 决策）
     /// - 有效列表 → 按配置顺序的字段索引（字段名已在 `Config::validate()` 阶段验证）
-    // Wave 2 接线后此 allow 可移除
-    #[allow(dead_code)]
     #[must_use]
     pub fn ordered_field_indices(&self) -> Vec<usize> {
         match &self.fields {
