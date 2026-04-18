@@ -84,10 +84,20 @@ pub struct IndicatorFilters {
     pub min_row_count: Option<u32>,
 }
 
-/// SQL 过滤器 (未来扩展)
+/// SQL 过滤器（仅用于事务级预扫描阶段的 `sql` 字段）。
+///
+/// **注意：这里的 `include_patterns` / `exclude_patterns` 使用字面量子串匹配（`str::contains`），
+/// 不支持正则表达式。** 字段名带 `_patterns` 仅为历史遗留，请勿在配置中填写正则语法
+/// （如 `^SELECT`、`\bDROP\b`），否则会被当作字面字符串查找，导致静默的语义错误。
+///
+/// 如需正则匹配，请使用记录级过滤器 `record_sql`，它由 `CompiledSqlFilters` 处理，支持正则。
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct SqlFilters {
+    /// 字面子串包含列表：SQL 必须包含其中之一才会被选中（未配置 = 全部通过）。
+    /// 仅支持字面字符串，不支持正则表达式。
     pub include_patterns: Option<Vec<String>>,
+    /// 字面子串排除列表：SQL 包含其中任意一个则被过滤掉。
+    /// 仅支持字面字符串，不支持正则表达式。
     pub exclude_patterns: Option<Vec<String>>,
 }
 
@@ -144,7 +154,16 @@ impl FiltersFeature {
 
     /// 检查记录是否应该被保留
     /// 逻辑：(满足时间过滤) AND ( (没有任何其他过滤) OR (满足任一元数据过滤) OR (属于被选中的事务) )
+    ///
+    /// # Deprecated
+    ///
+    /// 元数据过滤使用 OR 语义（任意字段命中即保留），与热路径
+    /// `CompiledMetaFilters::should_keep` 的 AND 语义相反。
+    /// 直接调用此方法会得到与实际导出行为不一致的结果。
+    /// 热路径请使用 `CompiledMetaFilters::should_keep`。
     #[must_use]
+    #[deprecated(note = "semantics differ from hot path; use CompiledMetaFilters::should_keep")]
+    #[allow(deprecated)]
     pub fn should_keep(&self, ts: &str, meta: &RecordMeta) -> bool {
         // 1. 时间范围过滤 (AND 逻辑: 如果配置了时间，必须通过时间检查)
         if let Some(start) = &self.meta.start_ts {
@@ -169,7 +188,7 @@ impl FiltersFeature {
 
     /// 合并预扫描发现的事务 ID 到 `MetaFilters` 中，以便在正式扫描时直接通过 trxid 匹配保留整笔事务
     pub fn merge_found_trxids(&mut self, trxids: Vec<CompactString>) {
-        if (!self.enable && !self.has_filters()) || trxids.is_empty() {
+        if !self.enable || trxids.is_empty() {
             return;
         }
         self.meta
@@ -192,7 +211,14 @@ impl MetaFilters {
             || self.tags.as_ref().is_some_and(|v| !v.is_empty())
     }
 
+    /// OR 语义：命中任意一个已定义的字段即保留。
+    ///
+    /// # Deprecated
+    ///
+    /// 此方法使用 OR 语义，与热路径 `CompiledMetaFilters::should_keep` 的 AND 语义相反。
+    /// 请使用 `CompiledMetaFilters::should_keep`。
     #[must_use]
+    #[deprecated(note = "semantics differ from hot path; use CompiledMetaFilters::should_keep")]
     pub fn should_keep(&self, meta: &RecordMeta) -> bool {
         // OR 逻辑：命中任何一个已定义的列表即保留 (前提是已通过时间过滤)
         // trxids 使用 HashSet<CompactString>，contains(&str) 通过 Borrow<str> 零分配查询
@@ -484,6 +510,7 @@ impl SqlFilters {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

@@ -448,6 +448,9 @@ struct ProcessFileCtx<'a> {
     pb: &'a ProgressBar,
 }
 
+// stats 子命令使用 FiltersFeature::should_keep（OR 语义）做统计过滤，
+// 与热路径导出的 AND 语义无关，此处 OR 语义是预期行为。
+#[allow(deprecated)]
 fn process_file(
     parser: &dm_database_parser_sqllog::LogParser,
     ctx: &mut ProcessFileCtx,
