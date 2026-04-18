@@ -16,6 +16,7 @@ pub struct SqliteExporter {
     stats: ExportStats,
     pub(super) normalize: bool,
     pub(super) field_mask: crate::features::FieldMask,
+    pub(super) ordered_indices: Vec<usize>,
 }
 
 impl std::fmt::Debug for SqliteExporter {
@@ -44,55 +45,50 @@ impl SqliteExporter {
             stats: ExportStats::new(),
             normalize: true,
             field_mask: crate::features::FieldMask::ALL,
+            ordered_indices: (0..crate::features::FIELD_NAMES.len()).collect(),
         }
     }
 
-    /// 根据字段掩码生成 INSERT SQL
-    fn build_insert_sql(table_name: &str, field_mask: crate::features::FieldMask) -> String {
+    /// 根据有序字段索引列表生成 INSERT SQL
+    fn build_insert_sql(table_name: &str, ordered_indices: &[usize]) -> String {
         use crate::features::FIELD_NAMES;
-        if field_mask == crate::features::FieldMask::ALL {
+        if ordered_indices.len() == FIELD_NAMES.len() {
+            // 全量快速路径：与 new() 的默认 insert_sql 一致
             return format!(
                 "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
         }
-        let selected: Vec<&str> = FIELD_NAMES
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| field_mask.is_active(*i))
-            .map(|(_, name)| *name)
-            .collect();
-        let placeholders = vec!["?"; selected.len()].join(", ");
+        let cols: Vec<&str> = ordered_indices.iter().map(|&i| FIELD_NAMES[i]).collect();
+        let placeholders = vec!["?"; ordered_indices.len()].join(", ");
         format!(
             "INSERT INTO {table_name} ({}) VALUES ({placeholders})",
-            selected.join(", ")
+            cols.join(", ")
         )
     }
 
-    /// 根据字段掩码生成 CREATE TABLE SQL
-    fn build_create_sql(table_name: &str, field_mask: crate::features::FieldMask) -> String {
+    /// 根据有序字段索引列表生成 CREATE TABLE SQL
+    fn build_create_sql(table_name: &str, ordered_indices: &[usize]) -> String {
         use crate::features::FIELD_NAMES;
         const COL_TYPES: &[&str] = &[
-            "TEXT NOT NULL",    // ts
-            "INTEGER NOT NULL", // ep
-            "TEXT NOT NULL",    // sess_id
-            "TEXT NOT NULL",    // thrd_id
-            "TEXT NOT NULL",    // username
-            "TEXT NOT NULL",    // trx_id
-            "TEXT",             // statement
-            "TEXT",             // appname
-            "TEXT",             // client_ip
-            "TEXT",             // tag
-            "TEXT NOT NULL",    // sql
-            "REAL",             // exec_time_ms
-            "INTEGER",          // row_count
-            "INTEGER",          // exec_id
-            "TEXT",             // normalized_sql
+            "TEXT NOT NULL",    // ts        0
+            "INTEGER NOT NULL", // ep        1
+            "TEXT NOT NULL",    // sess_id   2
+            "TEXT NOT NULL",    // thrd_id   3
+            "TEXT NOT NULL",    // username  4
+            "TEXT NOT NULL",    // trx_id    5
+            "TEXT",             // statement 6
+            "TEXT",             // appname   7
+            "TEXT",             // client_ip 8
+            "TEXT",             // tag       9
+            "TEXT NOT NULL",    // sql       10
+            "REAL",             // exec_time_ms 11
+            "INTEGER",          // row_count 12
+            "INTEGER",          // exec_id   13
+            "TEXT",             // normalized_sql 14
         ];
-        let cols: Vec<String> = FIELD_NAMES
+        let cols: Vec<String> = ordered_indices
             .iter()
-            .enumerate()
-            .filter(|(i, _)| field_mask.is_active(*i))
-            .map(|(i, name)| format!("{name} {}", COL_TYPES[i]))
+            .map(|&i| format!("{} {}", FIELD_NAMES[i], COL_TYPES[i]))
             .collect();
         format!(
             "CREATE TABLE IF NOT EXISTS {table_name} ({})",
@@ -125,6 +121,7 @@ impl SqliteExporter {
         pm: &PerformanceMetrics<'_>,
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
+        ordered_indices: &[usize],
     ) -> std::result::Result<(), rusqlite::Error> {
         let (exec_time, row_count, exec_id) =
             if pm.exec_id != 0 || pm.exectime > 0.0 || pm.rowcount != 0 {
@@ -155,7 +152,7 @@ impl SqliteExporter {
             return Ok(());
         }
 
-        // 投影路径：按 field_mask 动态构建 Value 列表
+        // 投影路径：按有序索引从全量 Value 数组中选取（使用引用避免 move）
         use rusqlite::types::Value;
         let all: [Value; 15] = [
             Value::Text(sqllog.ts.as_ref().to_string()),
@@ -177,12 +174,7 @@ impl SqliteExporter {
             exec_id.map_or(Value::Null, Value::Integer),
             normalized_sql.map_or(Value::Null, |s| Value::Text(s.to_string())),
         ];
-        let selected: Vec<Value> = all
-            .into_iter()
-            .enumerate()
-            .filter(|(i, _)| field_mask.is_active(*i))
-            .map(|(_, v)| v)
-            .collect();
+        let selected: Vec<&Value> = ordered_indices.iter().map(|&i| &all[i]).collect();
         stmt.execute(rusqlite::params_from_iter(selected))?;
         Ok(())
     }
@@ -193,10 +185,19 @@ impl SqliteExporter {
         sqllog: &Sqllog<'_>,
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
+        ordered_indices: &[usize],
     ) -> std::result::Result<(), rusqlite::Error> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
-        Self::do_insert_preparsed(stmt, sqllog, &meta, &pm, normalized_sql, field_mask)
+        Self::do_insert_preparsed(
+            stmt,
+            sqllog,
+            &meta,
+            &pm,
+            normalized_sql,
+            field_mask,
+            ordered_indices,
+        )
     }
 }
 
@@ -237,11 +238,11 @@ impl Exporter for SqliteExporter {
             let _ = conn.execute(&format!("DELETE FROM {}", self.table_name), []);
         }
 
-        // 根据 field_mask 重新生成 insert_sql（field_mask 可在 new() 后被外部修改）
-        self.insert_sql = Self::build_insert_sql(&self.table_name, self.field_mask);
+        // 根据 ordered_indices 重新生成 insert_sql（可在 new() 后被外部修改）
+        self.insert_sql = Self::build_insert_sql(&self.table_name, &self.ordered_indices);
 
         let conn = self.conn.as_ref().unwrap();
-        let create_sql = Self::build_create_sql(&self.table_name, self.field_mask);
+        let create_sql = Self::build_create_sql(&self.table_name, &self.ordered_indices);
         conn.execute(&create_sql, [])
             .map_err(|e| Self::db_err(format!("create table failed: {e}")))?;
 
@@ -260,8 +261,14 @@ impl Exporter for SqliteExporter {
         let mut stmt = conn
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        Self::do_insert(&mut stmt, sqllog, None, self.field_mask)
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        Self::do_insert(
+            &mut stmt,
+            sqllog,
+            None,
+            self.field_mask,
+            &self.ordered_indices,
+        )
+        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
     }
@@ -279,8 +286,14 @@ impl Exporter for SqliteExporter {
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert(&mut stmt, sqllog, ns_ref, self.field_mask)
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        Self::do_insert(
+            &mut stmt,
+            sqllog,
+            ns_ref,
+            self.field_mask,
+            &self.ordered_indices,
+        )
+        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
     }
@@ -300,8 +313,16 @@ impl Exporter for SqliteExporter {
             .prepare_cached(&self.insert_sql)
             .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
         let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert_preparsed(&mut stmt, sqllog, meta, pm, ns_ref, self.field_mask)
-            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        Self::do_insert_preparsed(
+            &mut stmt,
+            sqllog,
+            meta,
+            pm,
+            ns_ref,
+            self.field_mask,
+            &self.ordered_indices,
+        )
+        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
         self.stats.record_success();
         Ok(())
     }
@@ -545,6 +566,75 @@ mod tests {
             SqliteExporter::new("/tmp/debug.db".to_string(), "tbl".to_string(), true, false);
         let s = format!("{exporter:?}");
         assert!(s.contains("SqliteExporter"));
+    }
+
+    #[test]
+    fn test_sqlite_build_insert_sql_ordered() {
+        let sql = SqliteExporter::build_insert_sql("t", &[10, 4]);
+        assert_eq!(sql, "INSERT INTO t (sql, username) VALUES (?, ?)");
+    }
+
+    #[test]
+    fn test_sqlite_build_create_sql_ordered() {
+        let sql = SqliteExporter::build_create_sql("t", &[10, 4]);
+        assert_eq!(
+            sql,
+            "CREATE TABLE IF NOT EXISTS t (sql TEXT NOT NULL, username TEXT NOT NULL)"
+        );
+    }
+
+    #[test]
+    fn test_sqlite_build_insert_sql_full_fast_path() {
+        let all_indices: Vec<usize> = (0..15).collect();
+        let sql = SqliteExporter::build_insert_sql("t", &all_indices);
+        assert_eq!(
+            sql,
+            "INSERT INTO t VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+    }
+
+    #[test]
+    fn test_sqlite_field_order() {
+        use crate::features::FieldMask;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("t.log");
+        std::fs::write(
+            &log,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:testuser trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT 42. EXECTIME: 5(ms) ROWCOUNT: 2(rows) EXEC_ID: 99.\n",
+        )
+        .unwrap();
+
+        let db = dir.path().join("out.db");
+        {
+            let mut exporter = SqliteExporter::new(
+                db.to_str().unwrap().to_string(),
+                "records".to_string(),
+                true,
+                false,
+            );
+            exporter.normalize = false;
+            exporter.field_mask =
+                FieldMask::from_names(&["sql".to_string(), "username".to_string()]).unwrap();
+            exporter.ordered_indices = vec![10, 4]; // sql=10, username=4
+            exporter.initialize().unwrap();
+
+            let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+            for record in parser.iter().flatten() {
+                exporter.export(&record).unwrap();
+            }
+            exporter.finalize().unwrap();
+        } // exporter drops here, releasing EXCLUSIVE lock
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let (sql_val, username_val): (String, String) = conn
+            .query_row("SELECT sql, username FROM records", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+
+        assert!(sql_val.contains("SELECT 42"), "sql_val: {sql_val}");
+        assert_eq!(username_val, "testuser");
     }
 
     #[test]
