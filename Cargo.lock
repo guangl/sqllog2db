@@ -685,6 +685,7 @@ dependencies = [
  "memchr",
  "mimalloc",
  "rayon",
+ "regex",
  "rusqlite",
  "ryu",
  "self_update",

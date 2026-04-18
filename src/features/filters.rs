@@ -1,5 +1,6 @@
 use ahash::HashSet as AHashSet;
 use compact_str::CompactString;
+use regex::Regex;
 use serde::{Deserialize, Deserializer};
 
 /// `trxid` 过滤集合类型：使用 `ahash`（non-cryptographic SIMD 哈希），
@@ -91,6 +92,32 @@ pub struct SqlFilters {
 }
 
 impl FiltersFeature {
+    /// 验证所有正则 pattern 格式合法。在 `Config::validate()` 中调用。
+    pub fn validate_regexes(&self) -> crate::error::Result<()> {
+        validate_pattern_list("features.filters.usernames", self.meta.usernames.as_deref())?;
+        validate_pattern_list(
+            "features.filters.client_ips",
+            self.meta.client_ips.as_deref(),
+        )?;
+        validate_pattern_list("features.filters.sess_ids", self.meta.sess_ids.as_deref())?;
+        validate_pattern_list("features.filters.thrd_ids", self.meta.thrd_ids.as_deref())?;
+        validate_pattern_list(
+            "features.filters.statements",
+            self.meta.statements.as_deref(),
+        )?;
+        validate_pattern_list("features.filters.appnames", self.meta.appnames.as_deref())?;
+        validate_pattern_list("features.filters.tags", self.meta.tags.as_deref())?;
+        validate_pattern_list(
+            "features.filters.record_sql.include_patterns",
+            self.record_sql.include_patterns.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.record_sql.exclude_patterns",
+            self.record_sql.exclude_patterns.as_deref(),
+        )?;
+        Ok(())
+    }
+
     /// 检查是否配置了任何过滤器
     #[must_use]
     pub fn has_filters(&self) -> bool {
@@ -192,6 +219,202 @@ impl MetaFilters {
         list.is_some_and(|items| {
             !items.is_empty() && items.iter().any(|i| val.contains(i.as_str()))
         })
+    }
+}
+
+/// 将正则字符串列表编译为 `Vec<Regex>`。None 或空列表返回 `Ok(None)`（未配置）。
+/// 遇到非法正则时返回 `Err(bad_pattern)`。
+// Plan 02 将在热路径中接线使用这些函数和结构，届时移除此 allow。
+#[allow(dead_code)]
+fn compile_patterns(
+    patterns: Option<&[String]>,
+) -> std::result::Result<Option<Vec<Regex>>, String> {
+    match patterns {
+        None | Some([]) => Ok(None),
+        Some(v) => {
+            let compiled = v
+                .iter()
+                .map(|p| Regex::new(p).map_err(|_| p.clone()))
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(Some(compiled))
+        }
+    }
+}
+
+/// None 表示"未配置，直接通过"；Some(patterns) 表示"任意一个匹配即满足"。
+#[inline]
+#[allow(dead_code)]
+fn match_any_regex(patterns: Option<&[Regex]>, val: &str) -> bool {
+    match patterns {
+        None | Some([]) => true,
+        Some(p) => p.iter().any(|re| re.is_match(val)),
+    }
+}
+
+/// 验证一组正则字符串是否合法，任一失败则返回 `ConfigError::InvalidValue`。
+fn validate_pattern_list(field: &str, patterns: Option<&[String]>) -> crate::error::Result<()> {
+    let Some(list) = patterns else {
+        return Ok(());
+    };
+    for pattern in list {
+        Regex::new(pattern).map_err(|e| {
+            crate::error::Error::Config(crate::error::ConfigError::InvalidValue {
+                field: field.to_string(),
+                value: pattern.clone(),
+                reason: format!("invalid regex: {e}"),
+            })
+        })?;
+    }
+    Ok(())
+}
+
+/// 预编译后的元数据过滤器，在热路径中使用。由 `MetaFilters` 在启动时构造。
+// Plan 02 接线热路径后移除此 allow。
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct CompiledMetaFilters {
+    pub usernames: Option<Vec<Regex>>,
+    pub client_ips: Option<Vec<Regex>>,
+    pub sess_ids: Option<Vec<Regex>>,
+    pub thrd_ids: Option<Vec<Regex>>,
+    pub statements: Option<Vec<Regex>>,
+    pub appnames: Option<Vec<Regex>>,
+    pub tags: Option<Vec<Regex>>,
+    pub trxids: Option<TrxidSet>,
+}
+
+impl CompiledMetaFilters {
+    /// 从 `MetaFilters` 编译所有正则。须在 `Config::validate()` 之后调用——
+    /// 验证已保证所有 pattern 合法，此处直接 expect。
+    ///
+    /// # Panics
+    ///
+    /// 如果 pattern 字符串不是合法正则（应在 `Config::validate()` 中提前拦截）。
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn from_meta(meta: &MetaFilters) -> Self {
+        Self {
+            usernames: compile_patterns(meta.usernames.as_deref()).expect("regex validated"),
+            client_ips: compile_patterns(meta.client_ips.as_deref()).expect("regex validated"),
+            sess_ids: compile_patterns(meta.sess_ids.as_deref()).expect("regex validated"),
+            thrd_ids: compile_patterns(meta.thrd_ids.as_deref()).expect("regex validated"),
+            statements: compile_patterns(meta.statements.as_deref()).expect("regex validated"),
+            appnames: compile_patterns(meta.appnames.as_deref()).expect("regex validated"),
+            tags: compile_patterns(meta.tags.as_deref()).expect("regex validated"),
+            trxids: meta.trxids.clone(),
+        }
+    }
+
+    /// 是否有任何已编译的过滤条件（用于快路径跳过）。
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn has_filters(&self) -> bool {
+        self.usernames.is_some()
+            || self.client_ips.is_some()
+            || self.sess_ids.is_some()
+            || self.thrd_ids.is_some()
+            || self.statements.is_some()
+            || self.appnames.is_some()
+            || self.tags.is_some()
+            || self.trxids.as_ref().is_some_and(|v| !v.is_empty())
+    }
+
+    /// AND 语义：所有已配置的字段都必须匹配记录才被保留（D-04）。
+    /// 字段内 OR：同一字段列表中任意一个正则匹配即满足该字段（D-02）。
+    #[inline]
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn should_keep(&self, meta: &RecordMeta) -> bool {
+        if !match_any_regex(self.usernames.as_deref(), meta.user) {
+            return false;
+        }
+        if !match_any_regex(self.client_ips.as_deref(), meta.ip) {
+            return false;
+        }
+        if !match_any_regex(self.sess_ids.as_deref(), meta.sess) {
+            return false;
+        }
+        if !match_any_regex(self.thrd_ids.as_deref(), meta.thrd) {
+            return false;
+        }
+        if !match_any_regex(self.statements.as_deref(), meta.stmt) {
+            return false;
+        }
+        if !match_any_regex(self.appnames.as_deref(), meta.app) {
+            return false;
+        }
+        // trxids：精确匹配（不用正则），参与 AND
+        if let Some(trxids) = &self.trxids {
+            if !trxids.is_empty() && !trxids.contains(meta.trxid) {
+                return false;
+            }
+        }
+        // tags：meta.tag 可能为 None，需要特殊处理
+        if let Some(tag_patterns) = &self.tags {
+            match meta.tag {
+                Some(t) if !tag_patterns.iter().any(|re| re.is_match(t)) => return false,
+                None if !tag_patterns.is_empty() => return false,
+                _ => {}
+            }
+        }
+        true
+    }
+}
+
+/// 预编译后的 SQL 记录级过滤器（D-03）。
+/// 仅用于 `record_sql`，事务级 `sql`（预扫描）保持字符串包含匹配。
+// Plan 02 接线热路径后移除此 allow。
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct CompiledSqlFilters {
+    pub include_patterns: Option<Vec<Regex>>,
+    pub exclude_patterns: Option<Vec<Regex>>,
+}
+
+impl CompiledSqlFilters {
+    /// 从 `SqlFilters` 编译正则。须在 `Config::validate()` 之后调用。
+    ///
+    /// # Panics
+    ///
+    /// 如果 pattern 字符串不是合法正则（应在 `Config::validate()` 中提前拦截）。
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn from_sql_filters(sf: &SqlFilters) -> Self {
+        Self {
+            include_patterns: compile_patterns(sf.include_patterns.as_deref())
+                .expect("regex validated"),
+            exclude_patterns: compile_patterns(sf.exclude_patterns.as_deref())
+                .expect("regex validated"),
+        }
+    }
+
+    /// 是否有任何已编译的过滤条件。
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn has_filters(&self) -> bool {
+        self.include_patterns.is_some() || self.exclude_patterns.is_some()
+    }
+
+    /// 判断 SQL 是否通过过滤：
+    /// - include：必须命中其中之一（未配置 = 通过）
+    /// - exclude：不能命中任何一个
+    #[inline]
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn matches(&self, sql: &str) -> bool {
+        let include_ok = self
+            .include_patterns
+            .as_deref()
+            .is_none_or(|p| p.is_empty() || p.iter().any(|re| re.is_match(sql)));
+        if !include_ok {
+            return false;
+        }
+        if let Some(excl) = &self.exclude_patterns {
+            if excl.iter().any(|re| re.is_match(sql)) {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -544,6 +767,165 @@ mod tests {
         assert!(f.matches("SELECT 1"));
         // SQL matches exclude → filtered
         assert!(!f.matches("DROP TABLE t"));
+    }
+
+    // ── compile_patterns ───────────────────────────────────────
+    #[test]
+    fn test_compile_patterns_none() {
+        let result = compile_patterns(None);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_compile_patterns_empty() {
+        let result = compile_patterns(Some(&[]));
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_compile_patterns_valid() {
+        let patterns = vec!["^admin.*".to_string()];
+        let result = compile_patterns(Some(&patterns));
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert!(compiled.is_some());
+        assert_eq!(compiled.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_compile_patterns_invalid() {
+        let patterns = vec!["[invalid".to_string()];
+        let result = compile_patterns(Some(&patterns));
+        assert!(result.is_err());
+    }
+
+    // ── match_any_regex ────────────────────────────────────────
+    #[test]
+    fn test_match_any_regex_none_passes() {
+        assert!(match_any_regex(None, "anything"));
+    }
+
+    #[test]
+    fn test_match_any_regex_empty_passes() {
+        assert!(match_any_regex(Some(&[]), "anything"));
+    }
+
+    #[test]
+    fn test_match_any_regex_match() {
+        use regex::Regex;
+        let re = Regex::new("^admin").unwrap();
+        assert!(match_any_regex(Some(&[re]), "admin_dba"));
+    }
+
+    #[test]
+    fn test_match_any_regex_no_match() {
+        use regex::Regex;
+        let re = Regex::new("^admin").unwrap();
+        assert!(!match_any_regex(Some(&[re]), "sys_admin"));
+    }
+
+    // ── CompiledMetaFilters ────────────────────────────────────
+    fn make_compiled_meta(
+        usernames: Option<Vec<String>>,
+        client_ips: Option<Vec<String>>,
+    ) -> CompiledMetaFilters {
+        let meta = MetaFilters {
+            usernames,
+            client_ips,
+            ..MetaFilters::default()
+        };
+        CompiledMetaFilters::from_meta(&meta)
+    }
+
+    #[test]
+    fn test_compiled_meta_unconfigured_passes() {
+        let compiled = make_compiled_meta(None, None);
+        assert!(compiled.should_keep(&m("tx", "1.2.3.4", "any_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_and_semantics() {
+        let compiled = make_compiled_meta(
+            Some(vec!["^admin".to_string()]),
+            Some(vec!["^192\\.168".to_string()]),
+        );
+        // 两者都匹配 → 保留
+        assert!(compiled.should_keep(&m("tx", "192.168.1.1", "admin_dba", None)));
+        // 只有 username 匹配 → 拒绝
+        assert!(!compiled.should_keep(&m("tx", "10.0.0.1", "admin_dba", None)));
+        // 只有 ip 匹配 → 拒绝
+        assert!(!compiled.should_keep(&m("tx", "192.168.1.1", "sys_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_single_field_or() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string(), ".*_dba$".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.should_keep(&m("tx", "ip", "admin_user", None)));
+        assert!(compiled.should_keep(&m("tx", "ip", "sys_dba", None)));
+        assert!(!compiled.should_keep(&m("tx", "ip", "regular_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_tags_none_rejected() {
+        let meta = MetaFilters {
+            tags: Some(vec!["^SEL".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // tag 为 None 时，有 tag 过滤条件，拒绝
+        assert!(!compiled.should_keep(&m("tx", "ip", "user", None)));
+        // tag 匹配时通过
+        assert!(compiled.should_keep(&m("tx", "ip", "user", Some("SELECT"))));
+        // tag 不匹配时拒绝
+        assert!(!compiled.should_keep(&m("tx", "ip", "user", Some("INSERT"))));
+    }
+
+    #[test]
+    fn test_compiled_meta_trxids_and() {
+        use compact_str::CompactString;
+        let mut trxid_set = TrxidSet::default();
+        trxid_set.insert(CompactString::from("TX123"));
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string()]),
+            trxids: Some(trxid_set),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // 两者都满足 → 通过
+        assert!(compiled.should_keep(&m("TX123", "ip", "admin_user", None)));
+        // trxid 不匹配 → 拒绝（AND）
+        assert!(!compiled.should_keep(&m("TX999", "ip", "admin_user", None)));
+        // username 不匹配 → 拒绝（AND）
+        assert!(!compiled.should_keep(&m("TX123", "ip", "other_user", None)));
+    }
+
+    // ── CompiledSqlFilters ─────────────────────────────────────
+    #[test]
+    fn test_compiled_sql_include_regex() {
+        let sf = SqlFilters {
+            include_patterns: Some(vec!["^SELECT".to_string()]),
+            exclude_patterns: None,
+        };
+        let compiled = CompiledSqlFilters::from_sql_filters(&sf);
+        assert!(compiled.matches("SELECT * FROM t"));
+        assert!(!compiled.matches("INSERT INTO t VALUES (1)"));
+    }
+
+    #[test]
+    fn test_compiled_sql_exclude_regex() {
+        let sf = SqlFilters {
+            include_patterns: None,
+            exclude_patterns: Some(vec!["DROP".to_string()]),
+        };
+        let compiled = CompiledSqlFilters::from_sql_filters(&sf);
+        assert!(compiled.matches("SELECT 1"));
+        assert!(!compiled.matches("DROP TABLE t"));
     }
 
     #[test]
