@@ -3,9 +3,9 @@ use crate::config::Config;
 use crate::error::ParserError;
 use crate::error::{Error, Result};
 use crate::exporter::{CsvExporter, ExporterManager};
-use crate::features::filters::{RecordMeta, SqlFilters};
+use crate::features::filters::RecordMeta;
 use crate::features::replace_parameters::ParamBuffer;
-use crate::features::{FieldMask, LogProcessor, Pipeline};
+use crate::features::{CompiledMetaFilters, CompiledSqlFilters, FieldMask, LogProcessor, Pipeline};
 use crate::parser::SqllogParser;
 use ahash::HashSet as AHashSet;
 use compact_str::CompactString;
@@ -23,7 +23,7 @@ fn build_pipeline(cfg: &Config) -> Pipeline {
 
     if let Some(f) = &cfg.features.filters {
         if f.has_filters() {
-            pipeline.add(Box::new(FilterProcessor::new(f.clone())));
+            pipeline.add(Box::new(FilterProcessor::new(f)));
         }
     }
 
@@ -32,17 +32,23 @@ fn build_pipeline(cfg: &Config) -> Pipeline {
 
 #[derive(Debug)]
 struct FilterProcessor {
-    filter: crate::features::FiltersFeature,
-    /// 预计算：`filter.meta.has_filters()` 的结果。避免每条记录重复扫描 8 个 Option 字段，
-    /// 并在无元数据过滤时跳过 `RecordMeta` 结构体的构造（8 次字段载入）。
+    /// 预编译的元数据过滤器（跨字段 AND 语义，字段内 OR 语义）
+    compiled_meta: CompiledMetaFilters,
+    /// 时间范围过滤（字符串比较，不用正则）
+    start_ts: Option<String>,
+    end_ts: Option<String>,
+    /// 预计算：`compiled_meta.has_filters()` 的结果，避免热路径重复检查
     has_meta_filters: bool,
 }
 
 impl FilterProcessor {
-    fn new(filter: crate::features::FiltersFeature) -> Self {
-        let has_meta_filters = filter.meta.has_filters();
+    fn new(filter: &crate::features::FiltersFeature) -> Self {
+        let compiled_meta = CompiledMetaFilters::from_meta(&filter.meta);
+        let has_meta_filters = compiled_meta.has_filters();
         Self {
-            filter,
+            compiled_meta,
+            start_ts: filter.meta.start_ts.clone(),
+            end_ts: filter.meta.end_ts.clone(),
             has_meta_filters,
         }
     }
@@ -66,12 +72,12 @@ impl LogProcessor for FilterProcessor {
         let ts = record.ts.as_ref();
 
         // 时间过滤：无需构造 RecordMeta
-        if let Some(start) = &self.filter.meta.start_ts {
+        if let Some(start) = &self.start_ts {
             if ts < start.as_str() && !ts.starts_with(start.as_str()) {
                 return false;
             }
         }
-        if let Some(end) = &self.filter.meta.end_ts {
+        if let Some(end) = &self.end_ts {
             if ts > end.as_str() && !ts.starts_with(end.as_str()) {
                 return false;
             }
@@ -82,7 +88,7 @@ impl LogProcessor for FilterProcessor {
             return true;
         }
 
-        self.filter.meta.should_keep(&RecordMeta {
+        self.compiled_meta.should_keep(&RecordMeta {
             trxid: meta.trxid.as_ref(),
             ip: meta.client_ip.as_ref(),
             sess: meta.sess_id.as_ref(),
@@ -113,7 +119,7 @@ fn process_log_file(
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
     reset_pb: bool,
-    sql_record_filter: Option<&SqlFilters>,
+    sql_record_filter: Option<&CompiledSqlFilters>,
 ) -> Result<usize> {
     // 清除上一个文件留下的残余参数，同时复用已分配的 HashMap 容量。
     params_buffer.clear();
@@ -427,7 +433,7 @@ fn process_csv_parallel(
     do_normalize: bool,
     placeholder_override: Option<bool>,
     field_mask: FieldMask,
-    sql_record_filter: Option<&SqlFilters>,
+    sql_record_filter: Option<&CompiledSqlFilters>,
 ) -> Result<(Vec<(PathBuf, usize)>, usize)> {
     use rayon::prelude::*;
 
@@ -644,12 +650,13 @@ pub fn handle_run(
         .replace_parameters
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
-    let sql_record_filter: Option<&SqlFilters> = final_cfg
+    let compiled_record_sql: Option<CompiledSqlFilters> = final_cfg
         .features
         .filters
         .as_ref()
         .filter(|f| f.enable && f.record_sql.has_filters())
-        .map(|f| &f.record_sql);
+        .map(|f| CompiledSqlFilters::from_sql_filters(&f.record_sql));
+    let sql_record_filter = compiled_record_sql.as_ref();
 
     let pb = make_progress_bar(quiet, progress_interval);
     let mut total_records = 0usize;

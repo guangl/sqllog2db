@@ -224,8 +224,6 @@ impl MetaFilters {
 
 /// 将正则字符串列表编译为 `Vec<Regex>`。None 或空列表返回 `Ok(None)`（未配置）。
 /// 遇到非法正则时返回 `Err(bad_pattern)`。
-// Plan 02 将在热路径中接线使用这些函数和结构，届时移除此 allow。
-#[allow(dead_code)]
 fn compile_patterns(
     patterns: Option<&[String]>,
 ) -> std::result::Result<Option<Vec<Regex>>, String> {
@@ -243,7 +241,6 @@ fn compile_patterns(
 
 /// None 表示"未配置，直接通过"；Some(patterns) 表示"任意一个匹配即满足"。
 #[inline]
-#[allow(dead_code)]
 fn match_any_regex(patterns: Option<&[Regex]>, val: &str) -> bool {
     match patterns {
         None | Some([]) => true,
@@ -269,8 +266,6 @@ fn validate_pattern_list(field: &str, patterns: Option<&[String]>) -> crate::err
 }
 
 /// 预编译后的元数据过滤器，在热路径中使用。由 `MetaFilters` 在启动时构造。
-// Plan 02 接线热路径后移除此 allow。
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct CompiledMetaFilters {
     pub usernames: Option<Vec<Regex>>,
@@ -291,7 +286,6 @@ impl CompiledMetaFilters {
     ///
     /// 如果 pattern 字符串不是合法正则（应在 `Config::validate()` 中提前拦截）。
     #[must_use]
-    #[allow(dead_code)]
     pub fn from_meta(meta: &MetaFilters) -> Self {
         Self {
             usernames: compile_patterns(meta.usernames.as_deref()).expect("regex validated"),
@@ -307,7 +301,6 @@ impl CompiledMetaFilters {
 
     /// 是否有任何已编译的过滤条件（用于快路径跳过）。
     #[must_use]
-    #[allow(dead_code)]
     pub fn has_filters(&self) -> bool {
         self.usernames.is_some()
             || self.client_ips.is_some()
@@ -323,7 +316,6 @@ impl CompiledMetaFilters {
     /// 字段内 OR：同一字段列表中任意一个正则匹配即满足该字段（D-02）。
     #[inline]
     #[must_use]
-    #[allow(dead_code)]
     pub fn should_keep(&self, meta: &RecordMeta) -> bool {
         if !match_any_regex(self.usernames.as_deref(), meta.user) {
             return false;
@@ -363,8 +355,6 @@ impl CompiledMetaFilters {
 
 /// 预编译后的 SQL 记录级过滤器（D-03）。
 /// 仅用于 `record_sql`，事务级 `sql`（预扫描）保持字符串包含匹配。
-// Plan 02 接线热路径后移除此 allow。
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct CompiledSqlFilters {
     pub include_patterns: Option<Vec<Regex>>,
@@ -378,7 +368,6 @@ impl CompiledSqlFilters {
     ///
     /// 如果 pattern 字符串不是合法正则（应在 `Config::validate()` 中提前拦截）。
     #[must_use]
-    #[allow(dead_code)]
     pub fn from_sql_filters(sf: &SqlFilters) -> Self {
         Self {
             include_patterns: compile_patterns(sf.include_patterns.as_deref())
@@ -400,7 +389,6 @@ impl CompiledSqlFilters {
     /// - exclude：不能命中任何一个
     #[inline]
     #[must_use]
-    #[allow(dead_code)]
     pub fn matches(&self, sql: &str) -> bool {
         let include_ok = self
             .include_patterns
