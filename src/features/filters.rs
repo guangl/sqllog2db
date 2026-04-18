@@ -546,6 +546,162 @@ mod tests {
         assert!(!f.matches("DROP TABLE t"));
     }
 
+    // ── compile_patterns ───────────────────────────────────────
+    #[test]
+    fn test_compile_patterns_none() {
+        let result = compile_patterns(None);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_compile_patterns_empty() {
+        let result = compile_patterns(Some(&[]));
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_compile_patterns_valid() {
+        let patterns = vec!["^admin.*".to_string()];
+        let result = compile_patterns(Some(&patterns));
+        assert!(result.is_ok());
+        let compiled = result.unwrap();
+        assert!(compiled.is_some());
+        assert_eq!(compiled.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_compile_patterns_invalid() {
+        let patterns = vec!["[invalid".to_string()];
+        let result = compile_patterns(Some(&patterns));
+        assert!(result.is_err());
+    }
+
+    // ── match_any_regex ────────────────────────────────────────
+    #[test]
+    fn test_match_any_regex_none_passes() {
+        assert!(match_any_regex(None, "anything"));
+    }
+
+    #[test]
+    fn test_match_any_regex_empty_passes() {
+        assert!(match_any_regex(Some(&[]), "anything"));
+    }
+
+    #[test]
+    fn test_match_any_regex_match() {
+        use regex::Regex;
+        let re = Regex::new("^admin").unwrap();
+        assert!(match_any_regex(Some(&[re]), "admin_dba"));
+    }
+
+    #[test]
+    fn test_match_any_regex_no_match() {
+        use regex::Regex;
+        let re = Regex::new("^admin").unwrap();
+        assert!(!match_any_regex(Some(&[re]), "sys_admin"));
+    }
+
+    // ── CompiledMetaFilters ────────────────────────────────────
+    fn make_compiled_meta(usernames: Option<Vec<String>>, client_ips: Option<Vec<String>>) -> CompiledMetaFilters {
+        let meta = MetaFilters {
+            usernames,
+            client_ips,
+            ..MetaFilters::default()
+        };
+        CompiledMetaFilters::from_meta(&meta)
+    }
+
+    #[test]
+    fn test_compiled_meta_unconfigured_passes() {
+        let compiled = make_compiled_meta(None, None);
+        assert!(compiled.should_keep(&m("tx", "1.2.3.4", "any_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_and_semantics() {
+        let compiled = make_compiled_meta(
+            Some(vec!["^admin".to_string()]),
+            Some(vec!["^192\\.168".to_string()]),
+        );
+        // 两者都匹配 → 保留
+        assert!(compiled.should_keep(&m("tx", "192.168.1.1", "admin_dba", None)));
+        // 只有 username 匹配 → 拒绝
+        assert!(!compiled.should_keep(&m("tx", "10.0.0.1", "admin_dba", None)));
+        // 只有 ip 匹配 → 拒绝
+        assert!(!compiled.should_keep(&m("tx", "192.168.1.1", "sys_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_single_field_or() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string(), ".*_dba$".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.should_keep(&m("tx", "ip", "admin_user", None)));
+        assert!(compiled.should_keep(&m("tx", "ip", "sys_dba", None)));
+        assert!(!compiled.should_keep(&m("tx", "ip", "regular_user", None)));
+    }
+
+    #[test]
+    fn test_compiled_meta_tags_none_rejected() {
+        let meta = MetaFilters {
+            tags: Some(vec!["^SEL".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // tag 为 None 时，有 tag 过滤条件，拒绝
+        assert!(!compiled.should_keep(&m("tx", "ip", "user", None)));
+        // tag 匹配时通过
+        assert!(compiled.should_keep(&m("tx", "ip", "user", Some("SELECT"))));
+        // tag 不匹配时拒绝
+        assert!(!compiled.should_keep(&m("tx", "ip", "user", Some("INSERT"))));
+    }
+
+    #[test]
+    fn test_compiled_meta_trxids_and() {
+        use compact_str::CompactString;
+        let mut trxid_set = TrxidSet::default();
+        trxid_set.insert(CompactString::from("TX123"));
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string()]),
+            trxids: Some(trxid_set),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // 两者都满足 → 通过
+        assert!(compiled.should_keep(&m("TX123", "ip", "admin_user", None)));
+        // trxid 不匹配 → 拒绝（AND）
+        assert!(!compiled.should_keep(&m("TX999", "ip", "admin_user", None)));
+        // username 不匹配 → 拒绝（AND）
+        assert!(!compiled.should_keep(&m("TX123", "ip", "other_user", None)));
+    }
+
+    // ── CompiledSqlFilters ─────────────────────────────────────
+    #[test]
+    fn test_compiled_sql_include_regex() {
+        let sf = SqlFilters {
+            include_patterns: Some(vec!["^SELECT".to_string()]),
+            exclude_patterns: None,
+        };
+        let compiled = CompiledSqlFilters::from_sql_filters(&sf);
+        assert!(compiled.matches("SELECT * FROM t"));
+        assert!(!compiled.matches("INSERT INTO t VALUES (1)"));
+    }
+
+    #[test]
+    fn test_compiled_sql_exclude_regex() {
+        let sf = SqlFilters {
+            include_patterns: None,
+            exclude_patterns: Some(vec!["DROP".to_string()]),
+        };
+        let compiled = CompiledSqlFilters::from_sql_filters(&sf);
+        assert!(compiled.matches("SELECT 1"));
+        assert!(!compiled.matches("DROP TABLE t"));
+    }
+
     #[test]
     fn test_filters_toml_deserialization_with_trxids_and_exec_ids() {
         // Exercises vec_to_hashset (lines 22-29) and vec_to_i64_hashset (lines 32-37)
