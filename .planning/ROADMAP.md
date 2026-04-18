@@ -38,7 +38,13 @@ Plans:
   1. 用户在 config.toml 中配置 fields 列表后，CSV/SQLite 输出只包含指定的字段列（列顺序与配置一致）
   2. config.toml 中不配置 fields 时，输出包含所有字段，与现有行为完全相同
   3. fields 中指定了不存在的字段名时，工具在启动阶段报错提示无效字段名，不会静默忽略
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — FeaturesConfig::ordered_field_indices() 方法 + 单元测试
+- [ ] 02-02-PLAN.md — CsvExporter：ordered_indices 字段 + build_header + write_record_preparsed 投影路径
+- [ ] 02-03-PLAN.md — SqliteExporter：ordered_indices 字段 + build_create_sql + build_insert_sql + do_insert_preparsed 投影路径
+- [ ] 02-04-PLAN.md — 接线：ExporterManager::from_config 注入 + 并行路径 process_csv_parallel 传递
 
 ## Progress
 
@@ -48,4 +54,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 正则字段过滤 | 2/2 | Complete | 2026-04-18 |
-| 2. 输出字段控制 | 0/? | Not started | - |
+| 2. 输出字段控制 | 0/4 | Not started | - |
