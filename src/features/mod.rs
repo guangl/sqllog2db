@@ -134,6 +134,23 @@ impl FeaturesConfig {
             Some(names) => FieldMask::from_names(names).unwrap_or(FieldMask::ALL),
         }
     }
+
+    /// 按用户配置顺序返回字段索引列表，供 exporter 写入时按序遍历。
+    /// - `None` 或空列表 → `[0, 1, ..., 14]`（全量原始顺序，对应 D-02 决策）
+    /// - 有效列表 → 按配置顺序的字段索引（字段名已在 `Config::validate()` 阶段验证）
+    // Wave 2 接线后此 allow 可移除
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn ordered_field_indices(&self) -> Vec<usize> {
+        match &self.fields {
+            None => (0..FIELD_NAMES.len()).collect(),
+            Some(names) if names.is_empty() => (0..FIELD_NAMES.len()).collect(), // D-02
+            Some(names) => names
+                .iter()
+                .filter_map(|name| FIELD_NAMES.iter().position(|&n| n == name.as_str()))
+                .collect(),
+        }
+    }
 }
 
 /// 记录处理器接口：实现此接口即可加入处理管线
@@ -261,6 +278,62 @@ mod tests {
         let cfg = ReplaceParametersConfig::default();
         assert!(cfg.enable);
         assert!(cfg.placeholders.is_empty());
+    }
+
+    // ── FeaturesConfig::ordered_field_indices ─────────────────
+
+    #[test]
+    fn test_ordered_field_indices_none_returns_all() {
+        let cfg = FeaturesConfig::default();
+        let indices = cfg.ordered_field_indices();
+        assert_eq!(indices, (0..15_usize).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_ordered_field_indices_empty_equals_all() {
+        // D-02：空列表等同于不配置，导出全部字段
+        let cfg = FeaturesConfig {
+            fields: Some(vec![]),
+            ..Default::default()
+        };
+        let indices = cfg.ordered_field_indices();
+        assert_eq!(indices.len(), 15);
+        assert_eq!(indices, (0..15_usize).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_ordered_field_indices_preserves_user_order() {
+        // 用户配置顺序 sql(10), username(4), ts(0) → 索引按此顺序
+        let cfg = FeaturesConfig {
+            fields: Some(vec!["sql".into(), "username".into(), "ts".into()]),
+            ..Default::default()
+        };
+        let indices = cfg.ordered_field_indices();
+        assert_eq!(indices, vec![10_usize, 4, 0]);
+    }
+
+    #[test]
+    fn test_ordered_field_indices_single_field() {
+        let cfg = FeaturesConfig {
+            fields: Some(vec!["normalized_sql".into()]),
+            ..Default::default()
+        };
+        let indices = cfg.ordered_field_indices();
+        assert_eq!(indices, vec![14_usize]);
+    }
+
+    #[test]
+    fn test_ordered_field_indices_all_fields_reversed() {
+        // 15 个字段反序配置 → 索引反序
+        let reversed_names: Vec<String> =
+            FIELD_NAMES.iter().rev().map(|&s| s.to_string()).collect();
+        let cfg = FeaturesConfig {
+            fields: Some(reversed_names),
+            ..Default::default()
+        };
+        let indices = cfg.ordered_field_indices();
+        let expected: Vec<usize> = (0..15).rev().collect();
+        assert_eq!(indices, expected);
     }
 
     #[test]
