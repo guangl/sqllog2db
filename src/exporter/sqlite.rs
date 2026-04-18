@@ -94,7 +94,10 @@ impl SqliteExporter {
             .filter(|(i, _)| field_mask.is_active(*i))
             .map(|(i, name)| format!("{name} {}", COL_TYPES[i]))
             .collect();
-        format!("CREATE TABLE IF NOT EXISTS {table_name} ({})", cols.join(", "))
+        format!(
+            "CREATE TABLE IF NOT EXISTS {table_name} ({})",
+            cols.join(", ")
+        )
     }
 
     #[must_use]
@@ -164,7 +167,10 @@ impl SqliteExporter {
             Value::Text(meta.statement.as_ref().to_string()),
             Value::Text(meta.appname.as_ref().to_string()),
             Value::Text(strip_ip_prefix(meta.client_ip.as_ref()).to_string()),
-            sqllog.tag.as_deref().map_or(Value::Null, |t| Value::Text(t.to_string())),
+            sqllog
+                .tag
+                .as_deref()
+                .map_or(Value::Null, |t| Value::Text(t.to_string())),
             Value::Text(pm.sql.as_ref().to_string()),
             exec_time.map_or(Value::Null, |v| Value::Real(f64::from(v))),
             row_count.map_or(Value::Null, |v| Value::Integer(i64::from(v))),
