@@ -1,5 +1,5 @@
 pub mod filters;
-pub use filters::FiltersFeature;
+pub use filters::{CompiledMetaFilters, CompiledSqlFilters, FiltersFeature};
 
 pub mod replace_parameters;
 pub use replace_parameters::compute_normalized;
