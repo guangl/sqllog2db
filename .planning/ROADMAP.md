@@ -10,7 +10,7 @@
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: 正则字段过滤** - 支持对任意字段配置正则表达式条件，多条件 AND 语义
+- [x] **Phase 1: 正则字段过滤** - 支持对任意字段配置正则表达式条件，多条件 AND 语义 (Completed: 2026-04-18)
 - [ ] **Phase 2: 输出字段控制** - 用户可在 config.toml 中指定导出哪些字段
 
 ## Phase Details
@@ -27,8 +27,8 @@
 **Plans:** 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — 正则核心实现：regex 依赖 + CompiledMetaFilters/CompiledSqlFilters + 验证 + 测试
-- [ ] 01-02-PLAN.md — 热路径集成：FilterProcessor 使用编译后的正则结构
+- [x] 01-01-PLAN.md — 正则核心实现：regex 依赖 + CompiledMetaFilters/CompiledSqlFilters + 验证 + 测试
+- [x] 01-02-PLAN.md — 热路径集成：FilterProcessor 使用编译后的正则结构
 
 ### Phase 2: 输出字段控制
 **Goal**: 用户可以在 config.toml 中指定一个字段列表，导出结果只包含列出的字段；未指定则导出全部字段
@@ -47,5 +47,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 正则字段过滤 | 0/2 | Not started | - |
+| 1. 正则字段过滤 | 2/2 | Complete | 2026-04-18 |
 | 2. 输出字段控制 | 0/? | Not started | - |
