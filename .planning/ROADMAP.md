@@ -3,6 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 增强 SQL 内容过滤与字段投影** — Phases 1–2 (shipped 2026-04-18)
+- 🔄 **v1.1 性能优化** — Phases 3–6 (active)
 
 ## Phases
 
@@ -16,9 +17,64 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
+### v1.1 性能优化
+
+- [ ] **Phase 3: Profiling & Benchmarking** — 建立性能基准，定位热路径瓶颈
+- [ ] **Phase 4: CSV 性能优化** — 提升 CSV 导出吞吐量，减少热循环分配
+- [ ] **Phase 5: SQLite 性能优化** — 批量事务、WAL 模式、prepared statement 复用
+- [ ] **Phase 6: 解析库集成 + 验收** — 集成 dm-database-parser-sqllog 1.0.0 新 API，回归验证
+
+## Phase Details
+
+### Phase 3: Profiling & Benchmarking
+**Goal**: 开发者能够量化 CSV 和 SQLite 的实际瓶颈位置，建立可复现的性能基准，作为后续优化的决策依据
+**Depends on**: Nothing (first phase of v1.1)
+**Requirements**: PERF-01
+**Success Criteria** (what must be TRUE):
+  1. criterion benchmark 能对 CSV 和 SQLite 导出路径分别输出 records/sec 吞吐数值，并可在 CI 环境重复运行
+  2. flamegraph 生成成功，能指出热路径中占比最高的函数调用链（如格式化、写入、SQL 编译等）
+  3. 基准报告记录 v1.0 的当前吞吐基准（CSV real-file ~1.55M records/sec），作为 Phase 4/5 优化目标的参照
+**Plans**: TBD
+
+### Phase 4: CSV 性能优化
+**Goal**: CSV 导出在 real 1.1GB 日志文件上吞吐可量化提升 ≥10%，热循环堆分配显著减少
+**Depends on**: Phase 3
+**Requirements**: PERF-02, PERF-03, PERF-08
+**Success Criteria** (what must be TRUE):
+  1. real 1.1GB 文件的 CSV 导出速度相比 Phase 3 基准提升 ≥10%（criterion 或计时脚本可验证）
+  2. 热循环内消除至少一处可识别的隐藏 clone 或不必要的堆分配（通过 flamegraph 对比 Phase 3 可见差异）
+  3. CSV 格式化路径在 criterion micro-benchmark 中吞吐提升（与 Phase 3 baseline 对比输出 diff 报告）
+  4. 629+ 测试全部通过，无功能退化
+**Plans**: TBD
+
+### Phase 5: SQLite 性能优化
+**Goal**: SQLite 导出速度显著提升，单行提交开销被批量事务消除，WAL 模式启用，prepared statement 得到复用
+**Depends on**: Phase 3
+**Requirements**: PERF-04, PERF-05, PERF-06
+**Success Criteria** (what must be TRUE):
+  1. SQLite 导出使用显式事务分组（如每 N 条提交一次），criterion benchmark 显示相比单行提交速度提升可量化
+  2. SQLite 数据库文件以 WAL 模式打开（`PRAGMA journal_mode=WAL` 执行后返回 `wal`，集成测试可断言）
+  3. prepared statement 在写入循环中只编译一次，通过代码审查或 flamegraph 确认无重复 `prepare()` 调用
+  4. 629+ 测试全部通过，无功能退化
+**Plans**: TBD
+
+### Phase 6: 解析库集成 + 验收
+**Goal**: dm-database-parser-sqllog 1.0.0 新 API 已评估并按需集成，所有 629+ 测试通过，v1.1 milestone 可交付
+**Depends on**: Phase 4, Phase 5
+**Requirements**: PERF-07, PERF-09
+**Success Criteria** (what must be TRUE):
+  1. PERF-07 调研结论有明确记录：若新 API 存在零拷贝或批量解析接口则集成，若无则记录原因并关闭
+  2. 所有 629+ 现有测试在最终代码上全部通过（`cargo test` 输出 0 failures）
+  3. `cargo clippy --all-targets -- -D warnings` 无警告，`cargo fmt` 无 diff
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. 正则字段过滤 | v1.0 | 2/2 | Complete | 2026-04-18 |
 | 2. 输出字段控制 | v1.0 | 4/4 | Complete | 2026-04-18 |
+| 3. Profiling & Benchmarking | v1.1 | 0/? | Not started | — |
+| 4. CSV 性能优化 | v1.1 | 0/? | Not started | — |
+| 5. SQLite 性能优化 | v1.1 | 0/? | Not started | — |
+| 6. 解析库集成 + 验收 | v1.1 | 0/? | Not started | — |

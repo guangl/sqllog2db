@@ -52,12 +52,12 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| PERF-01 | — | pending |
-| PERF-02 | — | pending |
-| PERF-03 | — | pending |
-| PERF-04 | — | pending |
-| PERF-05 | — | pending |
-| PERF-06 | — | pending |
-| PERF-07 | — | pending |
-| PERF-08 | — | pending |
-| PERF-09 | — | pending |
+| PERF-01 | Phase 3 | pending |
+| PERF-02 | Phase 4 | pending |
+| PERF-03 | Phase 4 | pending |
+| PERF-04 | Phase 5 | pending |
+| PERF-05 | Phase 5 | pending |
+| PERF-06 | Phase 5 | pending |
+| PERF-07 | Phase 6 | pending |
+| PERF-08 | Phase 4 | pending |
+| PERF-09 | Phase 6 | pending |
