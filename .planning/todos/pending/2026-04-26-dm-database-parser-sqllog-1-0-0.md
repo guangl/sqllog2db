@@ -2,6 +2,7 @@
 created: 2026-04-26T09:05:08.885Z
 title: 调研 dm-database-parser-sqllog 1.0.0 新特性
 area: general
+resolves_phase: 6
 files:
   - Cargo.toml:33
 ---
