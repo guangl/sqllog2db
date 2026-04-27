@@ -12,6 +12,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 fn synthetic_log(record_count: usize) -> String {
     use std::fmt::Write as _;
@@ -93,5 +94,41 @@ fn bench_sqlite_export(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_sqlite_export);
+fn bench_sqlite_real_file(c: &mut Criterion) {
+    let real_dir = PathBuf::from("sqllogs");
+    if !real_dir.exists() {
+        eprintln!("sqllogs/ not found, skipping sqlite_export_real benchmark");
+        return;
+    }
+
+    // 独立 bench_dir，避免与 synthetic bench_sqlite 的 bench.db 冲突
+    let bench_dir = PathBuf::from("target/bench_sqlite_real");
+    fs::create_dir_all(&bench_dir).unwrap();
+    let cfg = make_config(&real_dir, &bench_dir);
+
+    let mut group = c.benchmark_group("sqlite_export_real");
+    // 真实文件 + SQLite 双重慢，进一步减少采样次数
+    group.sample_size(5);
+    group.measurement_time(Duration::from_secs(120));
+    // 记录数未预扫描，省略 Throughput::Elements，仅记录绝对时间
+    group.bench_function("real_file", |b| {
+        b.iter(|| {
+            handle_run(
+                &cfg,
+                None,
+                false,
+                true, // quiet=true：排除进度条 I/O
+                &Arc::new(AtomicBool::new(false)),
+                80,
+                false,
+                None,
+                1,
+            )
+            .unwrap();
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_sqlite_export, bench_sqlite_real_file);
 criterion_main!(benches);
