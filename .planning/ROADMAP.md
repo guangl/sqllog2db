@@ -34,7 +34,10 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   1. criterion benchmark 能对 CSV 和 SQLite 导出路径分别输出 records/sec 吞吐数值，并可在 CI 环境重复运行
   2. flamegraph 生成成功，能指出热路径中占比最高的函数调用链（如格式化、写入、SQL 编译等）
   3. 基准报告记录 v1.0 的当前吞吐基准（CSV real-file ~1.55M records/sec），作为 Phase 4/5 优化目标的参照
-**Plans**: TBD
+**Plans**: 3 plans
+- [x] 03-01-PLAN.md — Cargo.toml 新增 [profile.flamegraph] + bench_csv real-file group
+- [x] 03-02-PLAN.md — bench_sqlite real-file group
+- [ ] 03-03-PLAN.md — 采集 v1.0 baseline、生成 flamegraph、更新 BENCHMARKS.md（Wave 2，含 human-verify checkpoint）
 
 ### Phase 4: CSV 性能优化
 **Goal**: CSV 导出在 real 1.1GB 日志文件上吞吐可量化提升 ≥10%，热循环堆分配显著减少
@@ -74,7 +77,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 |-------|-----------|----------------|--------|-----------|
 | 1. 正则字段过滤 | v1.0 | 2/2 | Complete | 2026-04-18 |
 | 2. 输出字段控制 | v1.0 | 4/4 | Complete | 2026-04-18 |
-| 3. Profiling & Benchmarking | v1.1 | 0/? | Not started | — |
+| 3. Profiling & Benchmarking | v1.1 | 0/3 | Not started | — |
 | 4. CSV 性能优化 | v1.1 | 0/? | Not started | — |
 | 5. SQLite 性能优化 | v1.1 | 0/? | Not started | — |
 | 6. 解析库集成 + 验收 | v1.1 | 0/? | Not started | — |
