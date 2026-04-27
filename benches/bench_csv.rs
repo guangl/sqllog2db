@@ -10,6 +10,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 
 /// Build N synthetic `DaMeng` SQL log lines.
 fn synthetic_log(record_count: usize) -> String {
@@ -86,5 +87,40 @@ fn bench_csv_export(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_csv_export);
+fn bench_csv_real_file(c: &mut Criterion) {
+    let real_dir = PathBuf::from("sqllogs");
+    if !real_dir.exists() {
+        eprintln!("sqllogs/ not found, skipping csv_export_real benchmark");
+        return;
+    }
+
+    let bench_dir = PathBuf::from("target/bench_csv_real");
+    fs::create_dir_all(&bench_dir).unwrap();
+    let cfg = make_config(&real_dir, &bench_dir);
+
+    let mut group = c.benchmark_group("csv_export_real");
+    // 真实文件慢，减少采样次数；measurement_time 给足单次测量窗口
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(60));
+    // 记录数未预扫描，省略 Throughput::Elements，仅记录绝对时间
+    group.bench_function("real_file", |b| {
+        b.iter(|| {
+            handle_run(
+                &cfg,
+                None,
+                false,
+                true, // quiet=true：排除进度条 I/O
+                &Arc::new(AtomicBool::new(false)),
+                80,
+                false,
+                None,
+                1,
+            )
+            .unwrap();
+        });
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_csv_export, bench_csv_real_file);
 criterion_main!(benches);
