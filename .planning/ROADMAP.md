@@ -19,7 +19,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 ### v1.1 性能优化
 
-- [ ] **Phase 3: Profiling & Benchmarking** — 建立性能基准，定位热路径瓶颈
+- [x] **Phase 3: Profiling & Benchmarking** — 建立性能基准，定位热路径瓶颈（completed 2026-04-27）
 - [ ] **Phase 4: CSV 性能优化** — 提升 CSV 导出吞吐量，减少热循环分配
 - [ ] **Phase 5: SQLite 性能优化** — 批量事务、WAL 模式、prepared statement 复用
 - [ ] **Phase 6: 解析库集成 + 验收** — 集成 dm-database-parser-sqllog 1.0.0 新 API，回归验证
@@ -37,7 +37,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: 3 plans
 - [x] 03-01-PLAN.md — Cargo.toml 新增 [profile.flamegraph] + bench_csv real-file group
 - [x] 03-02-PLAN.md — bench_sqlite real-file group
-- [ ] 03-03-PLAN.md — 采集 v1.0 baseline、生成 flamegraph、更新 BENCHMARKS.md（Wave 2，含 human-verify checkpoint）
+- [x] 03-03-PLAN.md — 采集 v1.0 baseline、生成 flamegraph、更新 BENCHMARKS.md（Wave 2，含 human-verify checkpoint）
 
 ### Phase 4: CSV 性能优化
 **Goal**: CSV 导出在 real 1.1GB 日志文件上吞吐可量化提升 ≥10%，热循环堆分配显著减少
@@ -77,7 +77,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 |-------|-----------|----------------|--------|-----------|
 | 1. 正则字段过滤 | v1.0 | 2/2 | Complete | 2026-04-18 |
 | 2. 输出字段控制 | v1.0 | 4/4 | Complete | 2026-04-18 |
-| 3. Profiling & Benchmarking | v1.1 | 0/3 | Not started | — |
+| 3. Profiling & Benchmarking | v1.1 | 3/3 | Complete | 2026-04-27 |
 | 4. CSV 性能优化 | v1.1 | 0/? | Not started | — |
 | 5. SQLite 性能优化 | v1.1 | 0/? | Not started | — |
 | 6. 解析库集成 + 验收 | v1.1 | 0/? | Not started | — |

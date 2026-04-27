@@ -10,7 +10,7 @@
 
 ### Profiling & Measurement
 
-- [ ] **PERF-01**: 开发者能够通过 criterion benchmark 和 flamegraph 定位 CSV 和 SQLite 导出的热路径瓶颈，并生成可复现的基准报告
+- [x] **PERF-01**: 开发者能够通过 criterion benchmark 和 flamegraph 定位 CSV 和 SQLite 导出的热路径瓶颈，并生成可复现的基准报告
 
 ### CSV 性能
 
@@ -52,7 +52,7 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| PERF-01 | Phase 3 | pending |
+| PERF-01 | Phase 3 | complete (2026-04-27) |
 | PERF-02 | Phase 4 | pending |
 | PERF-03 | Phase 4 | pending |
 | PERF-04 | Phase 5 | pending |
