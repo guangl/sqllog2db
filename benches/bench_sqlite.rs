@@ -107,8 +107,8 @@ fn bench_sqlite_real_file(c: &mut Criterion) {
     let cfg = make_config(&real_dir, &bench_dir);
 
     let mut group = c.benchmark_group("sqlite_export_real");
-    // 真实文件 + SQLite 双重慢，进一步减少采样次数
-    group.sample_size(5);
+    // 真实文件 + SQLite 双重慢，尽量减少采样次数（criterion 最小值为 10）
+    group.sample_size(10);
     group.measurement_time(Duration::from_secs(120));
     // 记录数未预扫描，省略 Throughput::Elements，仅记录绝对时间
     group.bench_function("real_file", |b| {
