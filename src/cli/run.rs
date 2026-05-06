@@ -124,6 +124,9 @@ fn process_log_file(
     // 清除上一个文件留下的残余参数，同时复用已分配的 HashMap 容量。
     params_buffer.clear();
 
+    // 从导出器读取性能指标标志：CSV 关闭时跳过 parse_performance_metrics()（D-05/D-06）
+    let include_pm = exporter_manager.csv_include_performance_metrics();
+
     let file_start = Instant::now();
 
     let file_name = std::path::Path::new(file_path).file_name().map_or_else(
@@ -172,8 +175,18 @@ fn process_log_file(
                     let meta = cached_meta.unwrap_or_else(|| record.parse_meta());
 
                     if passes {
-                        // DML 或通过过滤的 PARAMS：需要完整 pm 用于导出。
-                        let pm = record.parse_performance_metrics();
+                        // DML 或通过过滤的 PARAMS：CSV 关闭性能指标时合成空 pm，
+                        // 跳过 find_indicators_split（D-05/D-06）；SQL 字段来自 record.body()。
+                        let pm = if include_pm {
+                            record.parse_performance_metrics()
+                        } else {
+                            dm_database_parser_sqllog::PerformanceMetrics {
+                                sql: record.body(),
+                                exectime: 0.0,
+                                rowcount: 0,
+                                exec_id: 0,
+                            }
+                        };
 
                         // SQL 记录级过滤：只对 DML 记录（有 tag）生效，PARAMS 记录始终通过。
                         // 被过滤掉的 DML 直接丢弃，不影响 params_buffer。
@@ -812,4 +825,63 @@ pub fn handle_run(
         return Err(Error::Interrupted);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn test_include_performance_metrics_false_csv_excludes_pm_columns() {
+        // 集成测试：include_performance_metrics=false 时 CSV header 不含性能指标列
+        let dir = tempfile::TempDir::new().unwrap();
+        let log_path = dir.path().join("t.log");
+        std::fs::write(
+            &log_path,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+        let csv_path = dir.path().join("out.csv");
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        let toml = format!(
+            "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\ninclude_performance_metrics = false\n",
+            logdir = dir.path().to_string_lossy().replace('\\', "/"),
+            errlog = error_log.to_string_lossy().replace('\\', "/"),
+            applog = app_log.to_string_lossy().replace('\\', "/"),
+            csv = csv_path.to_string_lossy().replace('\\', "/"),
+        );
+        let cfg: Config = toml::from_str(&toml).unwrap();
+
+        handle_run(
+            &cfg,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1,
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let header = content.lines().next().unwrap();
+        assert!(
+            !header.contains("exec_time_ms"),
+            "header should skip exec_time_ms: {header}"
+        );
+        assert!(
+            !header.contains("row_count"),
+            "header should skip row_count: {header}"
+        );
+        assert!(
+            !header.contains("exec_id"),
+            "header should skip exec_id: {header}"
+        );
+        assert!(header.contains("sql"), "sql column should remain: {header}");
+    }
 }
