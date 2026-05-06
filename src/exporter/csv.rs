@@ -75,7 +75,7 @@ impl CsvExporter {
     /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接格式化并写入。
     /// 接收各字段的独立可变引用，允许 Rust 同时分开借用 self 的多个字段。
     #[inline]
-    fn write_record_preparsed(
+    pub(crate) fn write_record_preparsed(
         itoa_buf: &mut itoa::Buffer,
         line_buf: &mut Vec<u8>,
         sqllog: &Sqllog<'_>,
