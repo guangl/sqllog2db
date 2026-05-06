@@ -20,6 +20,7 @@ fn write_csv_escaped(buf: &mut Vec<u8>, bytes: &[u8]) {
     buf.extend_from_slice(remaining);
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub struct CsvExporter {
     path: PathBuf,
     overwrite: bool,
@@ -31,6 +32,9 @@ pub struct CsvExporter {
     pub(crate) normalize: bool,
     pub(crate) field_mask: crate::features::FieldMask,
     pub(crate) ordered_indices: Vec<usize>,
+    /// 是否在输出中包含性能指标列（`exec_time_ms`/`row_count`/`exec_id`）。
+    /// 关闭时 header 和数据行都跳过这三列；调用方（`cli/run.rs`）也应跳过 `parse_performance_metrics()`。
+    pub(crate) include_performance_metrics: bool,
 }
 
 impl std::fmt::Debug for CsvExporter {
@@ -58,6 +62,7 @@ impl CsvExporter {
             normalize: true,
             field_mask: crate::features::FieldMask::ALL,
             ordered_indices: (0..crate::features::FIELD_NAMES.len()).collect(),
+            include_performance_metrics: true,
         }
     }
 
@@ -69,6 +74,7 @@ impl CsvExporter {
         } else {
             e.overwrite = config.overwrite;
         }
+        e.include_performance_metrics = config.include_performance_metrics;
         e
     }
 
@@ -87,6 +93,7 @@ impl CsvExporter {
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
         ordered_indices: &[usize],
+        include_performance_metrics: bool,
     ) -> Result<()> {
         line_buf.clear();
         let sql_len = pm.sql.len();
@@ -127,15 +134,18 @@ impl CsvExporter {
             line_buf.push(b'"');
             write_csv_escaped(line_buf, pm.sql.as_bytes());
             line_buf.push(b'"');
-            line_buf.push(b',');
-            if pm.exec_id != 0 || pm.exectime > 0.0 {
-                line_buf.extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
+            if include_performance_metrics {
                 line_buf.push(b',');
-                line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
-                line_buf.push(b',');
-                line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
-            } else {
-                line_buf.extend_from_slice(b",,");
+                if pm.exec_id != 0 || pm.exectime > 0.0 {
+                    line_buf
+                        .extend_from_slice(itoa_buf.format(f32_ms_to_i64(pm.exectime)).as_bytes());
+                    line_buf.push(b',');
+                    line_buf.extend_from_slice(itoa_buf.format(i64::from(pm.rowcount)).as_bytes());
+                    line_buf.push(b',');
+                    line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
+                } else {
+                    line_buf.extend_from_slice(b",,");
+                }
             }
             if normalize {
                 line_buf.push(b',');
@@ -211,6 +221,9 @@ impl CsvExporter {
                         line_buf.push(b'"');
                     }
                     11 => {
+                        if !include_performance_metrics {
+                            continue;
+                        }
                         w_sep!();
                         if has_metrics {
                             line_buf.extend_from_slice(
@@ -219,6 +232,9 @@ impl CsvExporter {
                         }
                     }
                     12 => {
+                        if !include_performance_metrics {
+                            continue;
+                        }
                         w_sep!();
                         if has_metrics {
                             line_buf.extend_from_slice(
@@ -227,6 +243,9 @@ impl CsvExporter {
                         }
                     }
                     13 => {
+                        if !include_performance_metrics {
+                            continue;
+                        }
                         w_sep!();
                         if has_metrics {
                             line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
@@ -272,6 +291,7 @@ impl CsvExporter {
         normalized_sql: Option<&str>,
         field_mask: crate::features::FieldMask,
         ordered_indices: &[usize],
+        include_performance_metrics: bool,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
         let pm = sqllog.parse_performance_metrics();
@@ -287,6 +307,7 @@ impl CsvExporter {
             normalized_sql,
             field_mask,
             ordered_indices,
+            include_performance_metrics,
         )
     }
 
@@ -298,6 +319,10 @@ impl CsvExporter {
         for &idx in &self.ordered_indices {
             // idx 14 (normalized_sql) 在 normalize=false 时跳过（与全量路径行为一致）
             if idx == 14 && !self.normalize {
+                continue;
+            }
+            // idx 11/12/13 (exectime/rowcount/exec_id) 在 include_performance_metrics=false 时跳过（D-05/D-06）
+            if matches!(idx, 11..=13) && !self.include_performance_metrics {
                 continue;
             }
             if !first {
@@ -375,6 +400,7 @@ impl Exporter for CsvExporter {
             None,
             self.field_mask,
             &self.ordered_indices,
+            self.include_performance_metrics,
         )?;
         self.stats.record_success();
         Ok(())
@@ -401,6 +427,7 @@ impl Exporter for CsvExporter {
             normalized,
             self.field_mask,
             &self.ordered_indices,
+            self.include_performance_metrics,
         )?;
         self.stats.record_success();
         Ok(())
@@ -431,6 +458,7 @@ impl Exporter for CsvExporter {
             normalized,
             self.field_mask,
             &self.ordered_indices,
+            self.include_performance_metrics,
         )?;
         self.stats.record_success();
         Ok(())
@@ -853,5 +881,78 @@ mod tests {
         assert_eq!(content.lines().count(), 2);
         // 长 SQL 在数据行内完整存在
         assert!(content.contains(&big_sql), "long SQL missing from output");
+    }
+
+    #[test]
+    fn test_csv_header_skips_pm_when_disabled() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&path);
+        exporter.include_performance_metrics = false;
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        let header = content.lines().next().unwrap();
+        assert!(!header.contains("exec_time_ms"), "header: {header}");
+        assert!(!header.contains("row_count"), "header: {header}");
+        assert!(!header.contains("exec_id"), "header: {header}");
+        assert!(header.contains("sql"), "sql column should remain");
+    }
+
+    #[test]
+    fn test_csv_data_row_skips_pm_when_disabled() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 3);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.include_performance_metrics = false;
+        exporter.initialize().unwrap();
+        for r in &records {
+            exporter.export(r).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        let header = content.lines().next().unwrap();
+        let header_cols = header.split(',').count();
+        // 关闭性能指标后 header 列数 == 全量列数 - 3
+        // 全量含 normalized_sql：15；关闭性能指标后剩 12 列
+        assert_eq!(header_cols, 12, "header: {header}");
+        // 数据行列数也应为 12（注意 SQL 列含双引号但不含逗号）
+        for line in content.lines().skip(1) {
+            let cols = line.split(',').count();
+            assert_eq!(cols, 12, "data row: {line}");
+        }
+    }
+
+    #[test]
+    fn test_csv_default_include_pm_true_keeps_existing_behavior() {
+        // 默认（include_performance_metrics=true）输出与历史行为一致
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let outfile = dir.path().join("out.csv");
+        write_test_log(&logfile, 2);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        let mut exporter = CsvExporter::new(&outfile);
+        // 不显式设置 include_performance_metrics，应为默认 true
+        exporter.initialize().unwrap();
+        for r in &records {
+            exporter.export(r).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&outfile).unwrap();
+        let header = content.lines().next().unwrap();
+        assert!(header.contains("exec_time_ms"));
+        assert!(header.contains("row_count"));
+        assert!(header.contains("exec_id"));
     }
 }
