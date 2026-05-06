@@ -95,7 +95,10 @@ impl CsvExporter {
         } else {
             0
         };
-        line_buf.reserve(120 + sql_len + ns_len + 8);
+        let needed = 128 + sql_len + ns_len;
+        if line_buf.capacity() < needed {
+            line_buf.reserve(needed - line_buf.len());
+        }
 
         // 全量掩码快速路径：所有字段直接顺序写入，无分支判断
         if field_mask == crate::features::FieldMask::ALL {
