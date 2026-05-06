@@ -797,4 +797,58 @@ mod tests {
         // normalize=false 时 normalized_sql 不出现在 header 中
         assert!(!header.contains("normalized_sql"), "header: {header}");
     }
+
+    #[test]
+    fn test_csv_reserve_boundary_short_sql() {
+        // 回归：极短 SQL（10 字节级）触发 reserve 路径，输出格式必须完整
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("short.log");
+        std::fs::write(
+            &log,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        ).unwrap();
+
+        let out = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&out);
+        exporter.initialize().unwrap();
+
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        for record in parser.iter().flatten() {
+            exporter.export(&record).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&out).unwrap();
+        // header + 1 data row
+        assert_eq!(content.lines().count(), 2);
+        let data = content.lines().nth(1).unwrap();
+        assert!(data.contains("\"SELECT 1"), "data row: {data}");
+    }
+
+    #[test]
+    fn test_csv_reserve_boundary_long_sql() {
+        // 回归：长 SQL（>2KB）触发 reserve 扩容路径，line_buf 容量正确扩展
+        let dir = tempfile::TempDir::new().unwrap();
+        let log = dir.path().join("long.log");
+        let big_sql = "x".repeat(4096);
+        let line = format!(
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT '{big_sql}'. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n"
+        );
+        std::fs::write(&log, &line).unwrap();
+
+        let out = dir.path().join("out.csv");
+        let mut exporter = CsvExporter::new(&out);
+        exporter.initialize().unwrap();
+
+        let parser = LogParser::from_path(log.to_str().unwrap()).unwrap();
+        for record in parser.iter().flatten() {
+            exporter.export(&record).unwrap();
+        }
+        exporter.finalize().unwrap();
+
+        let content = std::fs::read_to_string(&out).unwrap();
+        assert_eq!(content.lines().count(), 2);
+        // 长 SQL 在数据行内完整存在
+        assert!(content.contains(&big_sql), "long SQL missing from output");
+    }
 }
