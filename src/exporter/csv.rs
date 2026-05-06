@@ -566,6 +566,7 @@ mod tests {
                 file: outfile.to_string_lossy().into(),
                 overwrite: true,
                 append: false,
+                ..crate::config::CsvExporter::default()
             });
             exporter.initialize().unwrap();
             for r in &records {
@@ -581,6 +582,7 @@ mod tests {
                 file: outfile.to_string_lossy().into(),
                 overwrite: false,
                 append: true,
+                ..crate::config::CsvExporter::default()
             });
             exporter.initialize().unwrap();
             for r in &records {
@@ -676,6 +678,7 @@ mod tests {
             file: "/tmp/cfg.csv".to_string(),
             overwrite: true,
             append: false,
+            ..config::CsvExporter::default()
         };
         let exporter = CsvExporter::from_config(&cfg);
         let s = format!("{exporter:?}");

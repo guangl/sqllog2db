@@ -142,6 +142,12 @@ impl Config {
                     .get_or_insert_with(Default::default)
                     .append = parse_bool(value)?;
             }
+            "exporter.csv.include_performance_metrics" => {
+                self.exporter
+                    .csv
+                    .get_or_insert_with(Default::default)
+                    .include_performance_metrics = parse_bool(value)?;
+            }
 
             "exporter.sqlite.database_url" => {
                 self.exporter
@@ -303,6 +309,10 @@ pub struct CsvExporter {
     pub overwrite: bool,
     #[serde(default)]
     pub append: bool,
+    /// 关闭时跳过 `parse_performance_metrics()`，CSV 省略 `exectime/rowcount/exec_id` 三列。
+    /// 默认 true，保持现有行为不变（D-06）。
+    #[serde(default = "default_true")]
+    pub include_performance_metrics: bool,
 }
 
 impl Default for CsvExporter {
@@ -311,6 +321,7 @@ impl Default for CsvExporter {
             file: "outputs/sqllog.csv".to_string(),
             overwrite: true,
             append: false,
+            include_performance_metrics: true,
         }
     }
 }
@@ -677,5 +688,55 @@ file = "out.csv"
 "#;
         let cfg: Config = toml::from_str(toml).unwrap();
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_csv_exporter_default_include_performance_metrics_true() {
+        let cfg = CsvExporter::default();
+        assert!(cfg.include_performance_metrics, "默认必须为 true（D-06）");
+    }
+
+    #[test]
+    fn test_apply_one_csv_include_performance_metrics_false() {
+        let mut cfg = Config::default();
+        cfg.apply_one("exporter.csv.include_performance_metrics", "false")
+            .expect("apply_one should succeed for valid bool");
+        assert!(
+            !cfg.exporter
+                .csv
+                .as_ref()
+                .unwrap()
+                .include_performance_metrics,
+            "--set 覆盖后应为 false"
+        );
+    }
+
+    #[test]
+    fn test_apply_one_csv_include_performance_metrics_invalid() {
+        let mut cfg = Config::default();
+        let r = cfg.apply_one("exporter.csv.include_performance_metrics", "maybe");
+        assert!(r.is_err(), "非法布尔值必须返回错误");
+    }
+
+    #[test]
+    fn test_csv_toml_default_include_performance_metrics() {
+        // TOML 未指定 include_performance_metrics 时，serde default 必须生效（true）
+        let toml = r#"
+[sqllog]
+directory = "sqllogs"
+[exporter.csv]
+file = "/tmp/x.csv"
+overwrite = true
+append = false
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(
+            cfg.exporter
+                .csv
+                .as_ref()
+                .unwrap()
+                .include_performance_metrics,
+            "未指定时 serde 默认必须为 true"
+        );
     }
 }

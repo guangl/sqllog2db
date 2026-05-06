@@ -42,6 +42,7 @@ fn make_run_config(log_dir: &std::path::Path, csv_file: &std::path::Path) -> Con
                 file: csv_file.to_str().unwrap().to_string(),
                 overwrite: true,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         },

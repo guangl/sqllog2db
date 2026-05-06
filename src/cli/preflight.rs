@@ -221,6 +221,7 @@ mod tests {
                 file: out_file.to_str().unwrap().to_string(),
                 overwrite: false,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         };
@@ -240,6 +241,7 @@ mod tests {
                 file: out_file.to_str().unwrap().to_string(),
                 overwrite: false,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         };
