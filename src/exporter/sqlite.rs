@@ -475,6 +475,7 @@ mod tests {
             table_name: "records".to_string(),
             overwrite: true,
             append: false,
+            batch_size: 10_000,
         };
         let mut exporter = SqliteExporter::from_config(&cfg);
         exporter.initialize().unwrap();
