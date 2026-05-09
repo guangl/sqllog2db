@@ -50,7 +50,7 @@ completed: 2026-05-09
 
 - **Duration:** ~30 min
 - **Completed:** 2026-05-09
-- **Tasks:** 2/3（Task 3 为 checkpoint:human-verify，等待用户决议）
+- **Tasks:** 3/3（Task 3 checkpoint:human-verify 已完成，accept-defer 决议已记录）
 - **Files modified:** 2（benches/BENCHMARKS.md 新增 Phase 4 段落，.planning/phases/04-csv/04-VERIFICATION.md 新建）
 
 ## Benchmark 最终数值（Phase 4 vs v1.0）
@@ -91,16 +91,20 @@ Phase 4 内可控的优化均已实施：
 
 ## Checkpoint 状态
 
-**Task 3（checkpoint:human-verify）正在等待用户决议。**
+**Task 3（checkpoint:human-verify）— 决议已记录（2026-05-09）**
 
-请查阅：
-- `benches/BENCHMARKS.md` 末尾的 `## Phase 4 — CSV 性能优化（v1.1）` 段落
-- `.planning/phases/04-csv/04-VERIFICATION.md`
+**决议：** `accept-defer`
 
-然后选择：
-- `approved`：PERF-02 已达成
-- `accept-defer`：接受未达 10%，原因充分（上游解析层瓶颈），留 Phase 6 接力
-- `replan: <reason>`：仍有未实施的优化方向
+Phase 4 已穷尽本 phase 内所有可控优化：
+- 格式化层条件 reserve（Plan 02）
+- include_performance_metrics=false 兜底路径，完全跳过 `parse_performance_metrics()`（Plan 03）
+
+合成 benchmark 实现 -8.53% 提升；剩余 gap（距 -10% 目标）由上游不可控热路径造成。
+
+**延期至 Phase 6 的内容：**
+1. **csv_export_real 真实文件实测**：sqllogs/ 在 agent/CI 环境不存在，Phase 4 未能量化真实文件下的端对端提升；Phase 6 应在有 sqllogs/ 的本地环境补测，并与 v1.0 baseline 对比
+2. **上游解析热路径新 API 评估**：`dm_database_parser_sqllog::Sqllog::parse_meta` 和 `<LogIterator as Iterator>::next` 是 flamegraph 最高占比热路径，属于 `dm-database-parser-sqllog` crate 内部实现；Phase 6 评估 zero-copy 解析、batch iterator 等新 API 是否可降低开销
+3. **include_pm=false 端对端独立 benchmark**：Plan 03 SUMMARY 预估节省 15-20%，尚未有独立 criterion bench group 量化；Phase 6 可添加 `csv_export_no_pm` benchmark group 精确量化
 
 ## Accomplishments
 
@@ -122,7 +126,7 @@ Phase 4 内可控的优化均已实施：
 |------|------|--------|------|
 | 1 | 运行最终 benchmark 对比，写入 BENCHMARKS.md | b1324f1 | benches/BENCHMARKS.md |
 | 2 | 创建 04-VERIFICATION.md（gsd-verify-work 接入点） | 28282a6 | .planning/phases/04-csv/04-VERIFICATION.md |
-| 3 | Human-verify checkpoint | — | 等待用户决议 |
+| 3 | Human-verify checkpoint — accept-defer 决议 | bcb5c99 | .planning/phases/04-csv/04-VERIFICATION.md |
 
 ## Deviations from Plan
 
@@ -159,4 +163,4 @@ None.
 
 ---
 *Phase: 04-csv*
-*Completed: 2026-05-09 (Tasks 1-2; Task 3 awaiting human-verify)*
+*Completed: 2026-05-09 (All 3 tasks; accept-defer verdict recorded)*
