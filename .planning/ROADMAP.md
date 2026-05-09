@@ -59,7 +59,10 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   2. SQLite 数据库文件以 WAL 模式打开（`PRAGMA journal_mode=WAL` 执行后返回 `wal`，集成测试可断言）
   3. prepared statement 在写入循环中只编译一次，通过代码审查或 flamegraph 确认无重复 `prepare()` 调用
   4. 629+ 测试全部通过，无功能退化
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 05-01-PLAN.md — config.rs 新增 batch_size 字段 + bench_sqlite.rs 单行提交对照 group
+- [ ] 05-02-PLAN.md — sqlite.rs PRAGMA 顺序修正 + WAL 模式 + 批量事务 + 3 个集成测试
+- [ ] 05-03-PLAN.md — criterion benchmark 运行 + BENCHMARKS.md Phase 5 数值更新（含 human-verify checkpoint）
 
 ### Phase 6: 解析库集成 + 验收
 **Goal**: dm-database-parser-sqllog 1.0.0 新 API 已评估并按需集成，所有 629+ 测试通过，v1.1 milestone 可交付
@@ -79,5 +82,5 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 2. 输出字段控制 | v1.0 | 4/4 | Complete | 2026-04-18 |
 | 3. Profiling & Benchmarking | v1.1 | 3/3 | Complete | 2026-04-27 |
 | 4. CSV 性能优化 | v1.1 | 0/? | Not started | — |
-| 5. SQLite 性能优化 | v1.1 | 0/? | Not started | — |
+| 5. SQLite 性能优化 | v1.1 | 0/3 | Not started | — |
 | 6. 解析库集成 + 验收 | v1.1 | 0/? | Not started | — |
