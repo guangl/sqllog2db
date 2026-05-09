@@ -2,7 +2,7 @@
 
 **Phase:** 04-csv
 **Date:** 2026-05-09
-**Status:** pending（等待 human-verify checkpoint 决议）
+**Status:** verified (accept-defer)
 
 ## Requirements coverage
 
@@ -51,7 +51,10 @@
 ## Manual verification
 
 - [ ] flamegraph diff（Phase 3 vs Phase 4）已生成于 docs/flamegraphs/csv_export_real_phase4.json（D-09，可选，未采集）
-- [ ] 用户确认 PERF-02 ≥10% 目标已达成或接受未达成结论
+- [x] 用户确认 PERF-02 ≥10% 目标已达成或接受未达成结论
+
+**决议记录（2026-05-09）：** `accept-defer`
+Phase 4 已穷尽本 phase 内所有可控优化（格式化层条件 reserve + include_performance_metrics=false 兜底）。合成 benchmark 改善 -8.53%，实现了 D-05 fallback 路径。剩余 gap（距 -10% 目标）由上游 `dm-database-parser-sqllog` crate 热路径（`parse_meta`、`LogIterator::next`）造成，Phase 4 无法控制。相关内容延期至 Phase 6 评估 zero-copy / batch iterator 等新 API。
 
 ## Open issues / follow-ups
 
