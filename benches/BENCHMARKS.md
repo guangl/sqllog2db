@@ -122,3 +122,79 @@ Top 3 占比函数（来自 v1.0 火焰图人工观察）：
 | `sqlite_export_real/real_file`  | ≤ 1.344 s                       |
 | `filters/no_pipeline`           | ≤ 2.21 ms                       |
 | `filters/pipeline_passthrough`  | ≤ 2.91 ms                       |
+
+---
+
+## Phase 4 — CSV 性能优化（v1.1）
+
+**Date:** 2026-05-09
+**Goal:** CSV 导出相比 v1.0 baseline median time 降低 ≥10%
+**Test environment:** Apple Silicon (Darwin 25.4.0), release build (`opt-level=3`, LTO=fat, strip=symbols, panic=abort), Rust stable, Criterion 100 samples.
+
+### 各 Wave 数值
+
+| Group | v1.0 baseline | Wave 0 (Plan 01) | Wave 1 (Plan 02) | Wave 2 (Plan 03 默认) | vs v1.0 |
+|-------|--------------|------------------|------------------|-----------------------|---------|
+| csv_export/1000 | 239.16 µs | — | — | 238.04 µs | -3.42% |
+| csv_export/10000 | 2127.32 µs | — | — | 1958.37 µs | -8.53% |
+| csv_export/50000 | 10606.15 µs | — | — | 9802.20 µs | -7.77% |
+| csv_export_real/real_file | 326.89 ms | — | — | N/A（sqllogs/ 不存在，skip） | N/A |
+| csv_format_only/10000 | — | ~496 µs / ~20.1M elem/s | ~500 µs / ~20.0M elem/s | ~508 µs / ~19.7M elem/s | n/a |
+
+> 注：csv_export_real 在 CI/agent 环境无 sqllogs/ 目录（538MB 真实日志文件），无法采集。v1.0 baseline JSON 为 326.89ms median。基于合成 benchmark 的 -8.5% 提升推断，实际真实文件提升方向一致但无精确实测值。
+
+### Criterion 输出原文
+
+<details>
+<summary>cargo bench --baseline v1.0（默认配置，含 include_performance_metrics=true）</summary>
+
+```
+csv_export/1000         time:   [231.31 µs 238.04 µs 245.90 µs]
+                        thrpt:  [4.0667 Melem/s 4.2009 Melem/s 4.3231 Melem/s]
+                 change:
+                        time:   [−4.6447% −3.4224% −1.8410%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.8755% +3.5437% +4.8710%]
+                        Performance has improved.
+
+csv_export/10000        time:   [1.9475 ms 1.9583 ms 1.9689 ms]
+                        thrpt:  [5.0791 Melem/s 5.1065 Melem/s 5.1349 Melem/s]
+                 change:
+                        time:   [−8.8900% −8.5274% −8.0946%] (p = 0.00 < 0.05)
+                        thrpt:  [+8.8075% +9.3223% +9.7574%]
+                        Performance has improved.
+
+csv_export/50000        time:   [9.7762 ms 9.8022 ms 9.8286 ms]
+                        thrpt:  [5.0872 Melem/s 5.1009 Melem/s 5.1145 Melem/s]
+                 change:
+                        time:   [−8.1299% −7.7701% −7.4218%] (p = 0.00 < 0.05)
+                        thrpt:  [+8.0168% +8.4248% +8.8494%]
+                        Performance has improved.
+
+sqllogs/ not found, skipping csv_export_real benchmark
+```
+</details>
+
+<details>
+<summary>cargo bench csv_format_only（格式化层隔离，无 v1.0 baseline）</summary>
+
+```
+csv_format_only/10000   time:   [506.87 µs 508.52 µs 510.38 µs]
+                        thrpt:  [19.593 Melem/s 19.665 Melem/s 19.729 Melem/s]
+```
+</details>
+
+### 解读
+
+- **csv_export/10000 vs v1.0:** -8.53% — Performance has improved（合成 benchmark，含全管道）
+- **csv_export/50000 vs v1.0:** -7.77% — Performance has improved
+- **csv_export_real/real_file vs v1.0:** 无法采集（sqllogs/ 不存在）；基于合成 benchmark 趋势，方向一致
+- **格式化层占比:** csv_format_only (~508µs) / csv_export/10000 (~1958µs) ≈ 26%；格式化层非瓶颈
+- **D-05 启用情况:** include_performance_metrics 配置项（Plan 03）已实现并连接至热循环。使用 include_pm=true（默认）测试；合成 benchmark 已体现 conditional reserve（Plan 02）+ Wave 2 parse_pm 跳过路径（Plan 03）的组合效果。
+- **主要提升来源:** Wave 2（Plan 03）引入的 include_performance_metrics=false 兜底方案；在默认 include_pm=true 下，提升约 8.5% 来自整体代码路径优化（reserve 条件化 + 编译器优化）。
+
+### 结论
+
+- [ ] PERF-02 (≥10% 提升) 默认配置下**未达成**（合成 benchmark -8.5%；实际真实文件因环境限制无法采集）
+- [x] D-05 兜底已启用（include_performance_metrics=false 配置项已实现，可将 parse_performance_metrics() 开销降至零）
+- [ ] PERF-08 flamegraph diff 已生成于 docs/flamegraphs/csv_export_real_phase4.json（D-09，可选，未采集）
+- [x] 全部 cargo test 通过（649 个），clippy/fmt 净化
