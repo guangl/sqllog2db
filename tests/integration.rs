@@ -666,6 +666,7 @@ fn test_handle_validate_with_sqlite_exporter() {
                 table_name: "records".to_string(),
                 overwrite: true,
                 append: false,
+                batch_size: 10_000,
             }),
         },
         ..Default::default()

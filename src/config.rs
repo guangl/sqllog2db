@@ -173,6 +173,19 @@ impl Config {
                     .get_or_insert_with(Default::default)
                     .append = parse_bool(value)?;
             }
+            "exporter.sqlite.batch_size" => {
+                let parsed = value.parse::<usize>().map_err(|_| {
+                    Error::Config(ConfigError::InvalidValue {
+                        field: "exporter.sqlite.batch_size".to_string(),
+                        value: value.to_string(),
+                        reason: "expected a positive integer".to_string(),
+                    })
+                })?;
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .batch_size = parsed;
+            }
 
             _ => return Err(unknown()),
         }
@@ -348,10 +361,16 @@ pub struct SqliteExporter {
     pub overwrite: bool,
     #[serde(default)]
     pub append: bool,
+    #[serde(default = "default_sqlite_batch_size")]
+    pub batch_size: usize,
 }
 
 fn default_table_name() -> String {
     "sqllog_records".to_string()
+}
+
+fn default_sqlite_batch_size() -> usize {
+    10_000
 }
 
 impl Default for SqliteExporter {
@@ -361,6 +380,7 @@ impl Default for SqliteExporter {
             table_name: "sqllog_records".to_string(),
             overwrite: true,
             append: false,
+            batch_size: 10_000,
         }
     }
 }
@@ -380,6 +400,14 @@ impl SqliteExporter {
                 value: self.table_name.clone(),
                 reason: "SQLite table name cannot be empty".to_string(),
             }));
+        }
+        if self.batch_size == 0 {
+            return Err(ConfigError::InvalidValue {
+                field: "exporter.sqlite.batch_size".to_string(),
+                value: "0".to_string(),
+                reason: "batch_size must be greater than 0".to_string(),
+            }
+            .into());
         }
         Ok(())
     }
