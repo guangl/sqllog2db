@@ -523,6 +523,7 @@ fn process_csv_parallel(
                 exporter.normalize = do_normalize;
                 exporter.field_mask = field_mask;
                 exporter.ordered_indices = ordered_indices.to_vec();
+                exporter.include_performance_metrics = csv_cfg.include_performance_metrics;
                 let mut em = ExporterManager::from_csv(exporter);
                 em.initialize()?;
 
