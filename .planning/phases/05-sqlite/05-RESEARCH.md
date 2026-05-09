@@ -496,22 +496,25 @@ fn bench_sqlite_single_row(c: &mut Criterion) {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`synchronous = OFF` vs `NORMAL` 的选择**
    - What we know：WAL + NORMAL 提供崩溃安全；WAL + OFF 最快但 WAL 崩溃时可能损坏
    - What's unclear：成功标准未指定 synchronous 级别；导出工具的业务需求（是否需要崩溃安全？）
    - Recommendation：Phase 5 实现时默认 NORMAL，可以通过 config 配置允许用户改为 OFF
+   - **RESOLVED:** Plan 02 已实现 `synchronous = NORMAL`（写入 PRAGMA 列表中，initialize_pragmas() 已确认）
 
 2. **batch_size 是否需要加入 config.toml 用户配置**
    - What we know：PERF-04 的成功标准只要求"benchmark 可量化"；config 暴露给用户增加复杂度
    - What's unclear：是否是用户应该关心的参数
    - Recommendation：加入 config（带合理默认值 10000），但在文档中说明默认值已优化，大多数用户无需修改
+   - **RESOLVED:** Plan 01 已在 config.rs 加入 `batch_size: usize` 字段，serde default 10_000，apply_one 支持 "exporter.sqlite.batch_size" key
 
 3. **`wal_checkpoint` 是否需要在 finalize() 中调用**
    - What we know：WAL 文件在 checkpoint 前不合并到主 .db 文件；大量写入后 WAL 文件可能很大
    - What's unclear：导出工具的使用场景是否需要在写完后立即 checkpoint（比如后续要复制 .db 文件）
    - Recommendation：finalize() 中在 COMMIT 后执行 `PRAGMA wal_checkpoint(TRUNCATE)` 确保 WAL 已截断，避免遗留大 WAL 文件
+   - **RESOLVED:** Plan 02 已在 finalize() 的 COMMIT 之后调用 `PRAGMA wal_checkpoint(TRUNCATE)`
 
 ---
 

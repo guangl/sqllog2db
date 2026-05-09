@@ -60,9 +60,20 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. prepared statement 在写入循环中只编译一次，通过代码审查或 flamegraph 确认无重复 `prepare()` 调用
   4. 629+ 测试全部通过，无功能退化
 **Plans**: 3 plans
+
+**Wave 1**
 - [ ] 05-01-PLAN.md — config.rs 新增 batch_size 字段 + bench_sqlite.rs 单行提交对照 group
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 05-02-PLAN.md — sqlite.rs PRAGMA 顺序修正 + WAL 模式 + 批量事务 + 3 个集成测试
+
+**Wave 3** *(blocked on Wave 1+2 completion)*
 - [ ] 05-03-PLAN.md — criterion benchmark 运行 + BENCHMARKS.md Phase 5 数值更新（含 human-verify checkpoint）
+
+**Cross-cutting constraints:**
+- `cargo clippy --all-targets -- -D warnings` 零警告（所有 Wave 结束后）
+- `cargo test` 649+ 测试全部通过（所有 Wave 结束后）
+- 函数体不超过 40 行（initialize() 提取 initialize_pragmas() 辅助函数）
 
 ### Phase 6: 解析库集成 + 验收
 **Goal**: dm-database-parser-sqllog 1.0.0 新 API 已评估并按需集成，所有 629+ 测试通过，v1.1 milestone 可交付
