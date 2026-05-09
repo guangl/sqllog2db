@@ -294,7 +294,16 @@ impl CsvExporter {
         include_performance_metrics: bool,
     ) -> Result<()> {
         let meta = sqllog.parse_meta();
-        let pm = sqllog.parse_performance_metrics();
+        let pm = if include_performance_metrics {
+            sqllog.parse_performance_metrics()
+        } else {
+            PerformanceMetrics {
+                sql: sqllog.body(),
+                exectime: 0.0,
+                rowcount: 0,
+                exec_id: 0,
+            }
+        };
         Self::write_record_preparsed(
             itoa_buf,
             line_buf,
