@@ -62,7 +62,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: 3 plans
 
 **Wave 1**
-- [ ] 05-01-PLAN.md — config.rs 新增 batch_size 字段 + bench_sqlite.rs 单行提交对照 group
+- [x] 05-01-PLAN.md — config.rs 新增 batch_size 字段 + bench_sqlite.rs 单行提交对照 group
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 05-02-PLAN.md — sqlite.rs PRAGMA 顺序修正 + WAL 模式 + 批量事务 + 3 个集成测试
