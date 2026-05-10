@@ -64,7 +64,9 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   3. 排除规则为 OR veto 语义：任意一个 exclude 字段命中即丢弃该记录
   4. 未配置任何 `exclude_*` 字段时，`pipeline.is_empty()` 快路径不受影响，零额外开销
   5. 非法排除正则在 `cargo run -- validate` 阶段报错，不推迟到运行时 panic
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 08-01-PLAN.md — filters.rs 核心：MetaFilters/CompiledMetaFilters 扩展、OR-veto should_keep、has_any_filters、validate_regexes、单元测试
+- [ ] 08-02-PLAN.md — run.rs has_any_filters() 预计算 + init.rs 配置模板 exclude_* 注释
 
 ### Phase 9: CLI 启动提速
 **Goal**: CLI 冷启动时间可量化且双重 regex 编译消除，用 hyperfine 数据作为门控
@@ -110,7 +112,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 5. SQLite 性能优化 | v1.1 | 3/3 | Complete | 2026-05-10 |
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
-| 8. 排除过滤器 | v1.2 | 0/TBD | Not started | - |
+| 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 0/TBD | Not started | - |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
