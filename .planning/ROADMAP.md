@@ -65,8 +65,16 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   4. 未配置任何 `exclude_*` 字段时，`pipeline.is_empty()` 快路径不受影响，零额外开销
   5. 非法排除正则在 `cargo run -- validate` 阶段报错，不推迟到运行时 panic
 **Plans**: 2 plans
+
+**Wave 1**
 - [ ] 08-01-PLAN.md — filters.rs 核心：MetaFilters/CompiledMetaFilters 扩展、OR-veto should_keep、has_any_filters、validate_regexes、单元测试
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 08-02-PLAN.md — run.rs has_any_filters() 预计算 + init.rs 配置模板 exclude_* 注释
+
+**Cross-cutting constraints:**
+- `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过（两个 plan 均要求）
+- `cargo test` 全量通过（两个 plan 均要求）
 
 ### Phase 9: CLI 启动提速
 **Goal**: CLI 冷启动时间可量化且双重 regex 编译消除，用 hyperfine 数据作为门控
