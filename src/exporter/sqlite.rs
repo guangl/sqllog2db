@@ -49,7 +49,7 @@ impl SqliteExporter {
     #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         let insert_sql = format!(
-            "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"{table_name}\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         Self {
             database_url,
@@ -73,13 +73,13 @@ impl SqliteExporter {
         if ordered_indices.len() == FIELD_NAMES.len() {
             // 全量快速路径：与 new() 的默认 insert_sql 一致
             return format!(
-                "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO \"{table_name}\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
         }
         let cols: Vec<&str> = ordered_indices.iter().map(|&i| FIELD_NAMES[i]).collect();
         let placeholders = vec!["?"; ordered_indices.len()].join(", ");
         format!(
-            "INSERT INTO {table_name} ({}) VALUES ({placeholders})",
+            "INSERT INTO \"{table_name}\" ({}) VALUES ({placeholders})",
             cols.join(", ")
         )
     }
@@ -109,7 +109,7 @@ impl SqliteExporter {
             .map(|&i| format!("{} {}", FIELD_NAMES[i], COL_TYPES[i]))
             .collect();
         format!(
-            "CREATE TABLE IF NOT EXISTS {table_name} ({})",
+            "CREATE TABLE IF NOT EXISTS \"{table_name}\" ({})",
             cols.join(", ")
         )
     }
@@ -257,7 +257,7 @@ impl Exporter for SqliteExporter {
 
         if self.overwrite {
             let conn = self.conn.as_ref().unwrap();
-            conn.execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), [])
+            conn.execute(&format!("DROP TABLE IF EXISTS \"{}\"", self.table_name), [])
                 .map_err(|e| Self::db_err(format!("drop table failed: {e}")))?;
             info!("Dropped existing table: {}", self.table_name);
         } else if !self.append {
@@ -608,7 +608,7 @@ mod tests {
     #[test]
     fn test_sqlite_build_insert_sql_ordered() {
         let sql = SqliteExporter::build_insert_sql("t", &[10, 4]);
-        assert_eq!(sql, "INSERT INTO t (sql, username) VALUES (?, ?)");
+        assert_eq!(sql, "INSERT INTO \"t\" (sql, username) VALUES (?, ?)");
     }
 
     #[test]
@@ -616,7 +616,7 @@ mod tests {
         let sql = SqliteExporter::build_create_sql("t", &[10, 4]);
         assert_eq!(
             sql,
-            "CREATE TABLE IF NOT EXISTS t (sql TEXT NOT NULL, username TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS \"t\" (sql TEXT NOT NULL, username TEXT NOT NULL)"
         );
     }
 
@@ -626,7 +626,7 @@ mod tests {
         let sql = SqliteExporter::build_insert_sql("t", &all_indices);
         assert_eq!(
             sql,
-            "INSERT INTO t VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"t\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
     }
 
@@ -711,6 +711,34 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 6);
+    }
+
+    #[test]
+    fn test_sqlite_initialize_creates_quoted_table() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("quoted.db");
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "my_records".to_string(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+        }
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let create_stmt: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='my_records'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            create_stmt.contains("\"my_records\""),
+            "table name should be double-quoted; actual: {create_stmt}"
+        );
     }
 
     #[test]
