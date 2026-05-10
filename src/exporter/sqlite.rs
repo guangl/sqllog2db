@@ -14,9 +14,41 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
+    row_count: usize,
+    batch_size: usize,
     pub(super) normalize: bool,
     pub(super) field_mask: crate::features::FieldMask,
     pub(super) ordered_indices: Vec<usize>,
+}
+
+/// 按正确顺序设置数据库 PRAGMA：`page_size` 必须在 `journal_mode=WAL` 之前，
+/// WAL 启用后 `page_size` 被锁定。使用 `pragma_update_and_check` 原子验证 WAL 已生效。
+fn initialize_pragmas(conn: &Connection) -> std::result::Result<(), rusqlite::Error> {
+    // page_size 必须在 journal_mode=WAL 之前设置（WAL 启用后 page_size 被锁定）
+    conn.execute_batch("PRAGMA page_size = 65536;")?;
+
+    // 原子设置并验证 WAL 模式已启用（pragma_update_and_check 是标准 API）
+    let journal_mode: String =
+        conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
+    if journal_mode != "wal" {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+            Some(format!(
+                "journal_mode=WAL not supported, got: {journal_mode}"
+            )),
+        ));
+    }
+
+    // 其余 PRAGMA（顺序不敏感）
+    conn.execute_batch(
+        "PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = 1000000;
+         PRAGMA locking_mode = EXCLUSIVE;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA mmap_size = 30000000000;
+         PRAGMA threads = 4;",
+    )?;
+    Ok(())
 }
 
 impl std::fmt::Debug for SqliteExporter {
@@ -43,6 +75,8 @@ impl SqliteExporter {
             append,
             conn: None,
             stats: ExportStats::new(),
+            row_count: 0,
+            batch_size: 10_000,
             normalize: true,
             field_mask: crate::features::FieldMask::ALL,
             ordered_indices: (0..crate::features::FIELD_NAMES.len()).collect(),
@@ -98,18 +132,32 @@ impl SqliteExporter {
 
     #[must_use]
     pub fn from_config(config: &crate::config::SqliteExporter) -> Self {
-        Self::new(
+        let mut exporter = Self::new(
             config.database_url.clone(),
             config.table_name.clone(),
             config.overwrite,
             config.append,
-        )
+        );
+        exporter.batch_size = config.batch_size;
+        exporter
     }
 
     fn db_err(reason: impl Into<String>) -> Error {
         Error::Export(ExportError::DatabaseFailed {
             reason: reason.into(),
         })
+    }
+
+    /// 批量提交：每写入 `batch_size` 行后执行一次 `COMMIT; BEGIN`，
+    /// 将大事务拆分为多个小事务，降低内存占用并提升写入稳定性。
+    fn batch_commit_if_needed(&mut self) -> Result<()> {
+        self.row_count += 1;
+        if self.row_count % self.batch_size == 0 {
+            let conn = self.conn.as_ref().unwrap();
+            conn.execute_batch("COMMIT; BEGIN")
+                .map_err(|e| Self::db_err(format!("batch commit failed: {e}")))?;
+        }
+        Ok(())
     }
 
     /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接插入。
@@ -214,19 +262,10 @@ impl Exporter for SqliteExporter {
         let conn = Connection::open(&self.database_url)
             .map_err(|e| Self::db_err(format!("open failed: {e}")))?;
 
-        conn.execute_batch(
-            "PRAGMA journal_mode = OFF;
-             PRAGMA synchronous = OFF;
-             PRAGMA cache_size = 1000000;
-             PRAGMA locking_mode = EXCLUSIVE;
-             PRAGMA temp_store = MEMORY;
-             PRAGMA mmap_size = 30000000000;
-             PRAGMA page_size = 65536;
-             PRAGMA threads = 4;",
-        )
-        .map_err(|e| Self::db_err(format!("set PRAGMAs failed: {e}")))?;
+        initialize_pragmas(&conn).map_err(|e| Self::db_err(format!("set PRAGMAs failed: {e}")))?;
 
         self.conn = Some(conn);
+        self.row_count = 0;
 
         if self.overwrite {
             let conn = self.conn.as_ref().unwrap();
@@ -254,22 +293,25 @@ impl Exporter for SqliteExporter {
     }
 
     fn export(&mut self, sqllog: &Sqllog<'_>) -> Result<()> {
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        Self::do_insert(
-            &mut stmt,
-            sqllog,
-            None,
-            self.field_mask,
-            &self.ordered_indices,
-        )
-        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        {
+            let conn = self
+                .conn
+                .as_ref()
+                .ok_or_else(|| Self::db_err("not initialized"))?;
+            let mut stmt = conn
+                .prepare_cached(&self.insert_sql)
+                .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
+            Self::do_insert(
+                &mut stmt,
+                sqllog,
+                None,
+                self.field_mask,
+                &self.ordered_indices,
+            )
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        } // stmt and conn dropped here, releasing borrow
         self.stats.record_success();
+        self.batch_commit_if_needed()?;
         Ok(())
     }
 
@@ -278,23 +320,26 @@ impl Exporter for SqliteExporter {
         sqllog: &Sqllog<'_>,
         normalized: Option<&str>,
     ) -> Result<()> {
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert(
-            &mut stmt,
-            sqllog,
-            ns_ref,
-            self.field_mask,
-            &self.ordered_indices,
-        )
-        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        {
+            let conn = self
+                .conn
+                .as_ref()
+                .ok_or_else(|| Self::db_err("not initialized"))?;
+            let mut stmt = conn
+                .prepare_cached(&self.insert_sql)
+                .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
+            let ns_ref = if self.normalize { normalized } else { None };
+            Self::do_insert(
+                &mut stmt,
+                sqllog,
+                ns_ref,
+                self.field_mask,
+                &self.ordered_indices,
+            )
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        } // stmt and conn dropped here, releasing borrow
         self.stats.record_success();
+        self.batch_commit_if_needed()?;
         Ok(())
     }
 
@@ -305,25 +350,28 @@ impl Exporter for SqliteExporter {
         pm: &PerformanceMetrics<'_>,
         normalized: Option<&str>,
     ) -> Result<()> {
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("not initialized"))?;
-        let mut stmt = conn
-            .prepare_cached(&self.insert_sql)
-            .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
-        let ns_ref = if self.normalize { normalized } else { None };
-        Self::do_insert_preparsed(
-            &mut stmt,
-            sqllog,
-            meta,
-            pm,
-            ns_ref,
-            self.field_mask,
-            &self.ordered_indices,
-        )
-        .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        {
+            let conn = self
+                .conn
+                .as_ref()
+                .ok_or_else(|| Self::db_err("not initialized"))?;
+            let mut stmt = conn
+                .prepare_cached(&self.insert_sql)
+                .map_err(|e| Self::db_err(format!("prepare failed: {e}")))?;
+            let ns_ref = if self.normalize { normalized } else { None };
+            Self::do_insert_preparsed(
+                &mut stmt,
+                sqllog,
+                meta,
+                pm,
+                ns_ref,
+                self.field_mask,
+                &self.ordered_indices,
+            )
+            .map_err(|e| Self::db_err(format!("insert failed: {e}")))?;
+        } // stmt and conn dropped here, releasing borrow
         self.stats.record_success();
+        self.batch_commit_if_needed()?;
         Ok(())
     }
 
@@ -331,6 +379,9 @@ impl Exporter for SqliteExporter {
         if let Some(conn) = &self.conn {
             conn.execute_batch("COMMIT;")
                 .map_err(|e| Self::db_err(format!("commit failed: {e}")))?;
+            // WAL checkpoint：将 WAL 合并到主文件，避免遗留 .db-wal 文件
+            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .map_err(|e| Self::db_err(format!("wal checkpoint failed: {e}")))?;
         }
         info!(
             "SQLite export finished: {} (success: {}, failed: {})",
@@ -675,5 +726,78 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 6);
+    }
+
+    #[test]
+    fn test_sqlite_wal_mode_enabled() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("wal_mode.db");
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+        } // EXCLUSIVE lock released
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let mode: String = conn
+            .pragma_update_and_check(None, "journal_mode", "wal", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "wal", "PRAGMA journal_mode=WAL 必须返回 'wal'");
+    }
+
+    #[test]
+    fn test_sqlite_wal_page_size() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("page_size.db");
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let page_size: i64 = conn
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            page_size, 65536,
+            "WAL 模式下 page_size 必须为 65536，当前为 {page_size}"
+        );
+    }
+
+    #[test]
+    fn test_sqlite_batch_commit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("batch.log");
+        let dbfile = dir.path().join("batch.db");
+        write_test_log(&logfile, 5);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        {
+            let mut exporter =
+                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
+            // batch_size=2：每 2 条触发一次中间 COMMIT（5 条 → 2 次中间 COMMIT，finalize 提交第5条）
+            exporter.batch_size = 2;
+            exporter.initialize().unwrap();
+            for r in &records {
+                exporter.export_one_normalized(r, None).unwrap();
+            }
+            exporter.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 5,
+            "5 条记录经过批量提交后必须全部持久化，实际: {count}"
+        );
     }
 }
