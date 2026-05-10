@@ -71,6 +71,13 @@ pub struct MetaFilters {
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
+    pub exclude_usernames: Option<Vec<String>>,
+    pub exclude_client_ips: Option<Vec<String>>,
+    pub exclude_sess_ids: Option<Vec<String>>,
+    pub exclude_thrd_ids: Option<Vec<String>>,
+    pub exclude_statements: Option<Vec<String>>,
+    pub exclude_appnames: Option<Vec<String>>,
+    pub exclude_tags: Option<Vec<String>>,
 }
 
 /// 指标过滤器 (Transaction-level)
@@ -209,6 +216,31 @@ impl MetaFilters {
             || self.statements.as_ref().is_some_and(|v| !v.is_empty())
             || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
             || self.tags.as_ref().is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_usernames
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_client_ips
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_sess_ids
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_thrd_ids
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_statements
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_appnames
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self.exclude_tags.as_ref().is_some_and(|v| !v.is_empty())
     }
 
     /// OR 语义：命中任意一个已定义的字段即保留。
@@ -302,6 +334,13 @@ pub struct CompiledMetaFilters {
     pub appnames: Option<Vec<Regex>>,
     pub tags: Option<Vec<Regex>>,
     pub trxids: Option<TrxidSet>,
+    pub exclude_usernames: Option<Vec<Regex>>,
+    pub exclude_client_ips: Option<Vec<Regex>>,
+    pub exclude_sess_ids: Option<Vec<Regex>>,
+    pub exclude_thrd_ids: Option<Vec<Regex>>,
+    pub exclude_statements: Option<Vec<Regex>>,
+    pub exclude_appnames: Option<Vec<Regex>>,
+    pub exclude_tags: Option<Vec<Regex>>,
 }
 
 impl CompiledMetaFilters {
@@ -322,10 +361,24 @@ impl CompiledMetaFilters {
             appnames: compile_patterns(meta.appnames.as_deref()).expect("regex validated"),
             tags: compile_patterns(meta.tags.as_deref()).expect("regex validated"),
             trxids: meta.trxids.clone(),
+            exclude_usernames: compile_patterns(meta.exclude_usernames.as_deref())
+                .expect("regex validated"),
+            exclude_client_ips: compile_patterns(meta.exclude_client_ips.as_deref())
+                .expect("regex validated"),
+            exclude_sess_ids: compile_patterns(meta.exclude_sess_ids.as_deref())
+                .expect("regex validated"),
+            exclude_thrd_ids: compile_patterns(meta.exclude_thrd_ids.as_deref())
+                .expect("regex validated"),
+            exclude_statements: compile_patterns(meta.exclude_statements.as_deref())
+                .expect("regex validated"),
+            exclude_appnames: compile_patterns(meta.exclude_appnames.as_deref())
+                .expect("regex validated"),
+            exclude_tags: compile_patterns(meta.exclude_tags.as_deref()).expect("regex validated"),
         }
     }
 
     /// 是否有任何已编译的过滤条件（用于快路径跳过）。
+    /// 只检查 include 字段，不含 exclude 字段。
     #[must_use]
     pub fn has_filters(&self) -> bool {
         self.usernames.is_some()
@@ -338,11 +391,78 @@ impl CompiledMetaFilters {
             || self.trxids.as_ref().is_some_and(|v| !v.is_empty())
     }
 
+    /// 是否有任何过滤条件（include 或 exclude 任一非空）。
+    /// 供 `FilterProcessor::new()` 预计算 `has_meta_filters`，
+    /// 确保纯 exclude 配置也激活 meta 检查路径。
+    #[must_use]
+    pub fn has_any_filters(&self) -> bool {
+        self.has_filters()
+            || self.exclude_usernames.is_some()
+            || self.exclude_client_ips.is_some()
+            || self.exclude_sess_ids.is_some()
+            || self.exclude_thrd_ids.is_some()
+            || self.exclude_statements.is_some()
+            || self.exclude_appnames.is_some()
+            || self.exclude_tags.is_some()
+    }
+
     /// AND 语义：所有已配置的字段都必须匹配记录才被保留（D-04）。
     /// 字段内 OR：同一字段列表中任意一个正则匹配即满足该字段（D-02）。
+    /// Exclude OR-veto：任一 exclude 字段命中则直接丢弃，优先于 include 检查（D-04）。
     #[inline]
     #[must_use]
     pub fn should_keep(&self, meta: &RecordMeta) -> bool {
+        // === 1. Exclude OR-veto（任一命中 → 丢弃，短路最快）===
+        if self.exclude_veto(meta) {
+            return false;
+        }
+        // === 2. Include AND 检查（现有逻辑，不变）===
+        self.include_and(meta)
+    }
+
+    /// Exclude OR-veto：任一 exclude 字段命中则返回 true（应丢弃）。
+    fn exclude_veto(&self, meta: &RecordMeta) -> bool {
+        if self.exclude_usernames.is_some()
+            && match_any_regex(self.exclude_usernames.as_deref(), meta.user)
+        {
+            return true;
+        }
+        if self.exclude_client_ips.is_some()
+            && match_any_regex(self.exclude_client_ips.as_deref(), meta.ip)
+        {
+            return true;
+        }
+        if self.exclude_sess_ids.is_some()
+            && match_any_regex(self.exclude_sess_ids.as_deref(), meta.sess)
+        {
+            return true;
+        }
+        if self.exclude_thrd_ids.is_some()
+            && match_any_regex(self.exclude_thrd_ids.as_deref(), meta.thrd)
+        {
+            return true;
+        }
+        if self.exclude_statements.is_some()
+            && match_any_regex(self.exclude_statements.as_deref(), meta.stmt)
+        {
+            return true;
+        }
+        if self.exclude_appnames.is_some()
+            && match_any_regex(self.exclude_appnames.as_deref(), meta.app)
+        {
+            return true;
+        }
+        // exclude_tags：tag 为 Option<&str>，无 tag 值时不触发 exclude（保留该记录）
+        if let (Some(excl_tags), Some(t)) = (&self.exclude_tags, meta.tag) {
+            if excl_tags.iter().any(|re| re.is_match(t)) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Include AND 检查：所有已配置字段必须匹配才返回 true。
+    fn include_and(&self, meta: &RecordMeta) -> bool {
         if !match_any_regex(self.usernames.as_deref(), meta.user) {
             return false;
         }
@@ -918,6 +1038,58 @@ mod tests {
         assert!(!compiled.should_keep(&m("TX999", "ip", "admin_user", None)));
         // username 不匹配 → 拒绝（AND）
         assert!(!compiled.should_keep(&m("TX123", "ip", "other_user", None)));
+    }
+
+    // ── exclude filters: Task 1 RED tests ──────────────────────
+    #[test]
+    fn test_t1_meta_has_filters_with_exclude_usernames() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        assert!(meta.has_filters());
+    }
+
+    #[test]
+    fn test_t1_meta_has_filters_all_none_is_false() {
+        assert!(!MetaFilters::default().has_filters());
+    }
+
+    #[test]
+    fn test_t1_compiled_from_meta_exclude_usernames() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["^guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.exclude_usernames.is_some());
+    }
+
+    #[test]
+    fn test_t1_compiled_from_meta_exclude_none() {
+        let compiled = CompiledMetaFilters::from_meta(&MetaFilters::default());
+        assert!(compiled.exclude_usernames.is_none());
+    }
+
+    #[test]
+    fn test_t1_has_any_filters_include_only() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["admin".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert_eq!(compiled.has_any_filters(), compiled.has_filters());
+    }
+
+    #[test]
+    fn test_t1_has_any_filters_exclude_only() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.has_any_filters());
+        assert!(!compiled.has_filters()); // include-only check should be false
     }
 
     // ── CompiledSqlFilters ─────────────────────────────────────
