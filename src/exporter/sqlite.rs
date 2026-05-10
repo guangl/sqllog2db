@@ -14,9 +14,41 @@ pub struct SqliteExporter {
     append: bool,
     conn: Option<Connection>,
     stats: ExportStats,
+    row_count: usize,
+    batch_size: usize,
     pub(super) normalize: bool,
     pub(super) field_mask: crate::features::FieldMask,
     pub(super) ordered_indices: Vec<usize>,
+}
+
+/// 按正确顺序设置数据库 PRAGMA：`page_size` 必须在 `journal_mode=WAL` 之前，
+/// WAL 启用后 `page_size` 被锁定。使用 `pragma_update_and_check` 原子验证 WAL 已生效。
+fn initialize_pragmas(conn: &Connection) -> std::result::Result<(), rusqlite::Error> {
+    // page_size 必须在 journal_mode=WAL 之前设置（WAL 启用后 page_size 被锁定）
+    conn.execute_batch("PRAGMA page_size = 65536;")?;
+
+    // 原子设置并验证 WAL 模式已启用（pragma_update_and_check 是标准 API）
+    let journal_mode: String =
+        conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
+    if journal_mode != "wal" {
+        return Err(rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
+            Some(format!(
+                "journal_mode=WAL not supported, got: {journal_mode}"
+            )),
+        ));
+    }
+
+    // 其余 PRAGMA（顺序不敏感）
+    conn.execute_batch(
+        "PRAGMA synchronous = NORMAL;
+         PRAGMA cache_size = 1000000;
+         PRAGMA locking_mode = EXCLUSIVE;
+         PRAGMA temp_store = MEMORY;
+         PRAGMA mmap_size = 30000000000;
+         PRAGMA threads = 4;",
+    )?;
+    Ok(())
 }
 
 impl std::fmt::Debug for SqliteExporter {
@@ -43,6 +75,8 @@ impl SqliteExporter {
             append,
             conn: None,
             stats: ExportStats::new(),
+            row_count: 0,
+            batch_size: 10_000,
             normalize: true,
             field_mask: crate::features::FieldMask::ALL,
             ordered_indices: (0..crate::features::FIELD_NAMES.len()).collect(),
@@ -98,12 +132,14 @@ impl SqliteExporter {
 
     #[must_use]
     pub fn from_config(config: &crate::config::SqliteExporter) -> Self {
-        Self::new(
+        let mut exporter = Self::new(
             config.database_url.clone(),
             config.table_name.clone(),
             config.overwrite,
             config.append,
-        )
+        );
+        exporter.batch_size = config.batch_size;
+        exporter
     }
 
     fn db_err(reason: impl Into<String>) -> Error {
@@ -214,19 +250,10 @@ impl Exporter for SqliteExporter {
         let conn = Connection::open(&self.database_url)
             .map_err(|e| Self::db_err(format!("open failed: {e}")))?;
 
-        conn.execute_batch(
-            "PRAGMA journal_mode = OFF;
-             PRAGMA synchronous = OFF;
-             PRAGMA cache_size = 1000000;
-             PRAGMA locking_mode = EXCLUSIVE;
-             PRAGMA temp_store = MEMORY;
-             PRAGMA mmap_size = 30000000000;
-             PRAGMA page_size = 65536;
-             PRAGMA threads = 4;",
-        )
-        .map_err(|e| Self::db_err(format!("set PRAGMAs failed: {e}")))?;
+        initialize_pragmas(&conn).map_err(|e| Self::db_err(format!("set PRAGMAs failed: {e}")))?;
 
         self.conn = Some(conn);
+        self.row_count = 0;
 
         if self.overwrite {
             let conn = self.conn.as_ref().unwrap();
