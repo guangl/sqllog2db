@@ -5,7 +5,7 @@
 **Goal:** 消灭已知技术债，补全过滤缺口，进一步提升解析/过滤热路径与 CLI 启动速度。
 
 **Target features:**
-- [Tech Debt] sqlite.rs 静默错误修复 + table_name SQL 注入风险
+- ✓ [Tech Debt] sqlite.rs 静默错误修复 + table_name SQL 注入风险 — Phase 7 Complete (2026-05-10)
 - [Tech Debt] Nyquist Phase 3/4/5/6 VALIDATION.md 补签
 - [FILTER-03] 排除模式（匹配则丢弃）
 - [PERF] 解析/过滤热路径进一步优化
