@@ -51,7 +51,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. 用户遭遇真实 SQLite 错误时，错误信息写入配置的 error log 文件而非被静默丢弃
   3. 用户配置非法 `table_name`（含特殊字符）时，`cargo run -- validate` 报错并拒绝启动
   4. 用户配置合法 `table_name` 时，DROP/DELETE/CREATE/INSERT 四条 DDL 均使用双引号转义，SQL 注入向量消除
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 07-01-PLAN.md — DEBT-01 SQLite 静默错误显式化 + DEBT-02 table_name ASCII 校验与 DDL 双引号转义
 
 ### Phase 8: 排除过滤器
 **Goal**: 用户可通过配置"匹配则丢弃"规则精确排除不需要的记录，与现有包含过滤形成完整的 AND/OR-veto 语义
@@ -108,7 +109,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 4. CSV 性能优化 | v1.1 | 4/4 | Complete | 2026-05-09 |
 | 5. SQLite 性能优化 | v1.1 | 3/3 | Complete | 2026-05-10 |
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
-| 7. 技术债修复 | v1.2 | 0/TBD | Not started | - |
+| 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/TBD | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 0/TBD | Not started | - |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
