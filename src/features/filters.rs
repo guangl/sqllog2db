@@ -71,6 +71,13 @@ pub struct MetaFilters {
     pub appnames: Option<Vec<String>>,
     pub client_ips: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
+    pub exclude_usernames: Option<Vec<String>>,
+    pub exclude_client_ips: Option<Vec<String>>,
+    pub exclude_sess_ids: Option<Vec<String>>,
+    pub exclude_thrd_ids: Option<Vec<String>>,
+    pub exclude_statements: Option<Vec<String>>,
+    pub exclude_appnames: Option<Vec<String>>,
+    pub exclude_tags: Option<Vec<String>>,
 }
 
 /// 指标过滤器 (Transaction-level)
@@ -104,6 +111,20 @@ pub struct SqlFilters {
 impl FiltersFeature {
     /// 验证所有正则 pattern 格式合法。在 `Config::validate()` 中调用。
     pub fn validate_regexes(&self) -> crate::error::Result<()> {
+        self.validate_include_regexes()?;
+        self.validate_exclude_regexes()?;
+        validate_pattern_list(
+            "features.filters.record_sql.include_patterns",
+            self.record_sql.include_patterns.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.record_sql.exclude_patterns",
+            self.record_sql.exclude_patterns.as_deref(),
+        )?;
+        Ok(())
+    }
+
+    fn validate_include_regexes(&self) -> crate::error::Result<()> {
         validate_pattern_list("features.filters.usernames", self.meta.usernames.as_deref())?;
         validate_pattern_list(
             "features.filters.client_ips",
@@ -117,13 +138,37 @@ impl FiltersFeature {
         )?;
         validate_pattern_list("features.filters.appnames", self.meta.appnames.as_deref())?;
         validate_pattern_list("features.filters.tags", self.meta.tags.as_deref())?;
+        Ok(())
+    }
+
+    fn validate_exclude_regexes(&self) -> crate::error::Result<()> {
         validate_pattern_list(
-            "features.filters.record_sql.include_patterns",
-            self.record_sql.include_patterns.as_deref(),
+            "features.filters.exclude_usernames",
+            self.meta.exclude_usernames.as_deref(),
         )?;
         validate_pattern_list(
-            "features.filters.record_sql.exclude_patterns",
-            self.record_sql.exclude_patterns.as_deref(),
+            "features.filters.exclude_client_ips",
+            self.meta.exclude_client_ips.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.exclude_sess_ids",
+            self.meta.exclude_sess_ids.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.exclude_thrd_ids",
+            self.meta.exclude_thrd_ids.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.exclude_statements",
+            self.meta.exclude_statements.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.exclude_appnames",
+            self.meta.exclude_appnames.as_deref(),
+        )?;
+        validate_pattern_list(
+            "features.filters.exclude_tags",
+            self.meta.exclude_tags.as_deref(),
         )?;
         Ok(())
     }
@@ -209,6 +254,31 @@ impl MetaFilters {
             || self.statements.as_ref().is_some_and(|v| !v.is_empty())
             || self.appnames.as_ref().is_some_and(|v| !v.is_empty())
             || self.tags.as_ref().is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_usernames
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_client_ips
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_sess_ids
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_thrd_ids
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_statements
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self
+                .exclude_appnames
+                .as_ref()
+                .is_some_and(|v| !v.is_empty())
+            || self.exclude_tags.as_ref().is_some_and(|v| !v.is_empty())
     }
 
     /// OR 语义：命中任意一个已定义的字段即保留。
@@ -302,6 +372,13 @@ pub struct CompiledMetaFilters {
     pub appnames: Option<Vec<Regex>>,
     pub tags: Option<Vec<Regex>>,
     pub trxids: Option<TrxidSet>,
+    pub exclude_usernames: Option<Vec<Regex>>,
+    pub exclude_client_ips: Option<Vec<Regex>>,
+    pub exclude_sess_ids: Option<Vec<Regex>>,
+    pub exclude_thrd_ids: Option<Vec<Regex>>,
+    pub exclude_statements: Option<Vec<Regex>>,
+    pub exclude_appnames: Option<Vec<Regex>>,
+    pub exclude_tags: Option<Vec<Regex>>,
 }
 
 impl CompiledMetaFilters {
@@ -322,10 +399,24 @@ impl CompiledMetaFilters {
             appnames: compile_patterns(meta.appnames.as_deref()).expect("regex validated"),
             tags: compile_patterns(meta.tags.as_deref()).expect("regex validated"),
             trxids: meta.trxids.clone(),
+            exclude_usernames: compile_patterns(meta.exclude_usernames.as_deref())
+                .expect("regex validated"),
+            exclude_client_ips: compile_patterns(meta.exclude_client_ips.as_deref())
+                .expect("regex validated"),
+            exclude_sess_ids: compile_patterns(meta.exclude_sess_ids.as_deref())
+                .expect("regex validated"),
+            exclude_thrd_ids: compile_patterns(meta.exclude_thrd_ids.as_deref())
+                .expect("regex validated"),
+            exclude_statements: compile_patterns(meta.exclude_statements.as_deref())
+                .expect("regex validated"),
+            exclude_appnames: compile_patterns(meta.exclude_appnames.as_deref())
+                .expect("regex validated"),
+            exclude_tags: compile_patterns(meta.exclude_tags.as_deref()).expect("regex validated"),
         }
     }
 
     /// 是否有任何已编译的过滤条件（用于快路径跳过）。
+    /// 只检查 include 字段，不含 exclude 字段。
     #[must_use]
     pub fn has_filters(&self) -> bool {
         self.usernames.is_some()
@@ -338,11 +429,78 @@ impl CompiledMetaFilters {
             || self.trxids.as_ref().is_some_and(|v| !v.is_empty())
     }
 
+    /// 是否有任何过滤条件（include 或 exclude 任一非空）。
+    /// 供 `FilterProcessor::new()` 预计算 `has_meta_filters`，
+    /// 确保纯 exclude 配置也激活 meta 检查路径。
+    #[must_use]
+    pub fn has_any_filters(&self) -> bool {
+        self.has_filters()
+            || self.exclude_usernames.is_some()
+            || self.exclude_client_ips.is_some()
+            || self.exclude_sess_ids.is_some()
+            || self.exclude_thrd_ids.is_some()
+            || self.exclude_statements.is_some()
+            || self.exclude_appnames.is_some()
+            || self.exclude_tags.is_some()
+    }
+
     /// AND 语义：所有已配置的字段都必须匹配记录才被保留（D-04）。
     /// 字段内 OR：同一字段列表中任意一个正则匹配即满足该字段（D-02）。
+    /// Exclude OR-veto：任一 exclude 字段命中则直接丢弃，优先于 include 检查（D-04）。
     #[inline]
     #[must_use]
     pub fn should_keep(&self, meta: &RecordMeta) -> bool {
+        // === 1. Exclude OR-veto（任一命中 → 丢弃，短路最快）===
+        if self.exclude_veto(meta) {
+            return false;
+        }
+        // === 2. Include AND 检查（现有逻辑，不变）===
+        self.include_and(meta)
+    }
+
+    /// Exclude OR-veto：任一 exclude 字段命中则返回 true（应丢弃）。
+    fn exclude_veto(&self, meta: &RecordMeta) -> bool {
+        if self.exclude_usernames.is_some()
+            && match_any_regex(self.exclude_usernames.as_deref(), meta.user)
+        {
+            return true;
+        }
+        if self.exclude_client_ips.is_some()
+            && match_any_regex(self.exclude_client_ips.as_deref(), meta.ip)
+        {
+            return true;
+        }
+        if self.exclude_sess_ids.is_some()
+            && match_any_regex(self.exclude_sess_ids.as_deref(), meta.sess)
+        {
+            return true;
+        }
+        if self.exclude_thrd_ids.is_some()
+            && match_any_regex(self.exclude_thrd_ids.as_deref(), meta.thrd)
+        {
+            return true;
+        }
+        if self.exclude_statements.is_some()
+            && match_any_regex(self.exclude_statements.as_deref(), meta.stmt)
+        {
+            return true;
+        }
+        if self.exclude_appnames.is_some()
+            && match_any_regex(self.exclude_appnames.as_deref(), meta.app)
+        {
+            return true;
+        }
+        // exclude_tags：tag 为 Option<&str>，无 tag 值时不触发 exclude（保留该记录）
+        if let (Some(excl_tags), Some(t)) = (&self.exclude_tags, meta.tag) {
+            if excl_tags.iter().any(|re| re.is_match(t)) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Include AND 检查：所有已配置字段必须匹配才返回 true。
+    fn include_and(&self, meta: &RecordMeta) -> bool {
         if !match_any_regex(self.usernames.as_deref(), meta.user) {
             return false;
         }
@@ -918,6 +1076,217 @@ mod tests {
         assert!(!compiled.should_keep(&m("TX999", "ip", "admin_user", None)));
         // username 不匹配 → 拒绝（AND）
         assert!(!compiled.should_keep(&m("TX123", "ip", "other_user", None)));
+    }
+
+    // ── exclude filters: Task 1 RED tests ──────────────────────
+    #[test]
+    fn test_t1_meta_has_filters_with_exclude_usernames() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        assert!(meta.has_filters());
+    }
+
+    #[test]
+    fn test_t1_meta_has_filters_all_none_is_false() {
+        assert!(!MetaFilters::default().has_filters());
+    }
+
+    #[test]
+    fn test_t1_compiled_from_meta_exclude_usernames() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["^guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.exclude_usernames.is_some());
+    }
+
+    #[test]
+    fn test_t1_compiled_from_meta_exclude_none() {
+        let compiled = CompiledMetaFilters::from_meta(&MetaFilters::default());
+        assert!(compiled.exclude_usernames.is_none());
+    }
+
+    #[test]
+    fn test_t1_has_any_filters_include_only() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["admin".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert_eq!(compiled.has_any_filters(), compiled.has_filters());
+    }
+
+    #[test]
+    fn test_t1_has_any_filters_exclude_only() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.has_any_filters());
+        assert!(!compiled.has_filters()); // include-only check should be false
+    }
+
+    // ── exclude filters ────────────────────────────────────────
+    fn make_compiled_with_exclude(
+        exclude_usernames: Option<Vec<String>>,
+        exclude_client_ips: Option<Vec<String>>,
+    ) -> CompiledMetaFilters {
+        let meta = MetaFilters {
+            exclude_usernames,
+            exclude_client_ips,
+            ..MetaFilters::default()
+        };
+        CompiledMetaFilters::from_meta(&meta)
+    }
+
+    #[test]
+    fn test_exclude_username_drops_matching_record() {
+        let compiled = make_compiled_with_exclude(Some(vec!["^guest".to_string()]), None);
+        assert!(!compiled.should_keep(&m("tx", "1.2.3.4", "guest_01", None)));
+    }
+
+    #[test]
+    fn test_exclude_username_retains_nonmatching_record() {
+        let compiled = make_compiled_with_exclude(Some(vec!["^guest".to_string()]), None);
+        assert!(compiled.should_keep(&m("tx", "1.2.3.4", "admin_dba", None)));
+    }
+
+    #[test]
+    fn test_exclude_ip_drops_matching_record() {
+        let compiled = make_compiled_with_exclude(None, Some(vec!["^10\\.0".to_string()]));
+        assert!(!compiled.should_keep(&m("tx", "10.0.0.1", "user", None)));
+        assert!(compiled.should_keep(&m("tx", "192.168.1.1", "user", None)));
+    }
+
+    #[test]
+    fn test_exclude_or_veto_any_hit_drops() {
+        let compiled = make_compiled_with_exclude(
+            Some(vec!["guest".to_string()]),
+            Some(vec!["^10".to_string()]),
+        );
+        // ip 命中 exclude → false
+        assert!(!compiled.should_keep(&m("tx", "10.0.0.1", "admin", None)));
+    }
+
+    #[test]
+    fn test_exclude_or_veto_no_hit_passes() {
+        let compiled = make_compiled_with_exclude(
+            Some(vec!["guest".to_string()]),
+            Some(vec!["^10".to_string()]),
+        );
+        // 两者均未命中 → true
+        assert!(compiled.should_keep(&m("tx", "192.168.1.1", "admin", None)));
+    }
+
+    #[test]
+    fn test_exclude_with_include_veto_wins() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string()]),
+            exclude_client_ips: Some(vec!["^10".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // exclude ip 命中，veto 优先 → false
+        assert!(!compiled.should_keep(&m("tx", "10.0.0.1", "admin", None)));
+    }
+
+    #[test]
+    fn test_exclude_with_include_both_pass() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string()]),
+            exclude_client_ips: Some(vec!["^10".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // exclude 未命中，include 满足 → true
+        assert!(compiled.should_keep(&m("tx", "192.168.1.1", "admin", None)));
+    }
+
+    #[test]
+    fn test_exclude_with_include_include_fails() {
+        let meta = MetaFilters {
+            usernames: Some(vec!["^admin".to_string()]),
+            exclude_client_ips: Some(vec!["^10".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // exclude 未命中，但 include 不满足 → false
+        assert!(!compiled.should_keep(&m("tx", "192.168.1.1", "sys_user", None)));
+    }
+
+    #[test]
+    fn test_exclude_tags_drops_matching() {
+        let meta = MetaFilters {
+            exclude_tags: Some(vec!["^SEL".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(!compiled.should_keep(&m("tx", "ip", "user", Some("SELECT"))));
+    }
+
+    #[test]
+    fn test_exclude_tags_retains_no_tag() {
+        let meta = MetaFilters {
+            exclude_tags: Some(vec!["^SEL".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        // tag=None 时不触发 exclude，保留
+        assert!(compiled.should_keep(&m("tx", "ip", "user", None)));
+    }
+
+    #[test]
+    fn test_exclude_tags_retains_nonmatching() {
+        let meta = MetaFilters {
+            exclude_tags: Some(vec!["^SEL".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.should_keep(&m("tx", "ip", "user", Some("INSERT"))));
+    }
+
+    #[test]
+    fn test_has_any_filters_exclude_only() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["guest".to_string()]),
+            ..MetaFilters::default()
+        };
+        let compiled = CompiledMetaFilters::from_meta(&meta);
+        assert!(compiled.has_any_filters());
+        assert!(!compiled.has_filters());
+    }
+
+    #[test]
+    fn test_meta_has_filters_with_exclude() {
+        let meta = MetaFilters {
+            exclude_usernames: Some(vec!["x".to_string()]),
+            ..MetaFilters::default()
+        };
+        assert!(meta.has_filters());
+    }
+
+    #[test]
+    fn test_meta_has_filters_all_none() {
+        assert!(!MetaFilters::default().has_filters());
+    }
+
+    #[test]
+    fn test_exclude_invalid_regex_validate_fails() {
+        let feature = FiltersFeature {
+            enable: true,
+            meta: MetaFilters {
+                exclude_usernames: Some(vec!["[invalid".to_string()]),
+                ..MetaFilters::default()
+            },
+            indicators: IndicatorFilters::default(),
+            sql: SqlFilters::default(),
+            record_sql: SqlFilters::default(),
+        };
+        assert!(feature.validate_regexes().is_err());
     }
 
     // ── CompiledSqlFilters ─────────────────────────────────────

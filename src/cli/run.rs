@@ -44,7 +44,8 @@ struct FilterProcessor {
 impl FilterProcessor {
     fn new(filter: &crate::features::FiltersFeature) -> Self {
         let compiled_meta = CompiledMetaFilters::from_meta(&filter.meta);
-        let has_meta_filters = compiled_meta.has_filters();
+        // has_any_filters() 包含 exclude 字段，确保纯 exclude 配置也激活 meta 检查路径（D-05）
+        let has_meta_filters = compiled_meta.has_any_filters();
         Self {
             compiled_meta,
             start_ts: filter.meta.start_ts.clone(),
