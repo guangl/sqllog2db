@@ -401,6 +401,22 @@ impl SqliteExporter {
                 reason: "SQLite table name cannot be empty".to_string(),
             }));
         }
+        // ASCII 标识符校验：^[a-zA-Z_][a-zA-Z0-9_]*$（不引入 regex crate）
+        let is_valid_ident = {
+            let mut chars = self.table_name.chars();
+            chars
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        };
+        if !is_valid_ident {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "exporter.sqlite.table_name".to_string(),
+                value: self.table_name.clone(),
+                reason: "table name must match ^[a-zA-Z_][a-zA-Z0-9_]*$ (ASCII identifiers only)"
+                    .to_string(),
+            }));
+        }
         if self.batch_size == 0 {
             return Err(ConfigError::InvalidValue {
                 field: "exporter.sqlite.batch_size".to_string(),
@@ -766,5 +782,129 @@ append = false
                 .include_performance_metrics,
             "未指定时 serde 默认必须为 true"
         );
+    }
+
+    // ── table_name ASCII 标识符校验 ────────────────────────────
+    #[test]
+    fn test_validate_sqlite_table_name_valid_simple() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_valid_underscore_prefix() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "_records".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_valid_with_digits() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "t1_log_2024".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_leading_digit() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "1tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+        assert!(msg.contains("exporter.sqlite.table_name"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_special_char() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl;DROP".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_quote() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl\"x".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_non_ascii() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "日志表".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_space() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "my tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
     }
 }
