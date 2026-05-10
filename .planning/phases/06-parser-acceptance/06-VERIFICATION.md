@@ -1,17 +1,17 @@
 ---
 phase: 06-parser-acceptance
 verified: 2026-05-10T12:00:00Z
-status: human_needed
+status: passed
 score: 3/3 must-haves verified (roadmap success criteria)
 overrides_applied: 0
 gaps: []
 human_verification:
   - test: "更新 ROADMAP.md Progress 表格与 Phases 列表，将 Phase 4/5/6 状态从 Not started 改为 Complete"
-    expected: "Progress 表格第 97-99 行反映实际完成状态（Phase 4/5/6 标记 Complete），Phases 列表中 Phase 4/5/6 前缀为 - [x]"
-    why_human: "orchestrator 任务，agent 不得独立修改；需人工判断是否现在更新，以及 Phase 4/5 是否真正被确认完成（其 REQUIREMENTS.md 条目仍为 pending）"
+    result: pass
+    note: "ROADMAP.md 第 23-25 行已为 [x]，Progress 表格含完成日期（已完成）"
   - test: "更新 REQUIREMENTS.md 中 PERF-07 和 PERF-09 状态从 pending 到 complete"
-    expected: "PERF-07 和 PERF-09 Traceability 表格显示 complete (2026-05-10)"
-    why_human: "文档状态与代码实现已脱节，需人工决策是否在本 milestone 收尾时统一更新"
+    result: pass
+    note: "REQUIREMENTS.md 第 28/33 行已为 [x]，Traceability 表格显示 complete (2026-05-10)（已完成）"
 ---
 
 # Phase 6: 解析库集成 + 验收 Verification Report

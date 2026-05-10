@@ -1,13 +1,16 @@
 ---
 phase: 03-profiling-benchmarking
 verified: 2026-04-27T09:00:00Z
-status: human_needed
-score: 9/10 must-haves verified
+updated: 2026-05-10T00:00:00Z
+status: passed
+score: 10/10 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "在浏览器中用 samply load docs/flamegraphs/csv_export_real.json 打开火焰图，确认函数符号可读（非大量 [unknown] / ??），并验证 Top 3 热路径函数名与 BENCHMARKS.md 中记录的一致"
     expected: "能看到 dm_database_parser_sqllog::sqllog::Sqllog::parse_meta、LogIterator::next、_platform_memmove 等 sqllog2db 内部函数名；不能看到大量 [unknown] 帧"
-    why_human: "flamegraph 符号可读性是视觉检查任务，无法通过文件内容自动断言；samply JSON 格式不像 SVG 可被 grep 验证符号名"
+    result: pass
+    confirmed_by: guang
+    confirmed_at: "2026-05-10T00:00:00Z"
 ---
 
 # Phase 3: Profiling & Benchmarking 验证报告
@@ -28,7 +31,7 @@ Phase 3 ROADMAP 定义了 3 条 Success Criteria：
 | # | Success Criteria | 状态 | 证据 |
 |---|-----------------|------|------|
 | SC-1 | criterion benchmark 能对 CSV 和 SQLite 导出路径分别输出 records/sec 吞吐数值，并可在 CI 环境重复运行 | ✓ VERIFIED | bench_csv.rs:90-123 与 bench_sqlite.rs:97-131 均实现 CI-safe skip（sqllogs/ 缺失时 eprintln + return）；BENCHMARKS.md 记录 CSV 4.18-4.71 M/s、SQLite 1.18-1.41 M/s synthetic 数值 |
-| SC-2 | flamegraph 生成成功，能指出热路径中占比最高的函数调用链 | ? UNCERTAIN | docs/flamegraphs/csv_export_real.json 存在（318KB），BENCHMARKS.md 记录 Top 3：parse_meta、LogIterator::next、_platform_memmove；但符号可读性需人工浏览器核验（samply JSON 格式无法自动断言） |
+| SC-2 | flamegraph 生成成功，能指出热路径中占比最高的函数调用链 | ✓ VERIFIED | docs/flamegraphs/csv_export_real.json 存在（318KB），符号可读，用户目视确认 Top 3：parse_meta、LogIterator::next、_platform_memmove 与 BENCHMARKS.md 记录一致 |
 | SC-3 | 基准报告记录 v1.0 的当前吞吐基准，作为 Phase 4/5 优化目标的参照 | ✓ VERIFIED | BENCHMARKS.md 记录完整数值：CSV real-file 0.33s / ~9.1M rec/s，SQLite real-file 1.28s / ~2.3M rec/s；Performance rules 表设置 hard limit = v1.0 median × 1.05 |
 
 ### Observable Truths（合并三个 Plan 的 must_haves）
@@ -44,9 +47,9 @@ Phase 3 ROADMAP 定义了 3 条 Success Criteria：
 | 7 | benches/baselines/ 下存在 v1.0 baseline JSON（CSV + SQLite，synthetic + real-file） | ✓ VERIFIED | 8 个 estimates.json 全部存在：csv_export/{1000,10000,50000}/v1.0/，sqlite_export/{1000,10000,50000}/v1.0/，csv_export_real/real_file/v1.0/，sqlite_export_real/real_file/v1.0/ |
 | 8 | benches/BENCHMARKS.md 包含 v1.0 数值、real-file 章节、Hot-path observation，无 JSONL/opt-level=z 旧引用，无未替换占位符 | ✓ VERIFIED | 检查结果：v1.0 出现 8 次、opt-level=3 出现 1 次、csv_export_real 出现 5 次、sqlite_export_real 出现 2 次、Hot-path observation 出现 1 次；JSONL/opt-level=z 计数为 0；无 `<填入>` 占位符；文件 124 行（在 100-180 要求范围内） |
 | 9 | docs/flamegraphs/csv_export_real.json 存在且大小 > 50KB | ✓ VERIFIED | 文件大小 318,937 bytes（311KB，远超 50KB 要求） |
-| 10 | flamegraph 符号可读（非大量 unknown 帧），Top 3 热路径函数名有意义 | ? UNCERTAIN | 需要人工在浏览器中用 samply load 验证；BENCHMARKS.md 记录的 Top 3（parse_meta、LogIterator::next、_platform_memmove）看起来合理，但无法自动验证 samply JSON 中的符号质量 |
+| 10 | flamegraph 符号可读（非大量 unknown 帧），Top 3 热路径函数名有意义 | ✓ VERIFIED | 用户通过 samply load 目视确认：函数符号可读，无大量 [unknown] 帧（2026-05-10） |
 
-**得分：** 9/10 truths verified（1 条 UNCERTAIN 等待人工核验）
+**得分：** 10/10 truths verified
 
 ---
 
@@ -121,7 +124,7 @@ samply load docs/flamegraphs/csv_export_real.json
 
 ## 差距摘要
 
-无阻塞性差距（BLOCKER）。所有代码 artifact 完整且正确连接。唯一待处理项是 flamegraph 符号可读性的人工视觉确认——这是该 Phase 本身设计的 `checkpoint:human-verify` 任务（Plan 03 Task 2）的收尾验证。
+无阻塞性差距（BLOCKER）。所有代码 artifact 完整且正确连接。flamegraph 符号可读性已由用户于 2026-05-10 目视确认通过。
 
 所有 benchmark 路径、baseline JSON、BENCHMARKS.md 文档均已完整实现，Phase 4/5 可立即使用 `CRITERION_HOME=benches/baselines cargo bench -- --baseline v1.0` 进行对比。
 
