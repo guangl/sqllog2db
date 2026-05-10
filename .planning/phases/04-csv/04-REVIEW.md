@@ -15,7 +15,7 @@ findings:
   warning: 1
   info: 2
   total: 4
-status: issues_found
+status: fixed
 ---
 
 # Phase 04-csv: Code Review Report
