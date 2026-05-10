@@ -21,7 +21,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [x] **Phase 3: Profiling & Benchmarking** — 建立性能基准，定位热路径瓶颈（completed 2026-04-27）
 - [ ] **Phase 4: CSV 性能优化** — 提升 CSV 导出吞吐量，减少热循环分配
-- [ ] **Phase 5: SQLite 性能优化** — 批量事务、WAL 模式、prepared statement 复用
+- [ ] **Phase 5: SQLite 性能优化** — 批量事务、prepared statement 复用（WAL 模式已移除，数据无需崩溃保护）
 - [ ] **Phase 6: 解析库集成 + 验收** — 集成 dm-database-parser-sqllog 1.0.0 新 API，回归验证
 
 ## Phase Details
@@ -51,28 +51,28 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 **Plans**: TBD
 
 ### Phase 5: SQLite 性能优化
-**Goal**: SQLite 导出速度显著提升，单行提交开销被批量事务消除，WAL 模式启用，prepared statement 得到复用
+**Goal**: SQLite 导出速度显著提升，单行提交开销被批量事务消除，prepared statement 得到复用
 **Depends on**: Phase 3
-**Requirements**: PERF-04, PERF-05, PERF-06
+**Requirements**: PERF-04, PERF-06
 **Success Criteria** (what must be TRUE):
   1. SQLite 导出使用显式事务分组（如每 N 条提交一次），criterion benchmark 显示相比单行提交速度提升可量化
-  2. SQLite 数据库文件以 WAL 模式打开（`PRAGMA journal_mode=WAL` 执行后返回 `wal`，集成测试可断言）
-  3. prepared statement 在写入循环中只编译一次，通过代码审查或 flamegraph 确认无重复 `prepare()` 调用
-  4. 629+ 测试全部通过，无功能退化
+  2. prepared statement 在写入循环中只编译一次，通过代码审查确认无重复 `prepare()` 调用
+  3. 50+ 测试全部通过，无功能退化
+  4. ~~WAL 模式~~ — 用户决策移除：数据无需崩溃保护，保留 `JOURNAL_MODE=OFF SYNCHRONOUS=OFF` 高性能模式
 **Plans**: 3 plans
 
 **Wave 1**
 - [x] 05-01-PLAN.md — config.rs 新增 batch_size 字段 + bench_sqlite.rs 单行提交对照 group
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [x] 05-02-PLAN.md — sqlite.rs PRAGMA 顺序修正 + WAL 模式 + 批量事务 + 3 个集成测试
+- [x] 05-02-PLAN.md — sqlite.rs 批量事务 + prepare_cached 复用（WAL 代码已回退）
 
 **Wave 3** *(blocked on Wave 1+2 completion)*
 - [x] 05-03-PLAN.md — criterion benchmark 运行 + BENCHMARKS.md Phase 5 数值更新（含 human-verify checkpoint）
 
 **Cross-cutting constraints:**
 - `cargo clippy --all-targets -- -D warnings` 零警告（所有 Wave 结束后）
-- `cargo test` 649+ 测试全部通过（所有 Wave 结束后）
+- `cargo test` 50+ 测试全部通过（所有 Wave 结束后）
 - 函数体不超过 40 行（initialize() 提取 initialize_pragmas() 辅助函数）
 
 ### Phase 6: 解析库集成 + 验收
