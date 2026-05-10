@@ -198,3 +198,84 @@ csv_format_only/10000   time:   [506.87 µs 508.52 µs 510.38 µs]
 - [x] D-05 兜底已启用（include_performance_metrics=false 配置项已实现，可将 parse_performance_metrics() 开销降至零）
 - [ ] PERF-08 flamegraph diff 已生成于 docs/flamegraphs/csv_export_real_phase4.json（D-09，可选，未采集）
 - [x] 全部 cargo test 通过（649 个），clippy/fmt 净化
+
+---
+
+## Phase 5 — SQLite 性能优化（批量事务 + prepare_cached 确认）
+
+**Date:** 2026-05-10
+**Goal:** 批量事务（PERF-04），prepare_cached 复用确认（PERF-06），sqlite_export/10000 ≤ 7.424ms hard limit
+**Test environment:** Apple Silicon (Darwin 25.4.0), release build (`opt-level=3`, LTO=fat, strip=symbols, panic=abort), Rust stable, Criterion 20 samples.
+
+> 注：PERF-05（WAL 模式）在用户决策后移除 — 数据无需崩溃保护，保留 `JOURNAL_MODE=OFF SYNCHRONOUS=OFF` 高性能模式。
+
+### 各 Wave 数值
+
+| Group | v1.0 baseline | Phase 5 实测（batch_size=10000） | vs v1.0 |
+|-------|--------------|----------------------------------|---------|
+| sqlite_export/1000    | 0.851 ms  | 0.836 ms  | −2.1%（improved）  |
+| sqlite_export/10000   | 7.070 ms  | 7.076 ms  | −0.7%（no change） |
+| sqlite_export/50000   | 35.603 ms | 36.527 ms | +2.7%（regressed，在 5% 容差内） |
+| sqlite_single_row/1000  | —      | 3.584 ms  | —（新增对照组）     |
+| sqlite_single_row/10000 | —      | 35.401 ms | —（新增对照组）     |
+
+> **批量 vs 单行对比（PERF-04）：** sqlite_export/10000 (7.1ms) vs sqlite_single_row/10000 (35.4ms) → **5x 差距**，批量事务优势可量化。
+
+### Criterion 输出原文
+
+<details>
+<summary>cargo bench --bench bench_sqlite --baseline v1.0（sqlite_export，Phase 5）</summary>
+
+```
+sqlite_export/1000      time:   [834.13 µs 835.51 µs 837.04 µs]
+                        thrpt:  [1.1947 Melem/s 1.1969 Melem/s 1.1989 Melem/s]
+                 change:
+                        time:   [−2.3130% −2.0614% −1.7370%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.7677% +2.1048% +2.3677%]
+                        Performance has improved.
+
+sqlite_export/10000     time:   [7.0226 ms 7.0762 ms 7.1294 ms]
+                        thrpt:  [1.4026 Melem/s 1.4132 Melem/s 1.4240 Melem/s]
+                 change:
+                        time:   [−1.5799% −0.7002% +0.1754%] (p = 0.13 > 0.05)
+                        thrpt:  [−0.1751% +0.7052% +1.6053%]
+                        No change in performance detected.
+
+sqlite_export/50000     time:   [36.480 ms 36.527 ms 36.575 ms]
+                        thrpt:  [1.3670 Melem/s 1.3688 Melem/s 1.3706 Melem/s]
+                 change:
+                        time:   [+2.1833% +2.6580% +3.1747%] (p = 0.00 < 0.05)
+                        thrpt:  [−3.0770% −2.5892% −2.1367%]
+                        Performance has regressed.
+```
+
+</details>
+
+<details>
+<summary>cargo bench --bench bench_sqlite sqlite_single_row（新增对照组，无 v1.0 baseline）</summary>
+
+```
+sqlite_single_row/1000  time:   [3.5714 ms 3.5836 ms 3.5910 ms]
+                        thrpt:  [278.47 Kelem/s 279.05 Kelem/s 280.00 Kelem/s]
+
+sqlite_single_row/10000 time:   [34.819 ms 35.401 ms 36.361 ms]
+                        thrpt:  [275.02 Kelem/s 282.48 Kelem/s 287.20 Kelem/s]
+```
+
+</details>
+
+### 优化实施总结
+
+| 优化项 | 实施内容 | 验证方式 |
+|--------|---------|---------|
+| PERF-04 批量事务 | `batch_commit_if_needed()`，每 `batch_size` 条 COMMIT+BEGIN | criterion sqlite_single_row 对照（5x 差距） |
+| PERF-05 WAL 模式 | **已移除**（用户决策：数据无需崩溃保护，保留 OFF+OFF） | — |
+| PERF-06 prepared statement | `prepare_cached()` LRU 复用（`StatementCache` 容量 16），代码注释确认 | 代码审查（`src/exporter/sqlite.rs`，`do_insert_preparsed` 注释） |
+
+### 结论
+
+- [x] PERF-04 批量事务 benchmark 可量化（sqlite_single_row/10000 对照组：35.4ms vs 7.1ms）
+- [x] PERF-05 已移除 WAL 模式（用户决策，保留 OFF+OFF 高性能模式）
+- [x] PERF-06 prepare_cached 复用已确认（代码注释 + 代码审查）
+- [x] sqlite_export/10000 ≤ 7.424ms hard limit（实测：7.076ms ✓）
+- [x] 全部 cargo test 通过（50 个），clippy/fmt 净化
