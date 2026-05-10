@@ -85,7 +85,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   3. `cargo clippy --all-targets -- -D warnings` 无警告，`cargo fmt` 无 diff
 **Plans**: 2 plans
 - [x] 06-01-PLAN.md — 提交 Phase 4/5 遗留变更 + 记录 PERF-07 调研结论
-- [ ] 06-02-PLAN.md — 全量验收（cargo test + clippy + fmt），更新 ROADMAP
+- [x] 06-02-PLAN.md — 全量验收（cargo test + clippy + fmt），更新 ROADMAP
 
 ## Progress
 
