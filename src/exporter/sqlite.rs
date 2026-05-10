@@ -21,31 +21,15 @@ pub struct SqliteExporter {
     pub(super) ordered_indices: Vec<usize>,
 }
 
-/// 按正确顺序设置数据库 PRAGMA：`page_size` 必须在 `journal_mode=WAL` 之前，
-/// WAL 启用后 `page_size` 被锁定。使用 `pragma_update_and_check` 原子验证 WAL 已生效。
 fn initialize_pragmas(conn: &Connection) -> std::result::Result<(), rusqlite::Error> {
-    // page_size 必须在 journal_mode=WAL 之前设置（WAL 启用后 page_size 被锁定）
-    conn.execute_batch("PRAGMA page_size = 65536;")?;
-
-    // 原子设置并验证 WAL 模式已启用（pragma_update_and_check 是标准 API）
-    let journal_mode: String =
-        conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
-    if journal_mode != "wal" {
-        return Err(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_ERROR),
-            Some(format!(
-                "journal_mode=WAL not supported, got: {journal_mode}"
-            )),
-        ));
-    }
-
-    // 其余 PRAGMA（顺序不敏感）
     conn.execute_batch(
-        "PRAGMA synchronous = NORMAL;
+        "PRAGMA journal_mode = OFF;
+         PRAGMA synchronous = OFF;
          PRAGMA cache_size = 1000000;
          PRAGMA locking_mode = EXCLUSIVE;
          PRAGMA temp_store = MEMORY;
          PRAGMA mmap_size = 30000000000;
+         PRAGMA page_size = 65536;
          PRAGMA threads = 4;",
     )?;
     Ok(())
@@ -379,9 +363,6 @@ impl Exporter for SqliteExporter {
         if let Some(conn) = &self.conn {
             conn.execute_batch("COMMIT;")
                 .map_err(|e| Self::db_err(format!("commit failed: {e}")))?;
-            // WAL checkpoint：将 WAL 合并到主文件，避免遗留 .db-wal 文件
-            conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
-                .map_err(|e| Self::db_err(format!("wal checkpoint failed: {e}")))?;
         }
         info!(
             "SQLite export finished: {} (success: {}, failed: {})",
@@ -726,47 +707,6 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 6);
-    }
-
-    #[test]
-    fn test_sqlite_wal_mode_enabled() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let dbfile = dir.path().join("wal_mode.db");
-
-        {
-            let mut exporter =
-                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
-            exporter.initialize().unwrap();
-            exporter.finalize().unwrap();
-        } // EXCLUSIVE lock released
-
-        let conn = rusqlite::Connection::open(&dbfile).unwrap();
-        let mode: String = conn
-            .pragma_update_and_check(None, "journal_mode", "wal", |row| row.get(0))
-            .unwrap();
-        assert_eq!(mode, "wal", "PRAGMA journal_mode=WAL 必须返回 'wal'");
-    }
-
-    #[test]
-    fn test_sqlite_wal_page_size() {
-        let dir = tempfile::TempDir::new().unwrap();
-        let dbfile = dir.path().join("page_size.db");
-
-        {
-            let mut exporter =
-                SqliteExporter::new(dbfile.to_string_lossy().into(), "tbl".into(), true, false);
-            exporter.initialize().unwrap();
-            exporter.finalize().unwrap();
-        }
-
-        let conn = rusqlite::Connection::open(&dbfile).unwrap();
-        let page_size: i64 = conn
-            .query_row("PRAGMA page_size", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(
-            page_size, 65536,
-            "WAL 模式下 page_size 必须为 65536，当前为 {page_size}"
-        );
     }
 
     #[test]
