@@ -83,7 +83,9 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   1. PERF-07 调研结论有明确记录：若新 API 存在零拷贝或批量解析接口则集成，若无则记录原因并关闭
   2. 所有 629+ 现有测试在最终代码上全部通过（`cargo test` 输出 0 failures）
   3. `cargo clippy --all-targets -- -D warnings` 无警告，`cargo fmt` 无 diff
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 06-01-PLAN.md — 提交 Phase 4/5 遗留变更 + 记录 PERF-07 调研结论
+- [ ] 06-02-PLAN.md — 全量验收（cargo test + clippy + fmt），更新 ROADMAP
 
 ## Progress
 
@@ -94,4 +96,4 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 3. Profiling & Benchmarking | v1.1 | 3/3 | Complete | 2026-04-27 |
 | 4. CSV 性能优化 | v1.1 | 0/? | Not started | — |
 | 5. SQLite 性能优化 | v1.1 | 0/3 | Not started | — |
-| 6. 解析库集成 + 验收 | v1.1 | 0/? | Not started | — |
+| 6. 解析库集成 + 验收 | v1.1 | 0/2 | Not started | — |
