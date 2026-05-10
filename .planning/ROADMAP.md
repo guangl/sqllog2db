@@ -4,6 +4,7 @@
 
 - ✅ **v1.0 增强 SQL 内容过滤与字段投影** — Phases 1–2 (shipped 2026-04-18)
 - ✅ **v1.1 性能优化** — Phases 3–6 (shipped 2026-05-10)
+- 🚧 **v1.2 质量强化 & 性能深化** — Phases 7–11 (in progress)
 
 ## Phases
 
@@ -29,6 +30,74 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 </details>
 
+### 🚧 v1.2 质量强化 & 性能深化 (In Progress)
+
+**Milestone Goal:** 消灭已知技术债，补全过滤缺口，进一步提升解析/过滤热路径与 CLI 启动速度。
+
+- [ ] **Phase 7: 技术债修复** - 修复 SQLite 静默错误与 SQL 注入风险
+- [ ] **Phase 8: 排除过滤器** - 实现 FILTER-03 排除模式（7 个元数据字段 exclude_* 支持）
+- [ ] **Phase 9: CLI 启动提速** - 消除双重 regex 编译，后台化 update check
+- [ ] **Phase 10: 热路径优化** - flamegraph 门控的热路径深化优化
+- [ ] **Phase 11: Nyquist 补签** - 补全 Phase 3/4/5/6 VALIDATION.md compliant 签署
+
+## Phase Details
+
+### Phase 7: 技术债修复
+**Goal**: SQLite 导出错误路径可观测、table_name 配置安全可靠
+**Depends on**: Nothing (no code dependencies)
+**Requirements**: DEBT-01, DEBT-02
+**Success Criteria** (what must be TRUE):
+  1. 用户在 SQLite 初始化时遭遇"表不存在"等无害错误时，工具正常继续运行且不打印误导性输出
+  2. 用户遭遇真实 SQLite 错误时，错误信息写入配置的 error log 文件而非被静默丢弃
+  3. 用户配置非法 `table_name`（含特殊字符）时，`cargo run -- validate` 报错并拒绝启动
+  4. 用户配置合法 `table_name` 时，DROP/DELETE/CREATE/INSERT 四条 DDL 均使用双引号转义，SQL 注入向量消除
+**Plans**: TBD
+
+### Phase 8: 排除过滤器
+**Goal**: 用户可通过配置"匹配则丢弃"规则精确排除不需要的记录，与现有包含过滤形成完整的 AND/OR-veto 语义
+**Depends on**: Phase 7
+**Requirements**: FILTER-03
+**Success Criteria** (what must be TRUE):
+  1. 用户在 config 中配置任意 `exclude_*` 字段后，匹配该字段的记录从输出中消失
+  2. 七个元数据字段（username/client_ip/sess_id/thrd_id/statement/appname/tag）均可独立配置排除规则
+  3. 排除规则为 OR veto 语义：任意一个 exclude 字段命中即丢弃该记录
+  4. 未配置任何 `exclude_*` 字段时，`pipeline.is_empty()` 快路径不受影响，零额外开销
+  5. 非法排除正则在 `cargo run -- validate` 阶段报错，不推迟到运行时 panic
+**Plans**: TBD
+
+### Phase 9: CLI 启动提速
+**Goal**: CLI 冷启动时间可量化且双重 regex 编译消除，用 hyperfine 数据作为门控
+**Depends on**: Phase 8
+**Requirements**: PERF-11
+**Success Criteria** (what must be TRUE):
+  1. `hyperfine` 基线测量完成并记录在验收报告中，冷启动时间有明确数字
+  2. `validate_and_compile()` 统一接口实现：regex 由单次编译结果同时用于验证与运行，不存在双重 Regex::new() 调用
+  3. 若 update check 在基线中占比 >50ms，则移入后台线程，主流程不阻塞
+  4. 全部 651 测试通过，无回归
+**Plans**: TBD
+
+### Phase 10: 热路径优化
+**Goal**: 在 FILTER-03 与 PERF-11 就位后，用 flamegraph 量化剩余热点并决策是否优化
+**Depends on**: Phase 9
+**Requirements**: PERF-10
+**Success Criteria** (what must be TRUE):
+  1. criterion + flamegraph 重新 profile 完成，报告反映包含排除过滤器后的真实热路径形态
+  2. 若 flamegraph 显示 >5% 可消除热点，则优化实施并有 criterion 数据佐证效果
+  3. 若无 >5% 热点，则报告记录"已达当前瓶颈"结论并签署，不做无依据的优化
+  4. 全部 651 测试通过，基准无回归（≤5% 容差）
+**Plans**: TBD
+
+### Phase 11: Nyquist 补签
+**Goal**: Phase 3/4/5/6 的 VALIDATION.md compliant 状态全部补签完整，Nyquist 审计链无缺口
+**Depends on**: Nothing (pure documentation)
+**Requirements**: DEBT-03
+**Success Criteria** (what must be TRUE):
+  1. Phase 3 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
+  2. Phase 4 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
+  3. Phase 5 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
+  4. Phase 6 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
+**Plans**: TBD
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -39,3 +108,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 4. CSV 性能优化 | v1.1 | 4/4 | Complete | 2026-05-09 |
 | 5. SQLite 性能优化 | v1.1 | 3/3 | Complete | 2026-05-10 |
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
+| 7. 技术债修复 | v1.2 | 0/TBD | Not started | - |
+| 8. 排除过滤器 | v1.2 | 0/TBD | Not started | - |
+| 9. CLI 启动提速 | v1.2 | 0/TBD | Not started | - |
+| 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
+| 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
