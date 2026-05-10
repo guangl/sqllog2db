@@ -52,7 +52,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   3. 用户配置非法 `table_name`（含特殊字符）时，`cargo run -- validate` 报错并拒绝启动
   4. 用户配置合法 `table_name` 时，DROP/DELETE/CREATE/INSERT 四条 DDL 均使用双引号转义，SQL 注入向量消除
 **Plans**: 1 plan
-- [ ] 07-01-PLAN.md — DEBT-01 SQLite 静默错误显式化 + DEBT-02 table_name ASCII 校验与 DDL 双引号转义
+- [x] 07-01-PLAN.md — DEBT-01 SQLite 静默错误显式化 + DEBT-02 table_name ASCII 校验与 DDL 双引号转义
 
 ### Phase 8: 排除过滤器
 **Goal**: 用户可通过配置"匹配则丢弃"规则精确排除不需要的记录，与现有包含过滤形成完整的 AND/OR-veto 语义
