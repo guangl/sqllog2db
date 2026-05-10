@@ -146,6 +146,10 @@ impl SqliteExporter {
 
     /// 热路径：使用预解析的 `MetaParts` 和 `PerformanceMetrics` 直接插入。
     /// 全量掩码走 `params![]` 快速路径；投影掩码走动态 Value 路径。
+    ///
+    /// 调用方通过 `prepare_cached()` 获取 `stmt`，利用 `StatementCache`（LRU，容量 16）
+    /// 复用已编译的 statement，开销为 `RefCell::borrow_mut()` + `HashMap` lookup (O(1))，
+    /// 而非 `sqlite3_prepare_v3()`（O(parse)）。PERF-06 满足。
     fn do_insert_preparsed(
         stmt: &mut rusqlite::CachedStatement<'_>,
         sqllog: &Sqllog<'_>,
