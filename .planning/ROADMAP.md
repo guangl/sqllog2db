@@ -68,7 +68,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 - [x] 05-02-PLAN.md — sqlite.rs PRAGMA 顺序修正 + WAL 模式 + 批量事务 + 3 个集成测试
 
 **Wave 3** *(blocked on Wave 1+2 completion)*
-- [ ] 05-03-PLAN.md — criterion benchmark 运行 + BENCHMARKS.md Phase 5 数值更新（含 human-verify checkpoint）
+- [x] 05-03-PLAN.md — criterion benchmark 运行 + BENCHMARKS.md Phase 5 数值更新（含 human-verify checkpoint）
 
 **Cross-cutting constraints:**
 - `cargo clippy --all-targets -- -D warnings` 零警告（所有 Wave 结束后）
