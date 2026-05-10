@@ -70,13 +70,7 @@ enable = false
 # overwrite = true
 # append = false
 
-# 方案 2: JSONL 导出（JSON Lines 格式，每行一个 JSON 对象）
-# [exporter.jsonl]
-# file = "export/sqllog2db.jsonl"
-# overwrite = true
-# append = false
-
-# 方案 3: SQLite 数据库导出
+# 方案 2: SQLite 数据库导出
 [exporter.sqlite]
 database_url = "export/sqllog2db.db"
 table_name = "sqllog_records"
