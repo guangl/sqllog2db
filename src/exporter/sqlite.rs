@@ -49,7 +49,7 @@ impl SqliteExporter {
     #[must_use]
     pub fn new(database_url: String, table_name: String, overwrite: bool, append: bool) -> Self {
         let insert_sql = format!(
-            "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"{table_name}\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         Self {
             database_url,
@@ -73,13 +73,13 @@ impl SqliteExporter {
         if ordered_indices.len() == FIELD_NAMES.len() {
             // 全量快速路径：与 new() 的默认 insert_sql 一致
             return format!(
-                "INSERT INTO {table_name} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO \"{table_name}\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
         }
         let cols: Vec<&str> = ordered_indices.iter().map(|&i| FIELD_NAMES[i]).collect();
         let placeholders = vec!["?"; ordered_indices.len()].join(", ");
         format!(
-            "INSERT INTO {table_name} ({}) VALUES ({placeholders})",
+            "INSERT INTO \"{table_name}\" ({}) VALUES ({placeholders})",
             cols.join(", ")
         )
     }
@@ -109,7 +109,7 @@ impl SqliteExporter {
             .map(|&i| format!("{} {}", FIELD_NAMES[i], COL_TYPES[i]))
             .collect();
         format!(
-            "CREATE TABLE IF NOT EXISTS {table_name} ({})",
+            "CREATE TABLE IF NOT EXISTS \"{table_name}\" ({})",
             cols.join(", ")
         )
     }
@@ -215,6 +215,40 @@ impl SqliteExporter {
         Ok(())
     }
 
+    /// 处理 `initialize()` 中 `DELETE FROM` 的执行结果（D-01 软失败语义）。
+    /// - `Ok`：成功清空，无副作用
+    /// - `SqliteFailure` 且 msg 含 "no such table"：首次运行预期，静默
+    /// - 其他 `Err`：通过 `log::warn!` 记录，不向上传播错误（软失败）
+    fn handle_delete_clear_result(result: rusqlite::Result<usize>, table_name: &str) {
+        if let Err(rusqlite::Error::SqliteFailure(_, Some(ref msg))) = result {
+            if msg.contains("no such table") {
+                return;
+            }
+        }
+        if let Err(e) = result {
+            log::warn!("sqlite clear failed for table {table_name}: {e}");
+        }
+    }
+
+    /// 根据 overwrite/append 模式准备目标表（清空或删除旧数据）。
+    fn prepare_target_table(&self) -> Result<()> {
+        if self.overwrite {
+            let conn = self.conn.as_ref().unwrap();
+            conn.execute(&format!("DROP TABLE IF EXISTS \"{}\"", self.table_name), [])
+                .map_err(|e| Self::db_err(format!("drop table failed: {e}")))?;
+            info!("Dropped existing table: {}", self.table_name);
+        } else if !self.append {
+            Self::handle_delete_clear_result(
+                self.conn
+                    .as_ref()
+                    .unwrap()
+                    .execute(&format!("DELETE FROM \"{}\"", self.table_name), []),
+                &self.table_name,
+            );
+        }
+        Ok(())
+    }
+
     /// 兼容路径：从 `Sqllog` 内部解析再转调热路径（测试/批量导出使用）。
     fn do_insert(
         stmt: &mut rusqlite::CachedStatement<'_>,
@@ -255,15 +289,7 @@ impl Exporter for SqliteExporter {
         self.conn = Some(conn);
         self.row_count = 0;
 
-        if self.overwrite {
-            let conn = self.conn.as_ref().unwrap();
-            conn.execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), [])
-                .map_err(|e| Self::db_err(format!("drop table failed: {e}")))?;
-            info!("Dropped existing table: {}", self.table_name);
-        } else if !self.append {
-            let conn = self.conn.as_ref().unwrap();
-            let _ = conn.execute(&format!("DELETE FROM {}", self.table_name), []);
-        }
+        self.prepare_target_table()?;
 
         // 根据 ordered_indices 重新生成 insert_sql（可在 new() 后被外部修改）
         self.insert_sql = Self::build_insert_sql(&self.table_name, &self.ordered_indices);
@@ -608,7 +634,7 @@ mod tests {
     #[test]
     fn test_sqlite_build_insert_sql_ordered() {
         let sql = SqliteExporter::build_insert_sql("t", &[10, 4]);
-        assert_eq!(sql, "INSERT INTO t (sql, username) VALUES (?, ?)");
+        assert_eq!(sql, "INSERT INTO \"t\" (sql, username) VALUES (?, ?)");
     }
 
     #[test]
@@ -616,7 +642,7 @@ mod tests {
         let sql = SqliteExporter::build_create_sql("t", &[10, 4]);
         assert_eq!(
             sql,
-            "CREATE TABLE IF NOT EXISTS t (sql TEXT NOT NULL, username TEXT NOT NULL)"
+            "CREATE TABLE IF NOT EXISTS \"t\" (sql TEXT NOT NULL, username TEXT NOT NULL)"
         );
     }
 
@@ -626,7 +652,7 @@ mod tests {
         let sql = SqliteExporter::build_insert_sql("t", &all_indices);
         assert_eq!(
             sql,
-            "INSERT INTO t VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"t\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
     }
 
@@ -711,6 +737,118 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tbl", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 6);
+    }
+
+    #[test]
+    fn test_sqlite_initialize_creates_quoted_table() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("quoted.db");
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "my_records".to_string(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+        }
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let create_stmt: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='my_records'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            create_stmt.contains("\"my_records\""),
+            "table name should be double-quoted; actual: {create_stmt}"
+        );
+    }
+
+    #[test]
+    fn test_sqlite_initialize_silent_when_table_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("missing_tbl.db");
+
+        // overwrite=false 且 append=false → initialize 会走 DELETE FROM 分支
+        // 由于 DB 全新，表不存在，DELETE 应触发 "no such table" 并被静默吃掉
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "fresh_tbl".to_string(),
+                false,
+                false,
+            );
+            // 必须 Ok —— 不能因 "no such table" 返回 Err
+            exporter
+                .initialize()
+                .expect("initialize should silently succeed when table missing");
+            exporter.finalize().unwrap();
+        } // exporter drops here, releasing EXCLUSIVE lock
+
+        // 表应已被 CREATE TABLE IF NOT EXISTS 创建
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='fresh_tbl'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "table fresh_tbl should be created");
+    }
+
+    #[test]
+    fn test_sqlite_initialize_clears_existing_table_via_delete() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let logfile = dir.path().join("test.log");
+        let dbfile = dir.path().join("clear.db");
+        write_test_log(&logfile, 4);
+
+        let parser = LogParser::from_path(logfile.to_str().unwrap()).unwrap();
+        let records: Vec<_> = parser.iter().filter_map(std::result::Result::ok).collect();
+
+        // 第一次 run：写入 4 条
+        {
+            let mut e = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "clr_tbl".into(),
+                false,
+                false,
+            );
+            e.initialize().unwrap();
+            for r in &records {
+                e.export(r).unwrap();
+            }
+            e.finalize().unwrap();
+        }
+
+        // 第二次 run：overwrite=false、append=false → 走 DELETE FROM 清空已有数据
+        // 然后写入同样 4 条 —— 期望最终行数 == 4 而非 8
+        {
+            let mut e = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "clr_tbl".into(),
+                false,
+                false,
+            );
+            e.initialize().unwrap();
+            for r in &records {
+                e.export(r).unwrap();
+            }
+            e.finalize().unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM clr_tbl", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 4,
+            "DELETE FROM should clear previous rows; got {count}"
+        );
     }
 
     #[test]
