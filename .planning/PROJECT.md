@@ -7,7 +7,7 @@
 **Target features:**
 - Profile 热路径（flamegraph / criterion），定位 CSV 和 SQLite 实际瓶颈
 - CSV 写入吞吐优化（格式化、buffer、序列化）
-- SQLite 写入速度优化（批量事务、WAL 模式、prepared statement 复用）
+- SQLite 写入速度优化（批量事务、prepared statement 复用；WAL 模式移除——数据无需崩溃保护）— Phase 5 complete 2026-05-10
 - 利用 `dm-database-parser-sqllog` 1.0.0 新 API（性能相关接口）
 - 内存/CPU 占用优化（减少分配、热循环开销）
 
