@@ -85,7 +85,21 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. `validate_and_compile()` 统一接口实现：regex 由单次编译结果同时用于验证与运行，不存在双重 Regex::new() 调用
   3. 若 update check 在基线中占比 >50ms，则移入后台线程，主流程不阻塞
   4. 全部 651 测试通过，无回归
-**Plans**: TBD
+**Plans**: 4 plans
+
+**Wave 1** *(并行执行)*
+- [ ] 09-01-PLAN.md — filters.rs 核心重构：compile_patterns 新签名、try_from_meta、try_from_sql_filters、删除 validate_regexes 系列
+- [ ] 09-02-PLAN.md — update check 后台化：check_for_updates_at_startup 改为 thread::spawn fire-and-forget
+
+**Wave 2** *(blocked on Wave 1 / 09-01)*
+- [ ] 09-03-PLAN.md — config.rs + run.rs 接入：validate() 调用 try_from_meta，FilterProcessor::try_new，build_pipeline 返回 Result
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 09-04-PLAN.md — hyperfine 基线测量 + benches/BENCHMARKS.md "Phase 9 CLI 冷启动基线" 节记录
+
+**Cross-cutting constraints:**
+- `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过
+- `cargo test` 全量通过（651 个测试）
 
 ### Phase 10: 热路径优化
 **Goal**: 在 FILTER-03 与 PERF-11 就位后，用 flamegraph 量化剩余热点并决策是否优化
@@ -121,6 +135,6 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
-| 9. CLI 启动提速 | v1.2 | 0/TBD | Not started | - |
+| 9. CLI 启动提速 | v1.2 | 0/4 | Not started | - |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
