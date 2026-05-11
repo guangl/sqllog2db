@@ -37,7 +37,7 @@ struct FilterProcessor {
     /// 时间范围过滤（字符串比较，不用正则）
     start_ts: Option<String>,
     end_ts: Option<String>,
-    /// 预计算：`compiled_meta.has_filters()` 的结果，避免热路径重复检查
+    /// 预计算：`compiled_meta.has_any_filters()` 的结果（include 或 exclude 任一），避免热路径重复检查
     has_meta_filters: bool,
 }
 
