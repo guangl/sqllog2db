@@ -46,7 +46,7 @@ pub fn handle_init(output_path: &str, force: bool, lang: Lang) -> Result<()> {
         })
     })?;
 
-    if force && path.exists() {
+    if force {
         info!("Configuration file overwritten: {output_path}");
     } else {
         info!("Configuration file generated: {output_path}");

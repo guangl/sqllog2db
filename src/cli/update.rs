@@ -1,5 +1,5 @@
 use crate::error::{Result, UpdateError};
-use log::{info, warn};
+use log::info;
 use self_update::cargo_crate_version;
 
 /// Handle the self-update command
@@ -80,11 +80,11 @@ pub fn check_for_updates_at_startup() {
                 if self_update::version::bump_is_greater(current_version, &release.version)
                     .unwrap_or(false)
                 {
-                    warn!(
+                    eprintln!(
                         "A new version is available: {} (current: {})",
                         release.version, current_version
                     );
-                    warn!("Run 'sqllog2db self-update' to update.");
+                    eprintln!("Run 'sqllog2db self-update' to update.");
                 }
             }
         }
