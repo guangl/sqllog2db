@@ -388,7 +388,42 @@ Benchmark 1: ./target/release/sqllog2db validate -c config_no_regex.toml
 
 ---
 
-<!-- Phase 10 临时数据（将在 Task 3 重组为正式节） -->
+## Phase 10 — 热路径优化（samply + criterion）
+
+**Date:** 2026-05-14
+**Goal:** samply profile + exclude benchmark 场景补全；按门控标准（D-G1）判断是否实施优化
+**Test environment:** Apple Silicon (Darwin 25.4.0), release build (`opt-level=3`, LTO=fat, strip=symbols, panic=abort), flamegraph build (debug=true, strip=none)
+
+### samply Profiling 结论
+
+采集方法：`samply record --save-only` 采集真实达梦日志（sqllogs/ 3 文件，约 237 万条记录，运行约 3.13s），
+3129 个 CPU 采样。配置：SQLite 导出，启用 replace_parameters。profile 通过 `nm` 符号表静态解析地址。
+
+Top 10 函数（self time 占比，按 CPU 采样自底向上统计）：
+
+1. `<dm_database_parser_sqllog::parser::LogIterator as Iterator>::next` — 26.8% self time（第三方库内部，D-G2 排除）
+2. `rayon_core::thread_pool::ThreadPool::build` — 9.2% self time（第三方库内部，D-G2 排除）
+3. `sqlite3VdbeExec` (SQLite VDBE 执行引擎) — 8.9% self time（第三方库内部，D-G2 排除）
+4. `dm_database_parser_sqllog::sqllog::Sqllog::parse_meta` — 5.9% self time（第三方库内部，D-G2 排除）
+5. `sqllog2db::cli::run::process_log_file` — 4.6% self time（src/cli/run.rs，<5% 未触发 D-G1）
+6. `rayon_core::registry::WorkerThread::take_local_job` — 4.2% self time（第三方库内部，D-G2 排除）
+7. `memchr::memmem::searcher::searcher_kind_neon` — 4.1% self time（第三方库内部 NEON SIMD，D-G2 排除）
+8. `sqllog2db::features::replace_parameters::compute_normalized` — 3.2% self time（src/features/replace_parameters.rs，<5% 未触发 D-G1）
+9. `rayon_core::join::join_context (closure)` — 3.0% self time（第三方库内部，D-G2 排除）
+10. `serde_core::de::Visitor::visit_i128` — 2.6% self time（第三方库内部，D-G2 排除）
+
+> 备注：profile 未在 samply 浏览器 UI 中查看（headless 采集环境），通过 `nm` 静态符号表解析地址。
+> SQLite 运行时开销来自 SQLite 导出模式（config.toml 配置），若使用 CSV 导出则 SQLite 占比为零。
+
+### Filter Benchmark（Phase 10 新增场景）
+
+| Scenario              | Median time | Throughput    | Notes |
+|-----------------------|------------:|--------------:|-------|
+| `exclude_passthrough` |   2.28 ms   |   4.39 M/s    | exclude 配置存在但零命中（username="BENCH" vs exclude=["BENCH_EXCLUDE"]）|
+| `exclude_active`      |   0.96 ms   |   10.44 M/s   | 所有记录被 OR-veto 排除（100% hit rate，username="BENCH" == exclude=["BENCH"]）|
+
+> 备注：`exclude_active` 因所有记录在 exclude 检查后立即丢弃，跳过了大量后续处理（SQLite 写入等），
+> 因此吞吐高于 `exclude_passthrough`（需完整处理每条记录）。
 
 <details><summary>Phase 10 criterion (exclude_passthrough)</summary>
 
@@ -417,18 +452,27 @@ filters/exclude_active  time:   [954.63 µs 957.74 µs 960.81 µs]
 
 </details>
 
-<!-- Phase 10 samply Top N 函数列表（来自 samply --save-only 采集 + nm 符号解析） -->
+### D-G1 门控判定
 
-samply 数据采集：通过 `samply record --save-only` 采集真实日志 profiling（3129 个 CPU 采样，约 3.13s 真实运行），
-再通过 `nm` 符号表静态解析地址（profile 未在浏览器中符号化）。二进制使用 `--profile flamegraph`（debug=true, strip=none）构建。
+D-G1 标准（三条全满足才命中）：
+1. samply 中某单一函数占全局 self time **>5%**
+2. 该函数属于 `src/` 下 sqllog2db 自身业务逻辑（非第三方库内部）
+3. 存在明确减少分配/clone/循环的优化路径
 
-1. `<dm_database_parser_sqllog::parser::LogIterator as Iterator>::next` — 26.8% self time（third_party::dm_database_parser_sqllog）
-2. `rayon_core::thread_pool::ThreadPool::build` — 9.2% self time（third_party::rayon）
-3. `sqlite3VdbeExec` (SQLite VDBE) — 8.9% self time（third_party::rusqlite/sqlite3）
-4. `dm_database_parser_sqllog::sqllog::Sqllog::parse_meta` — 5.9% self time（third_party::dm_database_parser_sqllog）
-5. `sqllog2db::cli::run::process_log_file` — 4.6% self time（src/cli/run.rs）
-6. `rayon_core::registry::WorkerThread::take_local_job` — 4.2% self time（third_party::rayon）
-7. `memchr::memmem::searcher::searcher_kind_neon` — 4.1% self time（third_party::memchr，NEON SIMD）
-8. `sqllog2db::features::replace_parameters::compute_normalized` — 3.2% self time（src/features/replace_parameters.rs）
-9. `rayon_core::join::join_context (closure)` — 3.0% self time（third_party::rayon）
-10. `serde_core::de::Visitor::visit_i128` — 2.6% self time（third_party::serde_core）
+**分析：**
+
+- `LogIterator::next`（26.8%）、`rayon_core`（9.2%+4.2%+3.0%）、`sqlite3VdbeExec`（8.9%）、`Sqllog::parse_meta`（5.9%）、`memchr`（4.1%）均属于第三方库内部 → **D-G2 排除**。
+- `sqllog2db::cli::run::process_log_file`（4.6%）属于 src/ 业务逻辑，但 self time < 5% → **不满足条件 1**。
+- `sqllog2db::features::replace_parameters::compute_normalized`（3.2%）属于 src/ 业务逻辑，但 self time < 5% → **不满足条件 1**。
+
+三条中条件 1（>5% src/ 函数）未满足。
+
+**结论：未命中 D-G1.** Top self time 函数均属于第三方库内部（D-G2 排除）或缺乏明确优化路径，已达当前瓶颈. 下游计划：10-03.
+
+### 结论
+
+- [x] D-B1 exclude_passthrough / exclude_active 两场景已补全
+- [x] samply profile 已完成，top N 函数已记录（3129 个 CPU 采样，真实日志）
+- [x] D-G1 门控判断已执行（无符合条件热点）
+- [x] 无热点：已记录"已达当前瓶颈"结论
+- [x] cargo test 全量通过，clippy/fmt 净化
