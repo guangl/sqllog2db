@@ -17,17 +17,20 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-/// 构建处理器管线
-fn build_pipeline(cfg: &Config) -> Result<Pipeline> {
+/// 构建处理器管线。
+///
+/// `compiled_meta` 由 `Config::validate_and_compile` 在主流程入口预编译；
+/// 当输入 `None` 或 `has_filters() == false` 时返回空管线。
+fn build_pipeline(cfg: &Config, compiled_meta: Option<CompiledMetaFilters>) -> Pipeline {
     let mut pipeline = Pipeline::new();
 
-    if let Some(f) = &cfg.features.filters {
+    if let (Some(f), Some(meta)) = (cfg.features.filters.as_ref(), compiled_meta) {
         if f.has_filters() {
-            pipeline.add(Box::new(FilterProcessor::try_new(f)?));
+            pipeline.add(Box::new(FilterProcessor::new(meta, f)));
         }
     }
 
-    Ok(pipeline)
+    pipeline
 }
 
 #[derive(Debug)]
@@ -42,16 +45,18 @@ struct FilterProcessor {
 }
 
 impl FilterProcessor {
-    fn try_new(filter: &crate::features::FiltersFeature) -> Result<Self> {
-        let compiled_meta = CompiledMetaFilters::try_from_meta(&filter.meta)?;
-        // has_any_filters() 包含 exclude 字段，确保纯 exclude 配置也激活 meta 检查路径（D-05）
+    /// 接受预编译的 `CompiledMetaFilters`（来自 `Config::validate_and_compile`），
+    /// 避免在 `run` 路径中第二次调用 `Regex::new()`。
+    ///
+    /// `has_any_filters()` 包含 exclude 字段，确保纯 exclude 配置也激活 meta 检查路径（D-05）
+    fn new(compiled_meta: CompiledMetaFilters, filter: &crate::features::FiltersFeature) -> Self {
         let has_meta_filters = compiled_meta.has_any_filters();
-        Ok(Self {
+        Self {
             compiled_meta,
             start_ts: filter.meta.start_ts.clone(),
             end_ts: filter.meta.end_ts.clone(),
             has_meta_filters,
-        })
+        }
     }
 }
 
@@ -610,7 +615,14 @@ pub fn handle_run(
     resume: bool,
     state_file_override: Option<&str>,
     jobs: usize,
+    compiled_filters: Option<(CompiledMetaFilters, CompiledSqlFilters)>,
 ) -> Result<()> {
+    // 拆分入参：build_pipeline 消费 meta（Move），sql 保留供后续使用
+    let (compiled_meta, compiled_sql) = match compiled_filters {
+        Some((m, s)) => (Some(m), Some(s)),
+        None => (None, None),
+    };
+
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
     if log_files.is_empty() {
@@ -652,7 +664,7 @@ pub fn handle_run(
         cfg
     };
 
-    let pipeline = build_pipeline(final_cfg)?;
+    let pipeline = build_pipeline(final_cfg, compiled_meta);
 
     let field_mask = final_cfg.features.field_mask();
     let ordered_indices = final_cfg.features.ordered_field_indices();
@@ -668,13 +680,13 @@ pub fn handle_run(
         .replace_parameters
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
-    let compiled_record_sql: Option<CompiledSqlFilters> = final_cfg
-        .features
-        .filters
-        .as_ref()
-        .filter(|f| f.enable && f.record_sql.has_filters())
-        .map(|f| CompiledSqlFilters::try_from_sql_filters(&f.record_sql))
-        .transpose()?;
+    let compiled_record_sql: Option<CompiledSqlFilters> = compiled_sql.filter(|_| {
+        final_cfg
+            .features
+            .filters
+            .as_ref()
+            .is_some_and(|f| f.enable && f.record_sql.has_filters())
+    });
     let sql_record_filter = compiled_record_sql.as_ref();
 
     let pb = make_progress_bar(quiet, progress_interval);
@@ -868,6 +880,7 @@ mod tests {
             false,
             None,
             1,
+            None, // compiled_filters
         )
         .unwrap();
 
