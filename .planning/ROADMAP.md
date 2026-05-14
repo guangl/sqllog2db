@@ -88,8 +88,8 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans**: 4 plans
 
 **Wave 1** *(并行执行)*
-- [ ] 09-01-PLAN.md — filters.rs 核心重构：compile_patterns 新签名、try_from_meta、try_from_sql_filters、删除 validate_regexes 系列
-- [ ] 09-02-PLAN.md — update check 后台化：check_for_updates_at_startup 改为 thread::spawn fire-and-forget
+- [x] 09-01-PLAN.md — filters.rs 核心重构：compile_patterns 新签名、try_from_meta、try_from_sql_filters、删除 validate_regexes 系列
+- [x] 09-02-PLAN.md — update check 后台化：check_for_updates_at_startup 改为 thread::spawn fire-and-forget
 
 **Wave 2** *(blocked on Wave 1 / 09-01)*
 - [ ] 09-03-PLAN.md — config.rs + run.rs 接入：validate() 调用 try_from_meta，FilterProcessor::try_new，build_pipeline 返回 Result
@@ -135,6 +135,6 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
-| 9. CLI 启动提速 | v1.2 | 0/4 | Not started | - |
+| 9. CLI 启动提速 | v1.2 | 2/4 | In Progress | - |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
