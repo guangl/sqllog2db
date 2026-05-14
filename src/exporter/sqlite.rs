@@ -99,7 +99,7 @@ impl SqliteExporter {
             "TEXT",             // client_ip 8
             "TEXT",             // tag       9
             "TEXT NOT NULL",    // sql       10
-            "REAL",             // exec_time_ms 11
+            "INTEGER",          // exec_time_ms 11
             "INTEGER",          // row_count 12
             "INTEGER",          // exec_id   13
             "TEXT",             // normalized_sql 14
@@ -159,9 +159,14 @@ impl SqliteExporter {
         field_mask: crate::features::FieldMask,
         ordered_indices: &[usize],
     ) -> std::result::Result<(), rusqlite::Error> {
-        let (exec_time, row_count, exec_id) =
+        let (exec_time_ms, row_count, exec_id) =
             if pm.exec_id != 0 || pm.exectime > 0.0 || pm.rowcount != 0 {
-                (Some(pm.exectime), Some(pm.rowcount), Some(pm.exec_id))
+                // 与 CSV 路径保持一致：截断为整数毫秒（f32_ms_to_i64）
+                (
+                    Some(super::f32_ms_to_i64(pm.exectime)),
+                    Some(pm.rowcount),
+                    Some(pm.exec_id),
+                )
             } else {
                 (None, None, None)
             };
@@ -180,7 +185,7 @@ impl SqliteExporter {
                 strip_ip_prefix(meta.client_ip.as_ref()),
                 sqllog.tag.as_deref(),
                 pm.sql.as_ref(),
-                exec_time,
+                exec_time_ms,
                 row_count,
                 exec_id,
                 normalized_sql
@@ -205,7 +210,7 @@ impl SqliteExporter {
                 .as_deref()
                 .map_or(Value::Null, |t| Value::Text(t.to_string())),
             Value::Text(pm.sql.as_ref().to_string()),
-            exec_time.map_or(Value::Null, |v| Value::Real(f64::from(v))),
+            exec_time_ms.map_or(Value::Null, Value::Integer),
             row_count.map_or(Value::Null, |v| Value::Integer(i64::from(v))),
             exec_id.map_or(Value::Null, Value::Integer),
             normalized_sql.map_or(Value::Null, |s| Value::Text(s.to_string())),
