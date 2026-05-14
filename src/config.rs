@@ -57,7 +57,10 @@ impl Config {
         self.sqllog.validate()?;
         if let Some(filters) = &self.features.filters {
             if filters.enable {
-                filters.validate_regexes()?;
+                crate::features::filters::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+                crate::features::filters::CompiledSqlFilters::try_from_sql_filters(
+                    &filters.record_sql,
+                )?;
             }
         }
         if let Some(names) = &self.features.fields {
