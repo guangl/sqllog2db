@@ -105,15 +105,27 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - `cargo test` 全量通过（651 个测试）
 
 ### Phase 10: 热路径优化
-**Goal**: 在 FILTER-03 与 PERF-11 就位后，用 flamegraph 量化剩余热点并决策是否优化
+**Goal**: 在 FILTER-03 与 PERF-11 就位后，用 samply + criterion 量化剩余热点并按 D-G1 门控决策是否优化
 **Depends on**: Phase 9
 **Requirements**: PERF-10
 **Success Criteria** (what must be TRUE):
-  1. criterion + flamegraph 重新 profile 完成，报告反映包含排除过滤器后的真实热路径形态
-  2. 若 flamegraph 显示 >5% 可消除热点，则优化实施并有 criterion 数据佐证效果
-  3. 若无 >5% 热点，则报告记录"已达当前瓶颈"结论并签署，不做无依据的优化
+  1. criterion + samply 重新 profile 完成，报告反映包含排除过滤器后的真实热路径形态
+  2. 若 samply 显示 >5% 可消除热点（src/ 业务逻辑 + 明确优化路径），则优化实施并有 criterion 数据佐证效果
+  3. 若无符合条件的热点，则 BENCHMARKS.md Phase 10 节记录"已达当前瓶颈"结论并签署，不做无依据的优化
   4. 全部 651 测试通过，基准无回归（≤5% 容差）
-**Plans**: TBD
+**Plans**: 3 plans（Wave 1 始终执行；Wave 2 二选一互斥执行）
+
+**Wave 1** *(始终执行)*
+- [ ] 10-01-PLAN.md — exclude bench 场景补全（exclude_passthrough / exclude_active）+ samply profiling + BENCHMARKS.md Phase 10 节 D-G1 门控判定签署
+
+**Wave 2** *(blocked on Wave 1；二选一互斥，由 10-01 §D-G1 门控判定 文本决定)*
+- [ ] 10-02-PLAN.md — Branch B-yes：若 10-01 判定"命中 D-G1"，实施 samply 指认的热点函数优化 + criterion 前/后吞吐对比
+- [ ] 10-03-PLAN.md — Branch B-no：若 10-01 判定"未命中 D-G1"，BENCHMARKS.md 增补 §当前瓶颈分析 + "已达当前瓶颈"签署
+
+**Cross-cutting constraints:**
+- `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过
+- `cargo test` 全量通过（≥651 测试）
+- criterion 任一 bench 场景回归不得 > 5%（D-O3 容差）
 
 ### Phase 11: Nyquist 补签
 **Goal**: Phase 3/4/5/6 的 VALIDATION.md compliant 状态全部补签完整，Nyquist 审计链无缺口
@@ -139,5 +151,5 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
-| 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
+| 10. 热路径优化 | v1.2 | 0/3 | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
