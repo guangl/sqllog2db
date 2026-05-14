@@ -78,6 +78,7 @@ fn bench_csv_export(c: &mut Criterion) {
                     false,
                     None,
                     1,
+                    None, // compiled_filters
                 )
                 .unwrap();
             });
@@ -115,6 +116,7 @@ fn bench_csv_real_file(c: &mut Criterion) {
                 false,
                 None,
                 1,
+                None, // compiled_filters
             )
             .unwrap();
         });

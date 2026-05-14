@@ -87,6 +87,7 @@ fn bench_sqlite_export(c: &mut Criterion) {
                     false,
                     None,
                     1,
+                    None, // compiled_filters
                 )
                 .unwrap();
             });
@@ -125,6 +126,7 @@ fn bench_sqlite_real_file(c: &mut Criterion) {
                 false,
                 None,
                 1,
+                None, // compiled_filters
             )
             .unwrap();
         });
@@ -159,6 +161,7 @@ fn bench_sqlite_single_row(c: &mut Criterion) {
                     false,
                     None,
                     1,
+                    None, // compiled_filters
                 )
                 .unwrap();
             });

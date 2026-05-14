@@ -379,7 +379,9 @@ Benchmark 1: ./target/release/sqllog2db validate -c config_no_regex.toml
 
 ### 结论
 
-- [x] 双重编译已消除：`grep -rn "from_meta\b" src/ | grep -v "try_from_meta"` 返回 0 个匹配；`compile_patterns` / `try_from_meta` / `try_from_sql_filters` 是唯一的 `Regex::new()` 入口
+- [x] `validate_and_compile()` 统一接口存在：`grep -c "fn validate_and_compile" src/config.rs` ≥ 1
+- [x] `run` 路径无重复 regex 编译：`grep -cE "try_from_meta|try_from_sql_filters" src/cli/run.rs` 返回 0（编译入口下沉至 `validate_and_compile`）
+- [x] 旧 API 完全删除：`grep -rn "from_meta\b" src/ | grep -v "try_from_meta"` 返回 0 个匹配
 - [x] update check 已后台化：`grep -n "thread::spawn" src/cli/update.rs` 确认存在（L68）
 - [x] hyperfine 数据已记录（三对比维度）
 - [x] CLI 冷启动 ≈ 3 ms，低于 50 ms 门控，PERF-11 验收通过

@@ -80,6 +80,56 @@ impl Config {
         Ok(())
     }
 
+    /// 等价于 `validate()` 但额外返回已编译的过滤器对，供调用方复用，
+    /// 消除 `run` 子命令路径中 regex 的双重编译（per ROADMAP SC-2 / PERF-11）。
+    ///
+    /// 返回值语义：
+    /// - `Ok(None)`：无过滤器配置 或 `features.filters.enable == false`
+    /// - `Ok(Some((meta, sql)))`：过滤器已编译，调用方可直接传递给 `build_pipeline`
+    /// - `Err(_)`：任意子校验失败（logging/exporter/sqllog/fields/正则编译）
+    pub fn validate_and_compile(
+        &self,
+    ) -> Result<
+        Option<(
+            crate::features::CompiledMetaFilters,
+            crate::features::CompiledSqlFilters,
+        )>,
+    > {
+        self.logging.validate()?;
+        self.exporter.validate()?;
+        self.sqllog.validate()?;
+
+        let compiled = if let Some(filters) = &self.features.filters {
+            if filters.enable {
+                let meta = crate::features::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+                let sql =
+                    crate::features::CompiledSqlFilters::try_from_sql_filters(&filters.record_sql)?;
+                Some((meta, sql))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(names) = &self.features.fields {
+            for name in names {
+                if !crate::features::FIELD_NAMES.contains(&name.as_str()) {
+                    return Err(Error::Config(ConfigError::InvalidValue {
+                        field: "features.fields".to_string(),
+                        value: name.clone(),
+                        reason: format!(
+                            "unknown field '{name}'; valid fields: {}",
+                            crate::features::FIELD_NAMES.join(", ")
+                        ),
+                    }));
+                }
+            }
+        }
+
+        Ok(compiled)
+    }
+
     /// 将 `--set key=value` 覆盖应用到 config。
     /// 支持点路径，例如 `sqllog.path`、`exporter.csv.file`。
     pub fn apply_overrides(&mut self, overrides: &[String]) -> Result<()> {
@@ -909,5 +959,92 @@ append = false
         let err = cfg.validate().unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    // ── validate_and_compile ───────────────────────────────────────
+    #[test]
+    fn test_validate_and_compile_default_returns_none() {
+        let cfg = default_config();
+        let result = cfg.validate_and_compile().expect("default config valid");
+        assert!(result.is_none(), "默认 config 无 filters，应返回 None");
+    }
+
+    #[test]
+    fn test_validate_and_compile_filters_disabled_returns_none() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = false
+usernames = ["^admin.*"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile().expect("config valid");
+        assert!(result.is_none(), "filters.enable=false 时应返回 None");
+    }
+
+    #[test]
+    fn test_validate_and_compile_returns_compiled_pair() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["^admin.*"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile().expect("config valid");
+        let pair = result.expect("filters.enable=true 应返回 Some");
+        assert!(
+            pair.0.has_any_filters(),
+            "usernames 配置后 CompiledMetaFilters.has_any_filters 必为 true"
+        );
+    }
+
+    #[test]
+    fn test_validate_and_compile_invalid_regex_returns_err() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["[invalid"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("features.filters.usernames"),
+            "error should mention field name, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_and_compile_invalid_log_level_returns_err() {
+        let mut cfg = default_config();
+        cfg.logging.level = "invalid".into();
+        assert!(cfg.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn test_validate_and_compile_unknown_field_returns_err() {
+        let mut cfg = default_config();
+        cfg.features.fields = Some(vec!["nonexistent_field".into()]);
+        assert!(cfg.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn test_validate_and_compile_matches_validate_on_ok() {
+        // 合法配置：两个方法都应返回 Ok（行为等价，仅返回类型不同）
+        let cfg = default_config();
+        assert!(cfg.validate().is_ok());
+        assert!(cfg.validate_and_compile().is_ok());
     }
 }

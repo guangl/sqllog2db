@@ -151,20 +151,24 @@ fn bench_filters(c: &mut Criterion) {
 
     for (name, cfg) in scenarios {
         group.bench_with_input(BenchmarkId::from_parameter(name), cfg, |b, cfg| {
-            b.iter(|| {
-                handle_run(
-                    cfg,
-                    None,
-                    false,
-                    true, // quiet=true: 排除进度条 I/O 对吞吐量测量的干扰
-                    &Arc::new(AtomicBool::new(false)),
-                    80,
-                    false,
-                    None,
-                    1,
-                )
-                .unwrap();
-            });
+            b.iter_with_setup(
+                || cfg.validate_and_compile().unwrap(),
+                |compiled_filters| {
+                    handle_run(
+                        cfg,
+                        None,
+                        false,
+                        true, // quiet=true: 排除进度条 I/O 对吞吐量测量的干扰
+                        &Arc::new(AtomicBool::new(false)),
+                        80,
+                        false,
+                        None,
+                        1,
+                        compiled_filters,
+                    )
+                    .unwrap();
+                },
+            );
         });
     }
 
