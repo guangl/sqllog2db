@@ -36,7 +36,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 - [ ] **Phase 7: 技术债修复** - 修复 SQLite 静默错误与 SQL 注入风险
 - [ ] **Phase 8: 排除过滤器** - 实现 FILTER-03 排除模式（7 个元数据字段 exclude_* 支持）
-- [ ] **Phase 9: CLI 启动提速** - 消除双重 regex 编译，后台化 update check
+- [x] **Phase 9: CLI 启动提速** - 消除双重 regex 编译，后台化 update check (5/5 plans) — completed 2026-05-14
 - [ ] **Phase 10: 热路径优化** - flamegraph 门控的热路径深化优化
 - [ ] **Phase 11: Nyquist 补签** - 补全 Phase 3/4/5/6 VALIDATION.md compliant 签署
 
@@ -138,6 +138,6 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
-| 9. CLI 启动提速 | v1.2 | 4/5 | In Progress | - |
+| 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
