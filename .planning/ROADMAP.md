@@ -85,7 +85,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. `validate_and_compile()` 统一接口实现：regex 由单次编译结果同时用于验证与运行，不存在双重 Regex::new() 调用
   3. 若 update check 在基线中占比 >50ms，则移入后台线程，主流程不阻塞
   4. 全部 651 测试通过，无回归
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 **Wave 1** *(并行执行)*
 - [x] 09-01-PLAN.md — filters.rs 核心重构：compile_patterns 新签名、try_from_meta、try_from_sql_filters、删除 validate_regexes 系列
@@ -95,7 +95,10 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 09-03-PLAN.md — config.rs + run.rs 接入：validate() 调用 try_from_meta，FilterProcessor::try_new，build_pipeline 返回 Result
 
 **Wave 3** *(blocked on Wave 2)*
-- [ ] 09-04-PLAN.md — hyperfine 基线测量 + benches/BENCHMARKS.md "Phase 9 CLI 冷启动基线" 节记录
+- [x] 09-04-PLAN.md — hyperfine 基线测量 + benches/BENCHMARKS.md "Phase 9 CLI 冷启动基线" 节记录
+
+**Wave 4** *(gap closure — blocked on Wave 3 / 09-04; closes VERIFICATION.md SC-2 BLOCKER)*
+- [ ] 09-05-PLAN.md — validate_and_compile() 统一接口 + 全链路传参，彻底消除 run 路径双重 regex 编译；修正 BENCHMARKS.md 失效断言
 
 **Cross-cutting constraints:**
 - `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过
@@ -135,6 +138,6 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 6. 解析库集成 + 验收 | v1.1 | 2/2 | Complete | 2026-05-10 |
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
-| 9. CLI 启动提速 | v1.2 | 3/4 | In Progress | - |
+| 9. CLI 启动提速 | v1.2 | 4/5 | In Progress | - |
 | 10. 热路径优化 | v1.2 | 0/TBD | Not started | - |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
