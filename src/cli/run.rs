@@ -18,16 +18,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// 构建处理器管线
-fn build_pipeline(cfg: &Config) -> Pipeline {
+fn build_pipeline(cfg: &Config) -> Result<Pipeline> {
     let mut pipeline = Pipeline::new();
 
     if let Some(f) = &cfg.features.filters {
         if f.has_filters() {
-            pipeline.add(Box::new(FilterProcessor::new(f)));
+            pipeline.add(Box::new(FilterProcessor::try_new(f)?));
         }
     }
 
-    pipeline
+    Ok(pipeline)
 }
 
 #[derive(Debug)]
@@ -42,16 +42,16 @@ struct FilterProcessor {
 }
 
 impl FilterProcessor {
-    fn new(filter: &crate::features::FiltersFeature) -> Self {
-        let compiled_meta = CompiledMetaFilters::from_meta(&filter.meta);
+    fn try_new(filter: &crate::features::FiltersFeature) -> Result<Self> {
+        let compiled_meta = CompiledMetaFilters::try_from_meta(&filter.meta)?;
         // has_any_filters() 包含 exclude 字段，确保纯 exclude 配置也激活 meta 检查路径（D-05）
         let has_meta_filters = compiled_meta.has_any_filters();
-        Self {
+        Ok(Self {
             compiled_meta,
             start_ts: filter.meta.start_ts.clone(),
             end_ts: filter.meta.end_ts.clone(),
             has_meta_filters,
-        }
+        })
     }
 }
 
@@ -652,7 +652,7 @@ pub fn handle_run(
         cfg
     };
 
-    let pipeline = build_pipeline(final_cfg);
+    let pipeline = build_pipeline(final_cfg)?;
 
     let field_mask = final_cfg.features.field_mask();
     let ordered_indices = final_cfg.features.ordered_field_indices();
@@ -673,7 +673,8 @@ pub fn handle_run(
         .filters
         .as_ref()
         .filter(|f| f.enable && f.record_sql.has_filters())
-        .map(|f| CompiledSqlFilters::from_sql_filters(&f.record_sql));
+        .map(|f| CompiledSqlFilters::try_from_sql_filters(&f.record_sql))
+        .transpose()?;
     let sql_record_filter = compiled_record_sql.as_ref();
 
     let pb = make_progress_bar(quiet, progress_interval);
