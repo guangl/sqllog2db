@@ -385,3 +385,50 @@ Benchmark 1: ./target/release/sqllog2db validate -c config_no_regex.toml
 - [x] update check 已后台化：`grep -n "thread::spawn" src/cli/update.rs` 确认存在（L68）
 - [x] hyperfine 数据已记录（三对比维度）
 - [x] CLI 冷启动 ≈ 3 ms，低于 50 ms 门控，PERF-11 验收通过
+
+---
+
+<!-- Phase 10 临时数据（将在 Task 3 重组为正式节） -->
+
+<details><summary>Phase 10 criterion (exclude_passthrough)</summary>
+
+```
+filters/exclude_passthrough
+                        time:   [2.2542 ms 2.2783 ms 2.3089 ms]
+                        thrpt:  [4.3311 Melem/s 4.3893 Melem/s 4.4361 Melem/s]
+                 change:
+                        time:   [−3.5451% −1.6365% +0.1885%] (p = 0.11 > 0.05)
+                        thrpt:  [−0.1881% +1.6637% +3.6754%]
+                        No change in performance detected.
+```
+
+</details>
+
+<details><summary>Phase 10 criterion (exclude_active)</summary>
+
+```
+filters/exclude_active  time:   [954.63 µs 957.74 µs 960.81 µs]
+                        thrpt:  [10.408 Melem/s 10.441 Melem/s 10.475 Melem/s]
+                 change:
+                        time:   [−1.9584% −1.0581% −0.2408%] (p = 0.02 < 0.05)
+                        thrpt:  [+0.2414% +1.0694% +1.9975%]
+                        Change within noise threshold.
+```
+
+</details>
+
+<!-- Phase 10 samply Top N 函数列表（来自 samply --save-only 采集 + nm 符号解析） -->
+
+samply 数据采集：通过 `samply record --save-only` 采集真实日志 profiling（3129 个 CPU 采样，约 3.13s 真实运行），
+再通过 `nm` 符号表静态解析地址（profile 未在浏览器中符号化）。二进制使用 `--profile flamegraph`（debug=true, strip=none）构建。
+
+1. `<dm_database_parser_sqllog::parser::LogIterator as Iterator>::next` — 26.8% self time（third_party::dm_database_parser_sqllog）
+2. `rayon_core::thread_pool::ThreadPool::build` — 9.2% self time（third_party::rayon）
+3. `sqlite3VdbeExec` (SQLite VDBE) — 8.9% self time（third_party::rusqlite/sqlite3）
+4. `dm_database_parser_sqllog::sqllog::Sqllog::parse_meta` — 5.9% self time（third_party::dm_database_parser_sqllog）
+5. `sqllog2db::cli::run::process_log_file` — 4.6% self time（src/cli/run.rs）
+6. `rayon_core::registry::WorkerThread::take_local_job` — 4.2% self time（third_party::rayon）
+7. `memchr::memmem::searcher::searcher_kind_neon` — 4.1% self time（third_party::memchr，NEON SIMD）
+8. `sqllog2db::features::replace_parameters::compute_normalized` — 3.2% self time（src/features/replace_parameters.rs）
+9. `rayon_core::join::join_context (closure)` — 3.0% self time（third_party::rayon）
+10. `serde_core::de::Visitor::visit_i128` — 2.6% self time（third_party::serde_core）
