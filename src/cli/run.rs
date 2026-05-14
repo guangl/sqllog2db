@@ -605,6 +605,24 @@ fn process_csv_parallel(
     ))
 }
 
+/// pre-scan 完成后重新编译 `CompiledMetaFilters`。
+///
+/// 若 `final_cfg` 含有 `features.filters.enable == true`，则从 `final_cfg` 重新编译以包含
+/// 预扫描发现的 trxids；否则直接回传原始值（`compiled_meta` 来自入参）。
+/// 回传原始值的情形：无 filters 配置、filters 禁用、或调用方传 None 时走 None 路径。
+fn recompile_meta_if_needed(
+    final_cfg: &Config,
+    original: Option<CompiledMetaFilters>,
+) -> Result<Option<CompiledMetaFilters>> {
+    let filters = match &final_cfg.features.filters {
+        Some(f) if f.enable => f,
+        _ => return Ok(original),
+    };
+    // 重新从 final_cfg 编译，以捕获 merge_found_trxids 写入的 trxids
+    let recompiled = crate::features::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+    Ok(Some(recompiled))
+}
+
 pub fn handle_run(
     cfg: &Config,
     limit: Option<usize>,
@@ -664,7 +682,11 @@ pub fn handle_run(
         cfg
     };
 
-    let pipeline = build_pipeline(final_cfg, compiled_meta);
+    // pre-scan 完成后重新从 final_cfg 编译 compiled_meta，确保合并后的 trxids 生效。
+    // 若无事务级过滤器（final_cfg == cfg），则复用原始 compiled_meta，零额外开销。
+    let compiled_meta_for_pipeline = recompile_meta_if_needed(final_cfg, compiled_meta)?;
+
+    let pipeline = build_pipeline(final_cfg, compiled_meta_for_pipeline);
 
     let field_mask = final_cfg.features.field_mask();
     let ordered_indices = final_cfg.features.ordered_field_indices();
