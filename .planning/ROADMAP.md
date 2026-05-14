@@ -98,7 +98,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [x] 09-04-PLAN.md — hyperfine 基线测量 + benches/BENCHMARKS.md "Phase 9 CLI 冷启动基线" 节记录
 
 **Wave 4** *(gap closure — blocked on Wave 3 / 09-04; closes VERIFICATION.md SC-2 BLOCKER)*
-- [ ] 09-05-PLAN.md — validate_and_compile() 统一接口 + 全链路传参，彻底消除 run 路径双重 regex 编译；修正 BENCHMARKS.md 失效断言
+- [x] 09-05-PLAN.md — validate_and_compile() 统一接口 + 全链路传参，彻底消除 run 路径双重 regex 编译；修正 BENCHMARKS.md 失效断言
 
 **Cross-cutting constraints:**
 - `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过
