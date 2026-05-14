@@ -120,7 +120,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 
 **Wave 2** *(blocked on Wave 1；二选一互斥，由 10-01 §D-G1 门控判定 文本决定)*
 - [ ] 10-02-PLAN.md — Branch B-yes：若 10-01 判定"命中 D-G1"，实施 samply 指认的热点函数优化 + criterion 前/后吞吐对比
-- [ ] 10-03-PLAN.md — Branch B-no：若 10-01 判定"未命中 D-G1"，BENCHMARKS.md 增补 §当前瓶颈分析 + "已达当前瓶颈"签署
+- [x] 10-03-PLAN.md — Branch B-no：若 10-01 判定"未命中 D-G1"，BENCHMARKS.md 增补 §当前瓶颈分析 + "已达当前瓶颈"签署
 
 **Cross-cutting constraints:**
 - `cargo clippy --all-targets -- -D warnings` 必须在每个 plan 后通过
@@ -151,5 +151,5 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
-| 10. 热路径优化 | v1.2 | 1/3 | In Progress|  |
+| 10. 热路径优化 | v1.2 | 2/3 | In Progress|  |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
