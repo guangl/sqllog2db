@@ -469,6 +469,31 @@ D-G1 标准（三条全满足才命中）：
 
 **结论：未命中 D-G1.** Top self time 函数均属于第三方库内部（D-G2 排除）或缺乏明确优化路径，已达当前瓶颈. 下游计划：10-03.
 
+### 当前瓶颈分析（D-G1 未命中说明）
+
+按 D-G1 三条标准（>5% self time + src/ 业务逻辑 + 明确优化路径）逐项核对，所有 Top N 函数均不构成可消除热点。
+
+| 函数 | Self time | 不构成热点的原因 | 备注 |
+|------|----------:|-----------------|------|
+| `<dm_database_parser_sqllog::parser::LogIterator as Iterator>::next` | 26.8% | 第三方库内部（D-G2 排除） | 达梦日志解析器核心循环，不在 src/ 中 |
+| `rayon_core::thread_pool::ThreadPool::build` | 9.2% | 第三方库内部（D-G2 排除） | rayon 线程池初始化，由解析库内部调用 |
+| `sqlite3VdbeExec` (SQLite VDBE 执行引擎) | 8.9% | 第三方库内部（D-G2 排除） | SQLite 内部虚拟机；CSV 导出模式下此项为零 |
+| `dm_database_parser_sqllog::sqllog::Sqllog::parse_meta` | 5.9% | 第三方库内部（D-G2 排除） | 解析库内部元数据解析，非 src/ 函数 |
+| `sqllog2db::cli::run::process_log_file` | 4.6% | self time < 5%（D-G1 第 1 条不满足） | 属于 src/cli/run.rs，但 4.6% < 5% 门控阈值 |
+| `rayon_core::registry::WorkerThread::take_local_job` | 4.2% | 第三方库内部（D-G2 排除） | rayon 工作窃取调度，由解析库内部调用 |
+| `memchr::memmem::searcher::searcher_kind_neon` | 4.1% | 第三方库内部 NEON SIMD（D-G2 排除） | memchr SIMD 字节搜索，由解析库调用 |
+| `sqllog2db::features::replace_parameters::compute_normalized` | 3.2% | self time < 5%（D-G1 第 1 条不满足） | 属于 src/features/replace_parameters.rs，但 3.2% < 5% 门控阈值 |
+| `rayon_core::join::join_context (closure)` | 3.0% | 第三方库内部（D-G2 排除） | rayon 并行 join 上下文，由解析库内部调用 |
+| `serde_core::de::Visitor::visit_i128` | 2.6% | 第三方库内部（D-G2 排除） | serde 反序列化访客模式，非 src/ 函数 |
+
+**结论：已达当前瓶颈.** 当前性能受限于：
+- 第三方解析库（dm_database_parser_sqllog）内部 self time（D-G2 不可消除）
+- 系统级内存分配与 mmap I/O（alloc / memchr 等）
+- 流式 single-thread 架构的固有读-解析-写回串行依赖
+
+依据 D-G3，本结论以本节段落形式签署，不另开 VERIFICATION.md。
+PERF-10 验收通过：bench scenarios 已补全（D-B1），samply 已采集（D-P1/P2/P3），门控判定明确（D-G1 未命中），全量测试无回归（≤5% 容差）.
+
 ### 结论
 
 - [x] D-B1 exclude_passthrough / exclude_active 两场景已补全
@@ -476,3 +501,4 @@ D-G1 标准（三条全满足才命中）：
 - [x] D-G1 门控判断已执行（无符合条件热点）
 - [x] 无热点：已记录"已达当前瓶颈"结论
 - [x] cargo test 全量通过，clippy/fmt 净化
+- [x] PERF-10 验收通过：§当前瓶颈分析 逐项对照 D-G1/D-G2 完整签署
