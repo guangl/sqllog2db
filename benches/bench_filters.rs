@@ -1,6 +1,6 @@
 /// Baseline benchmark: filter pipeline overhead.
 ///
-/// Compares five scenarios against the no-filter fast path:
+/// Compares seven scenarios against the no-filter fast path:
 ///
 /// | scenario                | what it measures                                         |
 /// |-------------------------|----------------------------------------------------------|
@@ -9,6 +9,8 @@
 /// | `trxid_small`           | exact trxid match against 10 IDs (`HashSet` O(1))        |
 /// | `trxid_large`           | exact trxid match against 1 000 IDs (`HashSet` O(1))     |
 /// | `indicator_prescan`     | two-pass: pre-scan by `min_runtime_ms` + main pass        |
+/// | `exclude_passthrough`   | exclude config present but zero hits (pure overhead)     |
+/// | `exclude_active`        | all records excluded by OR-veto (100% hit rate)          |
 ///
 /// Run with: `cargo bench --bench bench_filters --features "filters,csv"`
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
@@ -126,6 +128,35 @@ min_runtime_ms = 2000
     toml::from_str(&toml).unwrap()
 }
 
+/// exclude 配置存在但无记录命中（纯排除过滤开销）。
+/// `synthetic_log` 中 username 固定为 `BENCH`，
+/// exclude 配置为 `["BENCH_EXCLUDE"]` → 零命中。
+fn cfg_exclude_passthrough(sqllog_dir: &Path, bench_dir: &Path) -> Config {
+    let toml = format!(
+        "{base}
+[features.filters]
+enable = true
+exclude_usernames = [\"BENCH_EXCLUDE\"]
+",
+        base = base_toml(sqllog_dir, bench_dir)
+    );
+    toml::from_str(&toml).unwrap()
+}
+
+/// exclude 命中所有记录（100% hit rate）— OR-veto 极端压力场景。
+/// exclude 配置为 `["BENCH"]`，`synthetic_log` 中所有记录 username = `BENCH`，全部被排除。
+fn cfg_exclude_active(sqllog_dir: &Path, bench_dir: &Path) -> Config {
+    let toml = format!(
+        "{base}
+[features.filters]
+enable = true
+exclude_usernames = [\"BENCH\"]
+",
+        base = base_toml(sqllog_dir, bench_dir)
+    );
+    toml::from_str(&toml).unwrap()
+}
+
 fn bench_filters(c: &mut Criterion) {
     let bench_dir = PathBuf::from("target/bench_filters");
     let sqllog_dir = bench_dir.join("sqllogs");
@@ -143,6 +174,14 @@ fn bench_filters(c: &mut Criterion) {
         (
             "indicator_prescan",
             cfg_indicator_prescan(&sqllog_dir, &bench_dir),
+        ),
+        (
+            "exclude_passthrough",
+            cfg_exclude_passthrough(&sqllog_dir, &bench_dir),
+        ),
+        (
+            "exclude_active",
+            cfg_exclude_active(&sqllog_dir, &bench_dir),
         ),
     ];
 
