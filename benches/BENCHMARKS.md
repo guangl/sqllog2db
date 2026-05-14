@@ -309,3 +309,77 @@ sqlite_single_row/10000 time:   [34.819 ms 35.401 ms 36.361 ms]
 - [x] 1.0.0 自动获得的改进（编码检测、MADV_SEQUENTIAL、小文件分区优化）无需代码变更
 - [x] `index()` / `RecordIndex` 评估后决定不集成（原因：流式场景无收益）
 - [x] `cargo check` 通过，无 API 破坏性变更
+
+---
+
+## Phase 9 — CLI 冷启动基线（PERF-11）
+
+**Date:** 2026-05-14
+**Goal:** 量化双重 regex 编译消除前后的冷启动耗时；记录 hyperfine 原始输出
+**Test environment:** Apple Silicon (Darwin 25.4.0), release build (`opt-level=3`, LTO=fat, strip=symbols, panic=abort)
+
+### 测量命令
+
+```bash
+hyperfine --warmup 3 './target/release/sqllog2db --version'
+hyperfine --warmup 3 './target/release/sqllog2db validate -c config.toml'
+hyperfine --warmup 3 './target/release/sqllog2db validate -c config_no_regex.toml'
+```
+
+### 对比维度（per D-08）
+
+| 命令 | 优化前¹ (mean) | 优化后 (mean) | 差值 |
+|------|--------------|--------------|------|
+| `sqllog2db --version` | N/A | 2.9 ms | — |
+| `validate`（含 regex²） | N/A | 2.8 ms | — |
+| `validate`（无 regex） | N/A | 3.0 ms | — |
+
+¹ 优化前无历史 hyperfine 数据；本次为首次基线记录（Phase 9 是首次引入 CLI 冷启动量化）。
+
+² 默认生成的 `config.toml` 中 regex 字段均被注释，故"含 regex"与"无 regex"耗时接近（差值在误差范围内）；如需激活 regex 效果，需手动配置正则字段。
+
+**有/无 regex 差值：** 2.8 ms − 3.0 ms ≈ −0.2 ms（在 ±0.4 ms 标准差范围内，无显著差异）
+
+**结论：** CLI 冷启动 ≈ 3 ms，远低于 D-07 设定的 50 ms 后台化门控阈值。双重编译已消除，每个 regex 字段在整条代码路径中只调用一次 `Regex::new()`。
+
+### Hyperfine 原始输出
+
+<details>
+<summary>sqllog2db --version</summary>
+
+```
+Benchmark 1: ./target/release/sqllog2db --version
+  Time (mean ± σ):       2.9 ms ±   0.4 ms    [User: 1.7 ms, System: 0.8 ms]
+  Range (min … max):     2.5 ms …   5.9 ms    356 runs
+```
+
+</details>
+
+<details>
+<summary>validate -c config.toml（含 regex，默认配置 regex 注释态）</summary>
+
+```
+Benchmark 1: ./target/release/sqllog2db validate -c config.toml
+  Time (mean ± σ):       2.8 ms ±   0.3 ms    [User: 1.7 ms, System: 0.8 ms]
+  Range (min … max):     2.4 ms …   4.6 ms    524 runs
+```
+
+</details>
+
+<details>
+<summary>validate -c config_no_regex.toml（无 regex，最小配置）</summary>
+
+```
+Benchmark 1: ./target/release/sqllog2db validate -c config_no_regex.toml
+  Time (mean ± σ):       3.0 ms ±   0.4 ms    [User: 1.8 ms, System: 0.9 ms]
+  Range (min … max):     2.5 ms …   9.3 ms    546 runs
+```
+
+</details>
+
+### 结论
+
+- [x] 双重编译已消除：`grep -rn "from_meta\b" src/ | grep -v "try_from_meta"` 返回 0 个匹配；`compile_patterns` / `try_from_meta` / `try_from_sql_filters` 是唯一的 `Regex::new()` 入口
+- [x] update check 已后台化：`grep -n "thread::spawn" src/cli/update.rs` 确认存在（L68）
+- [x] hyperfine 数据已记录（三对比维度）
+- [x] CLI 冷启动 ≈ 3 ms，低于 50 ms 门控，PERF-11 验收通过
