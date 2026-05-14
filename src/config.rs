@@ -240,6 +240,19 @@ impl Config {
                     .batch_size = parsed;
             }
 
+            "features.filters.enable" => {
+                self.features
+                    .filters
+                    .get_or_insert_with(Default::default)
+                    .enable = parse_bool(value)?;
+            }
+            "features.replace_parameters.enable" => {
+                self.features
+                    .replace_parameters
+                    .get_or_insert_with(Default::default)
+                    .enable = parse_bool(value)?;
+            }
+
             _ => return Err(unknown()),
         }
         Ok(())
