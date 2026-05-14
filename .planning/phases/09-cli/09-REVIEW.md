@@ -23,8 +23,8 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 0
-  info: 2
-  total: 2
+  info: 0
+  total: 0
 status: fixed
 ---
 
