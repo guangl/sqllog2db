@@ -65,27 +65,29 @@ pub fn handle_update(check: bool) -> Result<()> {
 
 /// Check for updates at startup (silently if no update found)
 pub fn check_for_updates_at_startup() {
-    // We ignore all errors during startup check to not block the user
-    let current_version = cargo_crate_version!();
+    std::thread::spawn(|| {
+        let current_version = cargo_crate_version!();
 
-    let status = self_update::backends::github::Update::configure()
-        .repo_owner("guangl")
-        .repo_name("sqllog2db")
-        .bin_name("sqllog2db")
-        .current_version(current_version)
-        .build();
+        let status = self_update::backends::github::Update::configure()
+            .repo_owner("guangl")
+            .repo_name("sqllog2db")
+            .bin_name("sqllog2db")
+            .current_version(current_version)
+            .build();
 
-    if let Ok(status) = status {
-        if let Ok(release) = status.get_latest_release() {
-            if self_update::version::bump_is_greater(current_version, &release.version)
-                .unwrap_or(false)
-            {
-                warn!(
-                    "A new version is available: {} (current: {})",
-                    release.version, current_version
-                );
-                warn!("Run 'sqllog2db self-update' to update.");
+        if let Ok(status) = status {
+            if let Ok(release) = status.get_latest_release() {
+                if self_update::version::bump_is_greater(current_version, &release.version)
+                    .unwrap_or(false)
+                {
+                    warn!(
+                        "A new version is available: {} (current: {})",
+                        release.version, current_version
+                    );
+                    warn!("Run 'sqllog2db self-update' to update.");
+                }
             }
         }
-    }
+    });
+    // 不保留 JoinHandle，fire-and-forget（per D-05）
 }
