@@ -593,6 +593,10 @@ fn process_csv_parallel(
     );
     // 无论拼接成功与否都清理临时目录，避免磁盘满等错误导致残留
     let _ = std::fs::remove_dir_all(&parts_dir);
+    // 拼接失败且非追加模式时，删除已部分写入的输出文件，避免遗留截断的 CSV
+    if concat_result.is_err() && !append_to_existing {
+        let _ = std::fs::remove_file(output_path);
+    }
     concat_result?;
 
     // 返回 (已处理文件列表, 跳过文件数)，供 handle_run 更新 resume state 及摘要行
