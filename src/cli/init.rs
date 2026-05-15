@@ -81,6 +81,12 @@ retention_days = 7
 # 对 INS/DEL/UPD/ORA 类型的记录，将 PARAMS 参数值填入 SQL 的占位符
 enable = true
 
+[features.template_analysis]
+# SQL 模板归一化（v1.3 新增）
+# 启用后对 sql_text 执行注释去除、IN 列表折叠、关键字大写、空白折叠四项变换，生成稳定的模板 key
+# 默认 false（不影响热循环性能）
+enabled = false
+
 [features.filters]
 # 是否启用过滤器
 enable = false
@@ -184,6 +190,12 @@ retention_days = 7
 # Write a normalized_sql column in export output (default: true).
 # For INS/DEL/UPD/ORA records, parameter values are substituted into SQL placeholders.
 enable = true
+
+[features.template_analysis]
+# SQL template normalization (new in v1.3)
+# Strips comments, folds IN lists, uppercases keywords, collapses whitespace to produce a stable template key
+# Default false (zero overhead in hot loop when disabled)
+enabled = false
 
 [features.filters]
 # Enable the filter pipeline

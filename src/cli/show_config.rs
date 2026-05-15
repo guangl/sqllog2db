@@ -203,6 +203,7 @@ mod tests {
                 }),
                 filters: None,
                 fields: None,
+                template_analysis: None,
             },
             ..Default::default()
         };
@@ -219,6 +220,7 @@ mod tests {
                     ..Default::default()
                 }),
                 fields: None,
+                template_analysis: None,
             },
             ..Default::default()
         };

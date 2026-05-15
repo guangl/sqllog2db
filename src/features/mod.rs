@@ -6,6 +6,7 @@ pub use replace_parameters::compute_normalized;
 
 pub mod sql_fingerprint;
 pub use sql_fingerprint::fingerprint;
+pub use sql_fingerprint::normalize_template;
 
 use dm_database_parser_sqllog::{MetaParts, Sqllog};
 use serde::Deserialize;
@@ -116,6 +117,14 @@ fn default_true() -> bool {
     true
 }
 
+/// `[features.template_analysis]` 配置段
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TemplateAnalysisConfig {
+    /// 是否启用 SQL 模板归一化（默认 false）
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 /// 功能开关配置
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FeaturesConfig {
@@ -123,6 +132,7 @@ pub struct FeaturesConfig {
     pub replace_parameters: Option<ReplaceParametersConfig>,
     /// 字段投影：仅导出指定字段，默认为全部 15 个字段
     pub fields: Option<Vec<String>>,
+    pub template_analysis: Option<TemplateAnalysisConfig>,
 }
 
 impl FeaturesConfig {
@@ -269,6 +279,25 @@ mod tests {
         let cfg = FeaturesConfig::default();
         assert!(cfg.filters.is_none());
         assert!(cfg.replace_parameters.is_none());
+        assert!(cfg.template_analysis.is_none());
+    }
+
+    #[test]
+    fn test_template_analysis_config_default() {
+        let cfg = TemplateAnalysisConfig::default();
+        assert!(!cfg.enabled);
+    }
+
+    #[test]
+    fn test_template_analysis_config_deserialize_enabled_true() {
+        let cfg: TemplateAnalysisConfig = toml::from_str("enabled = true").unwrap();
+        assert!(cfg.enabled);
+    }
+
+    #[test]
+    fn test_template_analysis_config_deserialize_empty_is_false() {
+        let cfg: TemplateAnalysisConfig = toml::from_str("").unwrap();
+        assert!(!cfg.enabled);
     }
 
     #[test]
