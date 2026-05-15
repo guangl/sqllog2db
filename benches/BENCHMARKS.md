@@ -422,7 +422,7 @@ Top 10 函数（self time 占比，按 CPU 采样自底向上统计）：
 | `exclude_passthrough` |   2.28 ms   |   4.39 M/s    | exclude 配置存在但零命中（username="BENCH" vs exclude=["BENCH_EXCLUDE"]）|
 | `exclude_active`      |   0.96 ms   |   10.44 M/s   | 所有记录被 OR-veto 排除（100% hit rate，username="BENCH" == exclude=["BENCH"]）|
 
-> 备注：`exclude_active` 因所有记录在 exclude 检查后立即丢弃，跳过了大量后续处理（SQLite 写入等），
+> 备注：`exclude_active` 因所有记录在 exclude 检查后立即丢弃，跳过了大量后续处理（CSV 格式化及写入等），
 > 因此吞吐高于 `exclude_passthrough`（需完整处理每条记录）。
 
 <details><summary>Phase 10 criterion (exclude_passthrough)</summary>
