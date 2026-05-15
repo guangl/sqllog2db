@@ -163,9 +163,10 @@ pub fn count_placeholders(sql: &str) -> (usize, bool) {
                 }
                 if j > start {
                     // `:N` 内的字节均为 ASCII 数字（已 while 保证），直接累加避免 from_utf8 + parse 开销
-                    let n: usize = bytes[start..j]
-                        .iter()
-                        .fold(0usize, |acc, &b| acc * 10 + (b - b'0') as usize);
+                    // 使用 saturating 算术防止超长序号（>20 位）在 debug 构建下 panic（WR-03）
+                    let n: usize = bytes[start..j].iter().fold(0usize, |acc, &b| {
+                        acc.saturating_mul(10).saturating_add((b - b'0') as usize)
+                    });
                     max_colon_ordinal = max_colon_ordinal.max(n);
                     i = j;
                 } else {
@@ -267,9 +268,10 @@ fn apply_params_into(sql: &str, params: &[ParamValue], colon_style: bool, out: &
                 }
                 if j > start {
                     // `:N` 内的字节均为 ASCII 数字，直接累加避免 from_utf8 + parse 开销
-                    let n: usize = bytes[start..j]
-                        .iter()
-                        .fold(0usize, |acc, &b| acc * 10 + (b - b'0') as usize);
+                    // 使用 saturating 算术防止超长序号（>20 位）在 debug 构建下 panic（WR-03）
+                    let n: usize = bytes[start..j].iter().fold(0usize, |acc, &b| {
+                        acc.saturating_mul(10).saturating_add((b - b'0') as usize)
+                    });
                     // :N is 1-indexed
                     if let Some(p) = n.checked_sub(1).and_then(|idx| params.get(idx)) {
                         out.extend_from_slice(p.as_sql().as_bytes());
