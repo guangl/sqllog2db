@@ -151,5 +151,5 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 7. 技术债修复 | v1.2 | 0/1 | Not started | - |
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
-| 10. 热路径优化 | v1.2 | 3/3 | Complete   | 2026-05-15 |
+| 10. 热路径优化 | v1.2 | 3/3 | Complete    | 2026-05-15 |
 | 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |

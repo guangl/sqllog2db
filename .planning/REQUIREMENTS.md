@@ -17,7 +17,7 @@
 
 ### 性能
 
-- [ ] **PERF-10**: 在 FILTER-03 就位后重新 profile 热路径（criterion + flamegraph）；若发现 >5% 可消除热点则实施相应优化；否则记录"已达当前瓶颈"并签署报告
+- [x] **PERF-10**: 在 FILTER-03 就位后重新 profile 热路径（criterion + flamegraph）；若发现 >5% 可消除热点则实施相应优化；否则记录"已达当前瓶颈"并签署报告
 - [ ] **PERF-11**: 用 hyperfine 量化 CLI 冷启动基线；消除双重 regex 编译（validate 与 compile 阶段合并为 `validate_and_compile()`）；若 update check 在启动占比显著（>50ms）则后台线程化
 
 ## Future Requirements
@@ -44,7 +44,7 @@
 | DEBT-02 | Phase 7 | Pending |
 | DEBT-03 | Phase 11 | Pending |
 | FILTER-03 | Phase 8 | Pending |
-| PERF-10 | Phase 10 | Pending |
+| PERF-10 | Phase 10 | Complete |
 | PERF-11 | Phase 9 | Pending |
 
 **Coverage:**
