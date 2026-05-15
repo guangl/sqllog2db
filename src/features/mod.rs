@@ -56,7 +56,7 @@ impl FieldMask {
     /// 第 `idx` 个字段是否启用
     #[inline]
     #[must_use]
-    pub fn is_active(self, idx: usize) -> bool {
+    pub(crate) fn is_active(self, idx: usize) -> bool {
         idx < 15 && (self.0 >> idx) & 1 == 1
     }
 
