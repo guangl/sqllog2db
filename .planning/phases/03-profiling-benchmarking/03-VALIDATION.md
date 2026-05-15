@@ -1,9 +1,9 @@
 ---
 phase: 3
 slug: profiling-benchmarking
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: complete
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-26
 ---
 
@@ -38,7 +38,7 @@ created: 2026-04-26
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 3-01-01 | 01 | 1 | PERF-01 | — | N/A | benchmark | `CRITERION_HOME=benches/baselines cargo bench` | ✅ | ⬜ pending |
+| 3-01-01 | 01 | 1 | PERF-01 | — | N/A | benchmark | `CRITERION_HOME=benches/baselines cargo bench` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -46,7 +46,7 @@ created: 2026-04-26
 
 ## Wave 0 Requirements
 
-- [ ] `[profile.flamegraph]` section in `Cargo.toml` with `debug = true` + `strip = "none"` — required before flamegraph tasks
+- [x] `[profile.flamegraph]` section in `Cargo.toml` with `debug = true` + `strip = "none"` — required before flamegraph tasks
 
 *If none: "Existing infrastructure covers all phase requirements."*
 
@@ -63,11 +63,11 @@ created: 2026-04-26
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** signed 2026-05-15 — 回溯补签于 Phase 11（DEBT-03）；执行验证于 2026-04-27（见 03-VERIFICATION.md，10/10 truths verified）。
