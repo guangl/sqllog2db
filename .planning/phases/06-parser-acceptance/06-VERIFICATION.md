@@ -18,7 +18,7 @@ human_verification:
 
 **Phase Goal:** dm-database-parser-sqllog 1.0.0 新 API 已评估并按需集成，所有 629+ 测试通过，v1.1 milestone 可交付
 **Verified:** 2026-05-10T12:00:00Z
-**Status:** human_needed
+**Status:** passed
 **Re-verification:** No — initial verification
 
 ---

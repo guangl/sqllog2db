@@ -1,0 +1,35 @@
+{
+  "phase": "10",
+  "phase_name": "热路径优化",
+  "phase_dir": ".planning/phases/10-hot-path",
+  "created": "2026-05-14",
+  "areas_completed": ["Profiling 工具链", "Benchmark 场景扩展", "热点门控判定标准"],
+  "areas_remaining": ["预设优化方向"],
+  "decisions": [
+    {
+      "area": "Profiling 工具链",
+      "decisions": [
+        "D-P1: 使用 samply（无需 sudo，macOS Instruments 后端采样）",
+        "D-P2: 跑两个场景：(1) samply record ./target/release/sqllog2db run -c config.toml（真实日志，全局热路径）；(2) criterion bench 针对可疑热点做微基准验证",
+        "D-P3: samply 结果以截图 + 文字描述（top N 函数及占比）写入 benches/BENCHMARKS.md Phase 10 节"
+      ]
+    },
+    {
+      "area": "Benchmark 场景扩展",
+      "decisions": [
+        "D-B1: 在 bench_filters.rs 补充两个 exclude 场景：exclude_passthrough（exclude 存在但无记录命中）和 exclude_active（有记录被排除）",
+        "D-B2: 用单字段 exclude_username 代表全局（所有 exclude 字段内部路径等价）",
+        "D-B3: exclude_passthrough 合成日志 username 为 'BENCH'，exclude 配置为 'BENCH_EXCLUDE'，保证零命中"
+      ]
+    },
+    {
+      "area": "热点门控判定标准",
+      "decisions": [
+        "D-G1: 门控标准：samply 中某单一函数（src/ 下我们自己的业务逻辑）占 self time >5%，且有明确优化空间，则实施优化",
+        "D-G2: '可消除'定义：热点属于 sqllog2db 自身代码（src/ 下），且存在明确减少分配/clone/循环的优化路径；第三方库内部开销（regex crate 内部、alloc 等）不算",
+        "D-G3: 若无 >5% 热点，在 BENCHMARKS.md Phase 10 节用简短段落文字记录'已达当前瓶颈'结论 + top N 函数列表 + criterion 对比数据，不需要单独 VERIFICATION.md"
+      ]
+    }
+  ],
+  "deferred": []
+}
