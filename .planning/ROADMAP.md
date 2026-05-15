@@ -63,7 +63,10 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   2. 相同语义但空白/大小写/IN 列表长度不同的 SQL 语句经 normalize_template() 后产生相同的模板 key
   3. 字符串字面量内部的注释符号（`--`、`/*`）不被误判为注释，归一化结果保留字面量原文
   4. `cargo test` 中有针对四项变换边界情况的单元测试，全部通过
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 12-01-PLAN.md — 在 src/features/sql_fingerprint.rs 实现 normalize_template() 函数（共享扫描基础 + 四项变换 + 7 项行为子测试）
+- [ ] 12-02-PLAN.md — 新增 TemplateAnalysisConfig + FeaturesConfig 接入 + pub use 导出 + init 命令 TOML 模板段
+- [ ] 12-03-PLAN.md — 在 cli/run.rs 热循环接入 do_template 守卫 + process_log_file/process_csv_parallel 签名透传 + 集成测试
 
 ### Phase 13: TemplateAggregator 流式统计累积器
 **Goal**: 用户可启用模板统计聚合，run 结束后每个模板输出 count + avg/min/max + p50/p95/p99 + first_seen/last_seen，且热循环零开销快路径完全不受影响
@@ -129,7 +132,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
 | 10. 热路径优化 | v1.2 | 3/3 | Complete | 2026-05-15 |
 | 11. Nyquist 补签 | v1.2 | 2/2 | Complete | 2026-05-15 |
-| 12. SQL 模板归一化引擎 | v1.3 | 0/? | Not started | - |
+| 12. SQL 模板归一化引擎 | v1.3 | 0/3 | Planned | - |
 | 13. TemplateAggregator 流式统计累积器 | v1.3 | 0/? | Not started | - |
 | 14. Exporter 集成输出 | v1.3 | 0/? | Not started | - |
 | 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 0/? | Not started | - |
