@@ -47,7 +47,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 ### v1.3 SQL 模板分析 & 可视化
 
 - [ ] **Phase 12: SQL 模板归一化引擎** — normalize_template() 函数 + TemplateAnalysisConfig
-- [ ] **Phase 13: TemplateAggregator 流式统计累积器** — 侧路径聚合 + hdrhistogram 百分位
+- [x] **Phase 13: TemplateAggregator 流式统计累积器** — 侧路径聚合 + hdrhistogram 百分位 (completed 2026-05-15)
 - [ ] **Phase 14: Exporter 集成输出** — sql_templates 表 + *_templates.csv 伴随文件
 - [ ] **Phase 15: SVG 图表基础设施 + 前两类图表** — ChartsConfig + Top N 频率条形图 + 耗时直方图
 - [ ] **Phase 16: 剩余图表** — 时间趋势折线图 + 用户/Schema 饼图
@@ -80,7 +80,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   5. `cargo clippy --all-targets -- -D warnings` 通过，`cargo test` 新增针对 observe/finalize/merge 的单元测试全部通过
 **Plans**: 2 plans
 - [x] 13-01-PLAN.md — 新建 src/features/template_aggregator.rs（TemplateEntry + TemplateAggregator + TemplateStats + 6 项单元测试）+ Cargo.toml hdrhistogram 依赖 + mod.rs 暴露 + sql_fingerprint.rs allow(dead_code) 清理
-- [ ] 13-02-PLAN.md — src/cli/run.rs 侧路径接入：process_log_file 签名替换 + 热循环 observe 调用 + process_csv_parallel map-reduce + handle_run 创建/finalize + 2 项集成测试
+- [x] 13-02-PLAN.md — src/cli/run.rs 侧路径接入：process_log_file 签名替换 + 热循环 observe 调用 + process_csv_parallel map-reduce + handle_run 创建/finalize + 2 项集成测试
 
 ### Phase 14: Exporter 集成输出
 **Goal**: SQLite 导出时自动写入 sql_templates 统计表，CSV 导出时自动生成 *_templates.csv 伴随文件，统计数据与主导出结果保持一致
@@ -135,7 +135,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 10. 热路径优化 | v1.2 | 3/3 | Complete | 2026-05-15 |
 | 11. Nyquist 补签 | v1.2 | 2/2 | Complete | 2026-05-15 |
 | 12. SQL 模板归一化引擎 | v1.3 | 0/3 | Planned | - |
-| 13. TemplateAggregator 流式统计累积器 | v1.3 | 1/2 | In Progress|  |
+| 13. TemplateAggregator 流式统计累积器 | v1.3 | 2/2 | Complete   | 2026-05-15 |
 | 14. Exporter 集成输出 | v1.3 | 0/? | Not started | - |
 | 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 0/? | Not started | - |
 | 16. 剩余图表 | v1.3 | 0/? | Not started | - |
