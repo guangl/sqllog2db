@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: 质量强化 & 性能深化
-status: completed
-stopped_at: Phase 11 context gathered
-last_updated: "2026-05-15T03:27:19.460Z"
-last_activity: 2026-05-15 -- Phase 11 marked complete
+status: shipped
+stopped_at: Milestone closed 2026-05-15
+last_updated: "2026-05-15"
+last_activity: 2026-05-15 -- v1.2 milestone archived
 progress:
   total_phases: 5
   completed_phases: 5
@@ -18,53 +18,41 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-10)
+See: .planning/PROJECT.md (updated 2026-05-15 after v1.2 milestone close)
 
 **Core value:** 用户能够精确指定"导出哪些记录的哪些字段"——过滤逻辑清晰可配置，输出结果完全可控
-**Current focus:** Phase 11 — nyquist
+**Current focus:** v1.2 shipped — planning next milestone
 
 ## Current Position
 
-Phase: 11 — COMPLETE
-Plan: 1 of 2
-Status: Phase 11 complete
-Last activity: 2026-05-15 -- Phase 11 marked complete
+Milestone v1.2 complete and archived. All 5 phases (7–11), 13 plans, 729 tests passing.
 
-Progress: [██████░░░░] 60% (3/5 phases complete)
+Next step: `/gsd:new-milestone` to define v1.3 requirements and roadmap.
 
-## Performance Metrics (v1.1 Final)
+## Performance Metrics
 
-| Metric | v1.0 Baseline | v1.1 Actual |
+| Metric | v1.1 Baseline | v1.2 Actual |
 |--------|--------------|-------------|
-| CSV real-file throughput | ~1.55M records/sec | accept-defer (sqllogs/ 环境限制) |
-| CSV synthetic benchmark | ~5.2M records/sec | ~5.2M records/sec (−8.53% on criterion 10k) |
-| SQLite (batch tx) | single-row commit | batch_size=10000; 35.4ms→7.1ms (5x) |
-| Test suite | 629+ passing | 651 passing |
+| CSV synthetic benchmark | ~5.2M records/sec | ~5.2M records/sec (已达当前瓶颈，D-G1 未触发) |
+| SQLite (batch tx) | 35.4ms→7.1ms (5x) | 无回归（D-O3 ≤5% 容差） |
+| Test suite | 673 passing | 729 passing (+56) |
+| Rust LOC | ~9,889 | ~11,139 |
 
 ## Accumulated Context
 
-### Decisions
+### Decisions (v1.2)
 
 | Decision | Rationale | Phase |
 |----------|-----------|-------|
 | FILTER-03 集成进 CompiledMetaFilters | 避免独立 ExcludeProcessor 双调用开销，排除先于包含检查短路更快 | 8 |
 | PERF-11 门控：hyperfine >50ms 才后台化 update check | 避免过度工程，数据驱动 | 9 |
+| validate_and_compile() 合并接口 | 单次编译结果贯穿全链路，消除双重 Regex::new() | 9 |
 | PERF-10 门控：flamegraph >5% 热点才优化 | 避免盲目优化，与 v1.1 策略一致 | 10 |
 | Phase 11 (DEBT-03) 排最后 | 纯文档，无代码依赖，不阻塞任何功能交付 | 11 |
 
 ### Blockers
 
 None.
-
-### Todos
-
-None.
-
-## Session Continuity
-
-Last session: 2026-05-15T02:44:28.859Z
-Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-nyquist/11-CONTEXT.md
 
 ## Deferred Items
 

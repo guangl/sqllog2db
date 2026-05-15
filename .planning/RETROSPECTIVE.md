@@ -92,15 +92,65 @@
 
 ---
 
+---
+
+## Milestone: v1.2 — 质量强化 & 性能深化
+
+**Shipped:** 2026-05-15
+**Phases:** 5 (7–11) | **Plans:** 13
+
+### What Was Built
+
+- SQLite 双重技术债修复：`handle_delete_clear_result()` 软失败区分 + ASCII 白名单校验 + DDL 双引号转义（DEBT-01/02）
+- 排除过滤器 FILTER-03：7 个 `exclude_*` 字段 OR-veto 语义，21 个新测试，快路径零开销
+- `validate_and_compile()` 统一接口：消除双重 regex 编译，update check 后台化（PERF-11）
+- 热路径 D-G1 门控：samply 数据驱动，4.6% < 5%，"已达当前瓶颈"签署（PERF-10）
+- Nyquist 审计链闭合：Phase 3/4/5/6 VALIDATION.md 全部补签（DEBT-03）
+
+### What Worked
+
+- **D-G1 门控设计** — ">5% 可消除热点才优化"规则有效避免了无依据优化，samply 数据直接作为决策依据，执行简洁
+- **FILTER-03 集成位置决策** — 将 exclude 集成进 CompiledMetaFilters 而非独立 processor，短路语义（exclude 先于 include 检查）带来性能优势，同时保持 pipeline.is_empty() 快路径
+- **Phase 11 纯文档排最后** — DEBT-03 是纯文档补签，无代码依赖，排在最后不阻塞任何功能交付，执行极快（~15min + ~2min）
+- **validate_and_compile() 接口设计** — 单次编译结果 `Option<(Meta, Sql)>` 的传递类型简洁，贯穿 handle_run → build_pipeline → FilterProcessor 全链路
+- **快路径不受影响验证** — Phase 8 明确测试了空 exclude 配置下 pipeline.is_empty() 行为，避免性能回归担忧
+
+### What Was Inefficient
+
+- **REQUIREMENTS.md 追踪脱节** — Phase 7/8 执行期间 REQUIREMENTS.md 的 checkbox 未同步更新（DEBT-01/02/03/FILTER-03 仍显示 [ ]），在里程碑关闭时需人工核实实际状态。这是 v1.0/v1.1 已知问题，v1.2 仍未解决
+- **ROADMAP.md Progress 表未即时更新** — Phase 7/8 完成后 Progress 表仍显示"0/1 Not started"，在里程碑关闭时才修正
+- **Phase 9 需要 5 个 plan** — Wave 4 (09-05) 是 gap closure，说明 09-01~04 的 SC-2 验证 BLOCKER 在规划阶段未被充分预见
+
+### Patterns Established
+
+- `validate_and_compile()` 模式：校验与编译合并为单次操作，结果从入口贯穿至消费点，可作为未来 config 扩展的参考
+- D-G1 门控签署模式：BENCHMARKS.md Phase N 节以 §D-G1 门控判定 + §当前瓶颈分析 记录，形成可审计的优化决策轨迹
+- WAL N/A 注释格式：VALIDATION.md 中 `[N/A] ... *N/A — PERF-xx canceled ...*` 保留决策历史而不阻塞 compliant 状态
+
+### Key Lessons
+
+1. 性能优化门控应在 discuss 阶段就明确量化阈值（>5%），避免执行时主观判断
+2. REQUIREMENTS.md checkbox 的追踪脱节是系统性问题——在 executor 工作流中缺乏自动同步机制
+3. 纯文档型 phase（如 Nyquist 补签）执行成本极低，可安全排在最后，但在里程碑规划时应明确标记为"纯文档"
+4. 技术债如果有明确的 phase 承接（DEBT-01/02 → Phase 7），就算追踪文件脱节也不会丢失——SUMMARY.md 是可靠的完成证据
+
+### Cost Observations
+
+- Sessions: 5 天（2026-05-10 → 2026-05-15）
+- Notable: Phase 11 两个 plan 总耗时约 17 分钟，是里程碑中执行最快的 phase
+
+---
+
 ## Cross-Milestone Trends
 
-| Metric | v1.0 | v1.1 |
-|--------|------|------|
-| Phases | 2 | 4 |
-| Plans | 6 | 12 |
-| Days | 1 | 14 |
-| Auto-fixed deviations | 6 (all clippy) | 1 (WAL revert) |
-| Scope creep | 0 | 0 |
-| Test suite at close | 629+ | 651 |
-| Accept-defer decisions | 0 | 1 (PERF-02 real-file) |
-| User scope removals | 0 | 1 (PERF-05 WAL) |
+| Metric | v1.0 | v1.1 | v1.2 |
+|--------|------|------|------|
+| Phases | 2 | 4 | 5 |
+| Plans | 6 | 12 | 13 |
+| Days | 1 | 14 | 5 |
+| Auto-fixed deviations | 6 (all clippy) | 1 (WAL revert) | 3 (09-05 gap closure, 10 review fixes) |
+| Scope creep | 0 | 0 | 0 |
+| Test suite at close | 629+ | 673 | 729 |
+| Accept-defer decisions | 0 | 1 (PERF-02 real-file) | 0 |
+| User scope removals | 0 | 1 (PERF-05 WAL) | 0 |
+| Gate-driven decisions | 0 | 0 | 1 (D-G1 B-no, Phase 10) |
