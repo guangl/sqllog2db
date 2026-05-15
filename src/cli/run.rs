@@ -186,7 +186,8 @@ fn process_log_file(
                     if passes {
                         // DML 或通过过滤的 PARAMS：CSV 关闭性能指标时合成空 pm，
                         // 跳过 find_indicators_split（D-05/D-06）；SQL 字段来自 record.body()。
-                        let pm = if include_pm {
+                        // 若 aggregator 存在，无论 include_pm 如何都需要真实的 exectime（CR-01）。
+                        let pm = if include_pm || aggregator.is_some() {
                             record.parse_performance_metrics()
                         } else {
                             dm_database_parser_sqllog::PerformanceMetrics {
