@@ -57,7 +57,10 @@ impl Config {
         self.sqllog.validate()?;
         if let Some(filters) = &self.features.filters {
             if filters.enable {
-                filters.validate_regexes()?;
+                crate::features::filters::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+                crate::features::filters::CompiledSqlFilters::try_from_sql_filters(
+                    &filters.record_sql,
+                )?;
             }
         }
         if let Some(names) = &self.features.fields {
@@ -75,6 +78,56 @@ impl Config {
             }
         }
         Ok(())
+    }
+
+    /// 等价于 `validate()` 但额外返回已编译的过滤器对，供调用方复用，
+    /// 消除 `run` 子命令路径中 regex 的双重编译（per ROADMAP SC-2 / PERF-11）。
+    ///
+    /// 返回值语义：
+    /// - `Ok(None)`：无过滤器配置 或 `features.filters.enable == false`
+    /// - `Ok(Some((meta, sql)))`：过滤器已编译，调用方可直接传递给 `build_pipeline`
+    /// - `Err(_)`：任意子校验失败（logging/exporter/sqllog/fields/正则编译）
+    pub fn validate_and_compile(
+        &self,
+    ) -> Result<
+        Option<(
+            crate::features::CompiledMetaFilters,
+            crate::features::CompiledSqlFilters,
+        )>,
+    > {
+        self.logging.validate()?;
+        self.exporter.validate()?;
+        self.sqllog.validate()?;
+
+        let compiled = if let Some(filters) = &self.features.filters {
+            if filters.enable {
+                let meta = crate::features::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+                let sql =
+                    crate::features::CompiledSqlFilters::try_from_sql_filters(&filters.record_sql)?;
+                Some((meta, sql))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(names) = &self.features.fields {
+            for name in names {
+                if !crate::features::FIELD_NAMES.contains(&name.as_str()) {
+                    return Err(Error::Config(ConfigError::InvalidValue {
+                        field: "features.fields".to_string(),
+                        value: name.clone(),
+                        reason: format!(
+                            "unknown field '{name}'; valid fields: {}",
+                            crate::features::FIELD_NAMES.join(", ")
+                        ),
+                    }));
+                }
+            }
+        }
+
+        Ok(compiled)
     }
 
     /// 将 `--set key=value` 覆盖应用到 config。
@@ -142,6 +195,12 @@ impl Config {
                     .get_or_insert_with(Default::default)
                     .append = parse_bool(value)?;
             }
+            "exporter.csv.include_performance_metrics" => {
+                self.exporter
+                    .csv
+                    .get_or_insert_with(Default::default)
+                    .include_performance_metrics = parse_bool(value)?;
+            }
 
             "exporter.sqlite.database_url" => {
                 self.exporter
@@ -166,6 +225,32 @@ impl Config {
                     .sqlite
                     .get_or_insert_with(Default::default)
                     .append = parse_bool(value)?;
+            }
+            "exporter.sqlite.batch_size" => {
+                let parsed = value.parse::<usize>().map_err(|_| {
+                    Error::Config(ConfigError::InvalidValue {
+                        field: "exporter.sqlite.batch_size".to_string(),
+                        value: value.to_string(),
+                        reason: "expected a positive integer".to_string(),
+                    })
+                })?;
+                self.exporter
+                    .sqlite
+                    .get_or_insert_with(Default::default)
+                    .batch_size = parsed;
+            }
+
+            "features.filters.enable" => {
+                self.features
+                    .filters
+                    .get_or_insert_with(Default::default)
+                    .enable = parse_bool(value)?;
+            }
+            "features.replace_parameters.enable" => {
+                self.features
+                    .replace_parameters
+                    .get_or_insert_with(Default::default)
+                    .enable = parse_bool(value)?;
             }
 
             _ => return Err(unknown()),
@@ -303,6 +388,10 @@ pub struct CsvExporter {
     pub overwrite: bool,
     #[serde(default)]
     pub append: bool,
+    /// 关闭时跳过 `parse_performance_metrics()`，CSV 省略 `exectime/rowcount/exec_id` 三列。
+    /// 默认 true，保持现有行为不变（D-06）。
+    #[serde(default = "default_true")]
+    pub include_performance_metrics: bool,
 }
 
 impl Default for CsvExporter {
@@ -311,6 +400,7 @@ impl Default for CsvExporter {
             file: "outputs/sqllog.csv".to_string(),
             overwrite: true,
             append: false,
+            include_performance_metrics: true,
         }
     }
 }
@@ -337,10 +427,16 @@ pub struct SqliteExporter {
     pub overwrite: bool,
     #[serde(default)]
     pub append: bool,
+    #[serde(default = "default_sqlite_batch_size")]
+    pub batch_size: usize,
 }
 
 fn default_table_name() -> String {
     "sqllog_records".to_string()
+}
+
+fn default_sqlite_batch_size() -> usize {
+    10_000
 }
 
 impl Default for SqliteExporter {
@@ -350,6 +446,7 @@ impl Default for SqliteExporter {
             table_name: "sqllog_records".to_string(),
             overwrite: true,
             append: false,
+            batch_size: 10_000,
         }
     }
 }
@@ -369,6 +466,30 @@ impl SqliteExporter {
                 value: self.table_name.clone(),
                 reason: "SQLite table name cannot be empty".to_string(),
             }));
+        }
+        // ASCII 标识符校验：^[a-zA-Z_][a-zA-Z0-9_]*$（不引入 regex crate）
+        let is_valid_ident = {
+            let mut chars = self.table_name.chars();
+            chars
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        };
+        if !is_valid_ident {
+            return Err(Error::Config(ConfigError::InvalidValue {
+                field: "exporter.sqlite.table_name".to_string(),
+                value: self.table_name.clone(),
+                reason: "table name must match ^[a-zA-Z_][a-zA-Z0-9_]*$ (ASCII identifiers only)"
+                    .to_string(),
+            }));
+        }
+        if self.batch_size == 0 {
+            return Err(ConfigError::InvalidValue {
+                field: "exporter.sqlite.batch_size".to_string(),
+                value: "0".to_string(),
+                reason: "batch_size must be greater than 0".to_string(),
+            }
+            .into());
         }
         Ok(())
     }
@@ -677,5 +798,266 @@ file = "out.csv"
 "#;
         let cfg: Config = toml::from_str(toml).unwrap();
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_csv_exporter_default_include_performance_metrics_true() {
+        let cfg = CsvExporter::default();
+        assert!(cfg.include_performance_metrics, "默认必须为 true（D-06）");
+    }
+
+    #[test]
+    fn test_apply_one_csv_include_performance_metrics_false() {
+        let mut cfg = Config::default();
+        cfg.apply_one("exporter.csv.include_performance_metrics", "false")
+            .expect("apply_one should succeed for valid bool");
+        assert!(
+            !cfg.exporter
+                .csv
+                .as_ref()
+                .unwrap()
+                .include_performance_metrics,
+            "--set 覆盖后应为 false"
+        );
+    }
+
+    #[test]
+    fn test_apply_one_csv_include_performance_metrics_invalid() {
+        let mut cfg = Config::default();
+        let r = cfg.apply_one("exporter.csv.include_performance_metrics", "maybe");
+        assert!(r.is_err(), "非法布尔值必须返回错误");
+    }
+
+    #[test]
+    fn test_csv_toml_default_include_performance_metrics() {
+        // TOML 未指定 include_performance_metrics 时，serde default 必须生效（true）
+        let toml = r#"
+[sqllog]
+directory = "sqllogs"
+[exporter.csv]
+file = "/tmp/x.csv"
+overwrite = true
+append = false
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(
+            cfg.exporter
+                .csv
+                .as_ref()
+                .unwrap()
+                .include_performance_metrics,
+            "未指定时 serde 默认必须为 true"
+        );
+    }
+
+    // ── table_name ASCII 标识符校验 ────────────────────────────
+    #[test]
+    fn test_validate_sqlite_table_name_valid_simple() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_valid_underscore_prefix() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "_records".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_valid_with_digits() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "t1_log_2024".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_leading_digit() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "1tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+        assert!(msg.contains("exporter.sqlite.table_name"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_special_char() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl;DROP".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_quote() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "tbl\"x".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_non_ascii() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "日志表".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    #[test]
+    fn test_validate_sqlite_table_name_rejects_space() {
+        let mut cfg = default_config();
+        cfg.exporter.sqlite = Some(SqliteExporter {
+            database_url: "/tmp/x.db".into(),
+            table_name: "my tbl".into(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        });
+        cfg.exporter.csv = None;
+        let err = cfg.validate().unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("ASCII identifiers only"), "actual: {msg}");
+    }
+
+    // ── validate_and_compile ───────────────────────────────────────
+    #[test]
+    fn test_validate_and_compile_default_returns_none() {
+        let cfg = default_config();
+        let result = cfg.validate_and_compile().expect("default config valid");
+        assert!(result.is_none(), "默认 config 无 filters，应返回 None");
+    }
+
+    #[test]
+    fn test_validate_and_compile_filters_disabled_returns_none() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = false
+usernames = ["^admin.*"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile().expect("config valid");
+        assert!(result.is_none(), "filters.enable=false 时应返回 None");
+    }
+
+    #[test]
+    fn test_validate_and_compile_returns_compiled_pair() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["^admin.*"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile().expect("config valid");
+        let pair = result.expect("filters.enable=true 应返回 Some");
+        assert!(
+            pair.0.has_any_filters(),
+            "usernames 配置后 CompiledMetaFilters.has_any_filters 必为 true"
+        );
+    }
+
+    #[test]
+    fn test_validate_and_compile_invalid_regex_returns_err() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.filters]
+enable = true
+usernames = ["[invalid"]
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("features.filters.usernames"),
+            "error should mention field name, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_and_compile_invalid_log_level_returns_err() {
+        let mut cfg = default_config();
+        cfg.logging.level = "invalid".into();
+        assert!(cfg.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn test_validate_and_compile_unknown_field_returns_err() {
+        let mut cfg = default_config();
+        cfg.features.fields = Some(vec!["nonexistent_field".into()]);
+        assert!(cfg.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn test_validate_and_compile_matches_validate_on_ok() {
+        // 合法配置：两个方法都应返回 Ok（行为等价，仅返回类型不同）
+        let cfg = default_config();
+        assert!(cfg.validate().is_ok());
+        assert!(cfg.validate_and_compile().is_ok());
     }
 }

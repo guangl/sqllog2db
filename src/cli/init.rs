@@ -46,7 +46,7 @@ pub fn handle_init(output_path: &str, force: bool, lang: Lang) -> Result<()> {
         })
     })?;
 
-    if force && path.exists() {
+    if force {
         info!("Configuration file overwritten: {output_path}");
     } else {
         info!("Configuration file generated: {output_path}");
@@ -88,21 +88,45 @@ enable = false
 # --- 元数据过滤器（Record-level：满足任一条件即保留该条记录）---
 # 过滤指定的事务 ID
 # trxids = ["257809109", "257809110"]
-# 过滤指定的客户端 IP（支持模糊匹配）
-# client_ips = ["127.0.0.1", "192.168"]
-# 过滤指定的用户名（支持模糊匹配）
+
+# 过滤指定的客户端 IP（支持正则匹配）
+# client_ips = ["127.0.0.1", "192\\.168"]
+# 排除指定的客户端 IP（OR veto：任一命中则丢弃该记录）
+# exclude_client_ips = ["^10\\.0", "^172\\.16"]
+
+# 过滤指定的用户名（支持正则匹配）
 # usernames = ["SYSDBA"]
+# 排除指定的用户名（OR veto：任一命中则丢弃该记录）
+# exclude_usernames = ["guest", "^anon"]
+
 # 过滤时间范围（格式：2023-01-01 00:00:00）
 # start_ts = "2023-01-01 00:00:00"
 # end_ts   = "2023-01-01 23:59:59"
-# 过滤指定的会话 ID（支持模糊匹配）
+
+# 过滤指定的会话 ID（支持正则匹配）
 # sess_ids = ["0x7f41435437a8"]
-# 过滤指定的线程 ID（支持模糊匹配）
+# 排除指定的会话 ID（OR veto：任一命中则丢弃该记录）
+# exclude_sess_ids = ["^0x0000"]
+
+# 过滤指定的线程 ID（支持正则匹配）
 # thrd_ids = ["2188515"]
-# 过滤指定的语句类型（支持模糊匹配）
+# 排除指定的线程 ID（OR veto：任一命中则丢弃该记录）
+# exclude_thrd_ids = ["^0$"]
+
+# 过滤指定的语句类型（支持正则匹配）
 # statements = ["INS", "UPD", "DEL"]
-# 过滤指定的应用名称（支持模糊匹配）
+# 排除指定的语句类型（OR veto：任一命中则丢弃该记录）
+# exclude_statements = ["SEL", "SET"]
+
+# 过滤指定的应用名称（支持正则匹配）
 # appnames = ["DMSQL"]
+# 排除指定的应用名称（OR veto：任一命中则丢弃该记录）
+# exclude_appnames = ["monitor", "health"]
+
+# 过滤指定的 tag（支持正则匹配）
+# tags = ["\\[SEL\\]"]
+# 排除指定的 tag（OR veto：任一命中则丢弃该记录）
+# exclude_tags = ["\\[SET\\]", "\\[OTH\\]"]
 
 # --- 指标过滤器（Transaction-level：满足条件则保留包含该语句的整个事务，需要预扫描）---
 [features.filters.indicators]
@@ -168,21 +192,45 @@ enable = false
 # --- Meta filters (record-level: any match retains the record) ---
 # Filter by transaction IDs
 # trxids = ["257809109", "257809110"]
-# Filter by client IPs (substring match)
-# client_ips = ["127.0.0.1", "192.168"]
-# Filter by usernames (substring match)
+
+# Filter by client IPs (regex match)
+# client_ips = ["127.0.0.1", "192\\.168"]
+# Exclude by client IPs (OR veto: any match drops the record)
+# exclude_client_ips = ["^10\\.0", "^172\\.16"]
+
+# Filter by usernames (regex match)
 # usernames = ["SYSDBA"]
+# Exclude by usernames (OR veto: any match drops the record)
+# exclude_usernames = ["guest", "^anon"]
+
 # Filter by time range (format: 2023-01-01 00:00:00)
 # start_ts = "2023-01-01 00:00:00"
 # end_ts   = "2023-01-01 23:59:59"
-# Filter by session IDs (substring match)
+
+# Filter by session IDs (regex match)
 # sess_ids = ["0x7f41435437a8"]
-# Filter by thread IDs (substring match)
+# Exclude by session IDs (OR veto: any match drops the record)
+# exclude_sess_ids = ["^0x0000"]
+
+# Filter by thread IDs (regex match)
 # thrd_ids = ["2188515"]
-# Filter by statement types (substring match)
+# Exclude by thread IDs (OR veto: any match drops the record)
+# exclude_thrd_ids = ["^0$"]
+
+# Filter by statement types (regex match)
 # statements = ["INS", "UPD", "DEL"]
-# Filter by application names (substring match)
+# Exclude by statement types (OR veto: any match drops the record)
+# exclude_statements = ["SEL", "SET"]
+
+# Filter by application names (regex match)
 # appnames = ["DMSQL"]
+# Exclude by application names (OR veto: any match drops the record)
+# exclude_appnames = ["monitor", "health"]
+
+# Filter by tags (regex match)
+# tags = ["\\[SEL\\]"]
+# Exclude by tags (OR veto: any match drops the record)
+# exclude_tags = ["\\[SET\\]", "\\[OTH\\]"]
 
 # --- Indicator filters (transaction-level: match retains the whole transaction; requires pre-scan) ---
 [features.filters.indicators]

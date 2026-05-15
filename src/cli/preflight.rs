@@ -53,34 +53,28 @@ fn check_output_writable(cfg: &Config, result: &mut PreflightResult) {
 fn check_path_writable(file_path: &str, result: &mut PreflightResult) {
     let path = Path::new(file_path);
 
-    if path.exists() {
-        if std::fs::OpenOptions::new().append(true).open(path).is_err() {
-            result.errors.push(format!("输出文件不可写: {file_path}"));
-        }
-        return;
-    }
-
-    let parent = path.parent().unwrap_or(Path::new("."));
-    if parent.as_os_str().is_empty() || parent == Path::new(".") {
-        return;
-    }
-
-    if parent.exists() {
-        let tmp = parent.join(".sqllog2db_preflight_check");
-        match std::fs::File::create(&tmp) {
-            Ok(_) => {
-                let _ = std::fs::remove_file(&tmp);
-            }
-            Err(_) => {
+    // 若父目录不存在，先尝试创建；创建失败则直接报错，无需继续检查文件。
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        if !parent.exists() {
+            if std::fs::create_dir_all(parent).is_err() {
                 result
                     .errors
-                    .push(format!("输出目录不可写: {}", parent.display()));
+                    .push(format!("无法创建输出目录: {}", parent.display()));
             }
+            return;
         }
-    } else if std::fs::create_dir_all(parent).is_err() {
-        result
-            .errors
-            .push(format!("无法创建输出目录: {}", parent.display()));
+    }
+
+    // 用单次 open（create + write）镜像导出器实际行为，消除 exists() → open() 的 TOCTOU 竞争。
+    // truncate(false)：preflight 仅验证可写性，不截断已有文件。
+    if std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .is_err()
+    {
+        result.errors.push(format!("输出文件不可写: {file_path}"));
     }
 }
 
@@ -221,6 +215,7 @@ mod tests {
                 file: out_file.to_str().unwrap().to_string(),
                 overwrite: false,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         };
@@ -240,6 +235,7 @@ mod tests {
                 file: out_file.to_str().unwrap().to_string(),
                 overwrite: false,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         };

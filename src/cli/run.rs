@@ -17,13 +17,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-/// 构建处理器管线
-fn build_pipeline(cfg: &Config) -> Pipeline {
+/// 构建处理器管线。
+///
+/// `compiled_meta` 由 `Config::validate_and_compile` 在主流程入口预编译；
+/// 当输入 `None` 或 `has_filters() == false` 时返回空管线。
+fn build_pipeline(cfg: &Config, compiled_meta: Option<CompiledMetaFilters>) -> Pipeline {
     let mut pipeline = Pipeline::new();
 
-    if let Some(f) = &cfg.features.filters {
+    if let (Some(f), Some(meta)) = (cfg.features.filters.as_ref(), compiled_meta) {
         if f.has_filters() {
-            pipeline.add(Box::new(FilterProcessor::new(f)));
+            pipeline.add(Box::new(FilterProcessor::new(meta, f)));
         }
     }
 
@@ -37,14 +40,17 @@ struct FilterProcessor {
     /// 时间范围过滤（字符串比较，不用正则）
     start_ts: Option<String>,
     end_ts: Option<String>,
-    /// 预计算：`compiled_meta.has_filters()` 的结果，避免热路径重复检查
+    /// 预计算：`compiled_meta.has_any_filters()` 的结果（include 或 exclude 任一），避免热路径重复检查
     has_meta_filters: bool,
 }
 
 impl FilterProcessor {
-    fn new(filter: &crate::features::FiltersFeature) -> Self {
-        let compiled_meta = CompiledMetaFilters::from_meta(&filter.meta);
-        let has_meta_filters = compiled_meta.has_filters();
+    /// 接受预编译的 `CompiledMetaFilters`（来自 `Config::validate_and_compile`），
+    /// 避免在 `run` 路径中第二次调用 `Regex::new()`。
+    ///
+    /// `has_any_filters()` 包含 exclude 字段，确保纯 exclude 配置也激活 meta 检查路径（D-05）
+    fn new(compiled_meta: CompiledMetaFilters, filter: &crate::features::FiltersFeature) -> Self {
+        let has_meta_filters = compiled_meta.has_any_filters();
         Self {
             compiled_meta,
             start_ts: filter.meta.start_ts.clone(),
@@ -124,6 +130,9 @@ fn process_log_file(
     // 清除上一个文件留下的残余参数，同时复用已分配的 HashMap 容量。
     params_buffer.clear();
 
+    // 从导出器读取性能指标标志：CSV 关闭时跳过 parse_performance_metrics()（D-05/D-06）
+    let include_pm = exporter_manager.csv_include_performance_metrics();
+
     let file_start = Instant::now();
 
     let file_name = std::path::Path::new(file_path).file_name().map_or_else(
@@ -172,8 +181,18 @@ fn process_log_file(
                     let meta = cached_meta.unwrap_or_else(|| record.parse_meta());
 
                     if passes {
-                        // DML 或通过过滤的 PARAMS：需要完整 pm 用于导出。
-                        let pm = record.parse_performance_metrics();
+                        // DML 或通过过滤的 PARAMS：CSV 关闭性能指标时合成空 pm，
+                        // 跳过 find_indicators_split（D-05/D-06）；SQL 字段来自 record.body()。
+                        let pm = if include_pm {
+                            record.parse_performance_metrics()
+                        } else {
+                            dm_database_parser_sqllog::PerformanceMetrics {
+                                sql: record.body(),
+                                exectime: 0.0,
+                                rowcount: 0,
+                                exec_id: 0,
+                            }
+                        };
 
                         // SQL 记录级过滤：只对 DML 记录（有 tag）生效，PARAMS 记录始终通过。
                         // 被过滤掉的 DML 直接丢弃，不影响 params_buffer。
@@ -510,6 +529,7 @@ fn process_csv_parallel(
                 exporter.normalize = do_normalize;
                 exporter.field_mask = field_mask;
                 exporter.ordered_indices = ordered_indices.to_vec();
+                exporter.include_performance_metrics = csv_cfg.include_performance_metrics;
                 let mut em = ExporterManager::from_csv(exporter);
                 em.initialize()?;
 
@@ -573,6 +593,10 @@ fn process_csv_parallel(
     );
     // 无论拼接成功与否都清理临时目录，避免磁盘满等错误导致残留
     let _ = std::fs::remove_dir_all(&parts_dir);
+    // 拼接失败且非追加模式时，删除已部分写入的输出文件，避免遗留截断的 CSV
+    if concat_result.is_err() && !append_to_existing {
+        let _ = std::fs::remove_file(output_path);
+    }
     concat_result?;
 
     // 返回 (已处理文件列表, 跳过文件数)，供 handle_run 更新 resume state 及摘要行
@@ -585,6 +609,24 @@ fn process_csv_parallel(
     ))
 }
 
+/// pre-scan 完成后重新编译 `CompiledMetaFilters`。
+///
+/// 若 `final_cfg` 含有 `features.filters.enable == true`，则从 `final_cfg` 重新编译以包含
+/// 预扫描发现的 trxids；否则直接回传原始值（`compiled_meta` 来自入参）。
+/// 回传原始值的情形：无 filters 配置、filters 禁用、或调用方传 None 时走 None 路径。
+fn recompile_meta_if_needed(
+    final_cfg: &Config,
+    original: Option<CompiledMetaFilters>,
+) -> Result<Option<CompiledMetaFilters>> {
+    let filters = match &final_cfg.features.filters {
+        Some(f) if f.enable => f,
+        _ => return Ok(original),
+    };
+    // 重新从 final_cfg 编译，以捕获 merge_found_trxids 写入的 trxids
+    let recompiled = crate::features::CompiledMetaFilters::try_from_meta(&filters.meta)?;
+    Ok(Some(recompiled))
+}
+
 pub fn handle_run(
     cfg: &Config,
     limit: Option<usize>,
@@ -595,7 +637,14 @@ pub fn handle_run(
     resume: bool,
     state_file_override: Option<&str>,
     jobs: usize,
+    compiled_filters: Option<(CompiledMetaFilters, CompiledSqlFilters)>,
 ) -> Result<()> {
+    // 拆分入参：build_pipeline 消费 meta（Move），sql 保留供后续使用
+    let (compiled_meta, compiled_sql) = match compiled_filters {
+        Some((m, s)) => (Some(m), Some(s)),
+        None => (None, None),
+    };
+
     let total_start = Instant::now();
     let log_files = SqllogParser::new(&cfg.sqllog.path).log_files()?;
     if log_files.is_empty() {
@@ -637,7 +686,11 @@ pub fn handle_run(
         cfg
     };
 
-    let pipeline = build_pipeline(final_cfg);
+    // pre-scan 完成后重新从 final_cfg 编译 compiled_meta，确保合并后的 trxids 生效。
+    // 若无事务级过滤器（final_cfg == cfg），则复用原始 compiled_meta，零额外开销。
+    let compiled_meta_for_pipeline = recompile_meta_if_needed(final_cfg, compiled_meta)?;
+
+    let pipeline = build_pipeline(final_cfg, compiled_meta_for_pipeline);
 
     let field_mask = final_cfg.features.field_mask();
     let ordered_indices = final_cfg.features.ordered_field_indices();
@@ -653,12 +706,13 @@ pub fn handle_run(
         .replace_parameters
         .as_ref()
         .and_then(crate::features::ReplaceParametersConfig::placeholder_override);
-    let compiled_record_sql: Option<CompiledSqlFilters> = final_cfg
-        .features
-        .filters
-        .as_ref()
-        .filter(|f| f.enable && f.record_sql.has_filters())
-        .map(|f| CompiledSqlFilters::from_sql_filters(&f.record_sql));
+    let compiled_record_sql: Option<CompiledSqlFilters> = compiled_sql.filter(|_| {
+        final_cfg
+            .features
+            .filters
+            .as_ref()
+            .is_some_and(|f| f.enable && f.record_sql.has_filters())
+    });
     let sql_record_filter = compiled_record_sql.as_ref();
 
     let pb = make_progress_bar(quiet, progress_interval);
@@ -812,4 +866,64 @@ pub fn handle_run(
         return Err(Error::Interrupted);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn test_include_performance_metrics_false_csv_excludes_pm_columns() {
+        // 集成测试：include_performance_metrics=false 时 CSV header 不含性能指标列
+        let dir = tempfile::TempDir::new().unwrap();
+        let log_path = dir.path().join("t.log");
+        std::fs::write(
+            &log_path,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+        let csv_path = dir.path().join("out.csv");
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        let toml = format!(
+            "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\ninclude_performance_metrics = false\n",
+            logdir = dir.path().to_string_lossy().replace('\\', "/"),
+            errlog = error_log.to_string_lossy().replace('\\', "/"),
+            applog = app_log.to_string_lossy().replace('\\', "/"),
+            csv = csv_path.to_string_lossy().replace('\\', "/"),
+        );
+        let cfg: Config = toml::from_str(&toml).unwrap();
+
+        handle_run(
+            &cfg,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1,
+            None, // compiled_filters
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let header = content.lines().next().unwrap();
+        assert!(
+            !header.contains("exec_time_ms"),
+            "header should skip exec_time_ms: {header}"
+        );
+        assert!(
+            !header.contains("row_count"),
+            "header should skip row_count: {header}"
+        );
+        assert!(
+            !header.contains("exec_id"),
+            "header should skip exec_id: {header}"
+        );
+        assert!(header.contains("sql"), "sql column should remain: {header}");
+    }
 }

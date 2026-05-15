@@ -42,6 +42,7 @@ fn make_run_config(log_dir: &std::path::Path, csv_file: &std::path::Path) -> Con
                 file: csv_file.to_str().unwrap().to_string(),
                 overwrite: true,
                 append: false,
+                ..CsvExporter::default()
             }),
             ..Default::default()
         },
@@ -64,7 +65,19 @@ fn test_handle_run_dry_run_empty_dir() {
         ..Default::default()
     };
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -83,7 +96,19 @@ fn test_handle_run_dry_run_with_log_files() {
     };
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -102,7 +127,19 @@ fn test_handle_run_dry_run_with_limit() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit to 5 records
-    handle_run(&cfg, Some(5), true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        Some(5),
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -116,7 +153,19 @@ fn test_handle_run_real_csv_export() {
     let cfg = make_run_config(&log_dir, &csv_file);
 
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 
     let content = std::fs::read_to_string(&csv_file).unwrap();
     // header + 10 data rows
@@ -139,7 +188,18 @@ fn test_handle_run_interrupted() {
 
     // Pre-set interrupted flag — run should return Err(Interrupted)
     let interrupted = Arc::new(AtomicBool::new(true));
-    let result = handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1);
+    let result = handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    );
     // Either Ok (no files processed) or Err(Interrupted) depending on timing
     let _ = result;
 }
@@ -172,6 +232,7 @@ fn test_resume_skips_processed_files() {
         true,
         Some(state_path.to_str().unwrap()),
         1,
+        None, // compiled_filters
     )
     .unwrap();
     let rows_first = std::fs::read_to_string(&csv1).unwrap().lines().count();
@@ -196,6 +257,7 @@ fn test_resume_skips_processed_files() {
         true,
         Some(state_path.to_str().unwrap()),
         1,
+        None, // compiled_filters
     )
     .unwrap();
 
@@ -236,6 +298,7 @@ fn test_resume_reprocesses_changed_file() {
         true,
         Some(state_path.to_str().unwrap()),
         1,
+        None, // compiled_filters
     )
     .unwrap();
     assert!(state_path.exists());
@@ -256,6 +319,7 @@ fn test_resume_reprocesses_changed_file() {
         true,
         Some(state_path.to_str().unwrap()),
         1,
+        None, // compiled_filters
     )
     .unwrap();
 
@@ -665,6 +729,7 @@ fn test_handle_validate_with_sqlite_exporter() {
                 table_name: "records".to_string(),
                 overwrite: true,
                 append: false,
+                batch_size: 10_000,
             }),
         },
         ..Default::default()
@@ -779,7 +844,19 @@ fn test_handle_run_non_quiet_prints_summary() {
     let cfg = make_run_config(&log_dir, &csv_file);
     let interrupted = Arc::new(AtomicBool::new(false));
     // quiet=false exercises the summary print path
-    handle_run(&cfg, None, true, false, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        false,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -799,8 +876,21 @@ fn test_handle_run_with_filters_builds_pipeline() {
         },
         ..Default::default()
     });
+    let compiled_filters = cfg.validate_and_compile().unwrap();
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        compiled_filters,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -813,7 +903,19 @@ fn test_handle_run_with_limit_mid_file() {
     let cfg = make_run_config(&log_dir, &csv_file);
     let interrupted = Arc::new(AtomicBool::new(false));
     // limit=5 stops partway through the file — exercises the limit check in process_log_file
-    handle_run(&cfg, Some(5), false, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        Some(5),
+        false,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
     let content = std::fs::read_to_string(&csv_file).unwrap();
     let data_lines = content.lines().count().saturating_sub(1); // minus header
     assert!(data_lines <= 5, "expected ≤5 records, got {data_lines}");
@@ -839,7 +941,19 @@ fn test_handle_run_with_transaction_filters_prescans() {
         ..Default::default()
     });
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -861,7 +975,19 @@ fn test_handle_run_with_min_runtime_filter() {
         ..Default::default()
     });
     let interrupted = Arc::new(AtomicBool::new(false));
-    handle_run(&cfg, None, true, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        true,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
 }
 
 // ── handle_show_config tests (via integration) ───────────────────────────────
@@ -890,7 +1016,19 @@ fn test_handle_run_parallel_csv_multiple_files() {
     let interrupted = Arc::new(AtomicBool::new(false));
 
     // jobs=2, multiple files, no limit, CSV exporter → triggers process_csv_parallel
-    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 2).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        2,
+        None,
+    )
+    .unwrap();
 
     let content = std::fs::read_to_string(&csv_file).unwrap();
     let data_lines = content.lines().count().saturating_sub(1);
@@ -921,6 +1059,7 @@ fn test_handle_run_parallel_csv_with_resume() {
         true,
         Some(state_file.to_str().unwrap()),
         2,
+        None, // compiled_filters
     )
     .unwrap();
     assert!(state_file.exists());
@@ -940,6 +1079,7 @@ fn test_handle_run_parallel_csv_with_resume() {
         true,
         Some(state_file.to_str().unwrap()),
         2,
+        None, // compiled_filters
     )
     .unwrap();
     // csv2 should have at most a header (all files skipped)
@@ -980,7 +1120,19 @@ fn test_csv_throughput_baseline() {
 
     let interrupted = Arc::new(AtomicBool::new(false));
     let start = std::time::Instant::now();
-    handle_run(&cfg, None, false, true, &interrupted, 80, false, None, 1).unwrap();
+    handle_run(
+        &cfg,
+        None,
+        false,
+        true,
+        &interrupted,
+        80,
+        false,
+        None,
+        1,
+        None,
+    )
+    .unwrap();
     let elapsed = start.elapsed().as_secs_f64();
 
     #[allow(clippy::cast_precision_loss)]

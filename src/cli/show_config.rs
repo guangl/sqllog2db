@@ -172,6 +172,7 @@ mod tests {
                     table_name: "logs".to_string(),
                     overwrite: false,
                     append: true,
+                    batch_size: 10_000,
                 }),
             },
             ..Default::default()

@@ -63,6 +63,16 @@ impl ExporterKind {
         }
     }
 
+    /// 当前 active exporter 是否应包含性能指标列（仅 CSV 路径有意义）。
+    /// 用于 `cli/run.rs` 热循环判断是否需要调用 `record.parse_performance_metrics()`。
+    pub fn csv_include_performance_metrics(&self) -> bool {
+        match self {
+            Self::Csv(exporter) => exporter.include_performance_metrics,
+            // SQLite/DryRun 永远需要完整 pm（schema 固定）
+            _ => true,
+        }
+    }
+
     fn initialize(&mut self) -> Result<()> {
         match self {
             Self::Csv(e) => e.initialize(),
@@ -233,6 +243,12 @@ impl ExporterManager {
         }
 
         Err(Error::Config(ConfigError::NoExporters))
+    }
+
+    /// 返回当前 active exporter 是否应包含性能指标列。
+    /// CSV 路径根据配置返回；其他路径固定返回 true。
+    pub fn csv_include_performance_metrics(&self) -> bool {
+        self.exporter.csv_include_performance_metrics()
     }
 
     pub fn initialize(&mut self) -> Result<()> {
@@ -482,6 +498,7 @@ mod tests {
                     table_name: "records".to_string(),
                     overwrite: true,
                     append: false,
+                    batch_size: 10_000,
                 }),
             },
             sqllog: SqllogConfig {

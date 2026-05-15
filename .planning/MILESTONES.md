@@ -1,5 +1,69 @@
 # Milestones
 
+## v1.2 — 质量强化 & 性能深化
+
+**Shipped:** 2026-05-15
+**Phases:** 7–11 | **Plans:** 13 | **Commits:** ~103
+
+### Delivered
+
+消灭已知技术债（SQLite 错误可观测性 + SQL 注入防护 + Nyquist 审计补签），上线排除过滤器 FILTER-03，以 validate_and_compile() 消除双重 regex 编译，并完成数据驱动的热路径门控分析（已达当前瓶颈）。
+
+### Key Accomplishments
+
+1. SQLite 双重技术债修复——`handle_delete_clear_result()` 软失败区分 + ASCII 白名单校验 + 5 处 DDL 双引号转义，11 个新测试（DEBT-01/02，Phase 7）
+2. 排除过滤器 FILTER-03 上线——7 个 `exclude_*` 字段 OR-veto 语义，21 个新测试，`pipeline.is_empty()` 快路径零额外开销（Phase 8）
+3. `validate_and_compile()` 统一接口——彻底消除 run 路径双重 Regex::new()，update check 后台化，hyperfine 基线记录（PERF-11，Phase 9）
+4. 热路径 D-G1 门控——samply Top-10 src/ 最高 4.6% < 5% 阈值，记录"已达当前瓶颈"结论，729 测试全通过（PERF-10，Phase 10）
+5. Nyquist 审计链全段闭合——Phase 3/4/5 回溯补签、Phase 6 从零创建 VALIDATION.md，DEBT-03 4/4 条件满足（Phase 11）
+
+### Stats
+
+- Rust LOC: ~11,139 (src/)
+- Test suite: 729 tests passing（673 → 729，增加 56 个测试）
+- Timeline: 5 days (2026-05-10 → 2026-05-15)
+- Commits: ~103
+
+### Archive
+
+- `.planning/milestones/v1.2-ROADMAP.md`
+- `.planning/milestones/v1.2-REQUIREMENTS.md`
+
+---
+
+## v1.1 — 性能优化
+
+**Shipped:** 2026-05-10
+**Phases:** 3–6 | **Plans:** 12 | **Commits:** ~85
+
+### Delivered
+
+通过 profiling 定位热路径后，系统性提升 CSV 和 SQLite 导出性能，升级上游解析库至 1.0.0，651 测试全部通过。
+
+### Key Accomplishments
+
+1. Flamegraph + criterion benchmark 基础设施——定位 `parse_meta`/`LogIterator::next`/`_platform_memmove` 为主热路径（PERF-01）
+2. CSV 条件 reserve + `bench_csv_format_only` 格式化层量化（~19.7M elem/s）；合成 benchmark 改善 -8.53%（PERF-02/03/08）
+3. `include_performance_metrics=false` 配置项——完全跳过 `parse_performance_metrics()` 和 memrchr 扫描，热循环堆分配显著减少（PERF-08）
+4. SQLite 批量事务 `batch_commit_if_needed()`——5x 性能差距（35.4ms vs 7.1ms/10k rows），WAL 模式用户决策移除（PERF-04）
+5. SQLite `prepare_cached()`——三条导出路径复用已编译 statement，消除每行 `sqlite3_prepare_v3()` 开销（PERF-06）
+6. dm-database-parser-sqllog 1.0.0 升级——mmap/par_iter/MADV_SEQUENTIAL 自动生效；index() API 不集成（流式无收益）；651 测试通过（PERF-07/09）
+
+### Stats
+
+- Rust LOC: ~9,889 (src/)
+- Files modified: 165 (+11,746 / -5,638 lines)
+- Test suite: 651 tests passing
+- Timeline: 14 days (2026-04-26 → 2026-05-10)
+- Performance: SQLite 5x batch improvement; CSV synthetic -8.53%; ~5.2M records/sec CSV synthetic
+
+### Archive
+
+- `.planning/milestones/v1.1-ROADMAP.md`
+- `.planning/milestones/v1.1-REQUIREMENTS.md`
+
+---
+
 ## v1.0 — 增强 SQL 内容过滤与字段投影
 
 **Shipped:** 2026-04-18

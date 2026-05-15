@@ -183,7 +183,8 @@ fn run() -> Result<()> {
             all_set.extend_from_slice(set);
             cfg.apply_overrides(&all_set)?;
             apply_date_range(&mut cfg, from.as_deref(), to.as_deref());
-            cfg.validate()?;
+            // 替换：validate() → validate_and_compile()，消除 run 路径中的双重 regex 编译（SC-2）
+            let compiled_filters = cfg.validate_and_compile()?;
 
             apply_cli_flags_to_config(&mut cfg, cli.verbose, cli.quiet);
             // run 命令使用进度条，日志只写文件不写 stdout
@@ -220,6 +221,7 @@ fn run() -> Result<()> {
                 *resume,
                 state_file.as_deref(),
                 jobs,
+                compiled_filters, // 新增：传递预编译结果
             )
         }
         Some(cli::opts::Commands::Validate { config, set }) => {

@@ -92,6 +92,11 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+[profile.flamegraph]
+inherits = "release"
+debug = true
+strip = "none"
+
 [dev-dependencies]
 tempfile = "3.27.0"
 criterion = { version = "0.7", features = ["html_reports"] }
