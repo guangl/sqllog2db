@@ -2,8 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQL 模板分析 & 可视化
-status: active
-last_updated: "2026-05-15T00:00:00.000Z"
+status: planning
+last_updated: "2026-05-15T12:15:36.924Z"
+last_activity: 2026-05-15 — v1.3 roadmap (Phases 12–16) created
 progress:
   total_phases: 5
   completed_phases: 0
