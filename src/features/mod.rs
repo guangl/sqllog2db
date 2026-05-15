@@ -144,6 +144,7 @@ impl FeaturesConfig {
     pub fn field_mask(&self) -> FieldMask {
         match &self.fields {
             None => FieldMask::ALL,
+            Some(names) if names.is_empty() => FieldMask::ALL, // D-02: 空列表等同于 None
             Some(names) => FieldMask::from_names(names).unwrap_or(FieldMask::ALL),
         }
     }
