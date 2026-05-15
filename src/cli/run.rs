@@ -121,6 +121,7 @@ fn process_log_file(
     limit: Option<usize>,
     interrupted: &Arc<AtomicBool>,
     do_normalize: bool,
+    do_template: bool,
     placeholder_override: Option<bool>,
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
@@ -214,6 +215,13 @@ fn process_log_file(
                                     placeholder_override,
                                     ns_scratch,
                                 )
+                            } else {
+                                None
+                            };
+
+                            // D-14：模板 key 暂存，供 Phase 13 TemplateAggregator::observe() 消费。
+                            let _tmpl_key: Option<String> = if do_template {
+                                Some(crate::features::normalize_template(pm.sql.as_ref()))
                             } else {
                                 None
                             };
@@ -450,6 +458,7 @@ fn process_csv_parallel(
     resume_state: Option<&crate::resume::ResumeState>,
     quiet: bool,
     do_normalize: bool,
+    do_template: bool,
     placeholder_override: Option<bool>,
     field_mask: FieldMask,
     ordered_indices: &[usize],
@@ -546,6 +555,7 @@ fn process_csv_parallel(
                     None,
                     interrupted,
                     do_normalize,
+                    do_template,
                     placeholder_override,
                     &mut params_buf,
                     &mut ns_scratch,
@@ -701,6 +711,11 @@ pub fn handle_run(
             .replace_parameters
             .as_ref()
             .is_none_or(|r| r.enable);
+    let do_template = final_cfg
+        .features
+        .template_analysis
+        .as_ref()
+        .is_some_and(|t| t.enabled);
     let placeholder_override = final_cfg
         .features
         .replace_parameters
@@ -739,6 +754,7 @@ pub fn handle_run(
             resume_state.as_ref(),
             quiet,
             do_normalize,
+            do_template,
             placeholder_override,
             field_mask,
             &ordered_indices,
@@ -813,6 +829,7 @@ pub fn handle_run(
                 remaining,
                 interrupted,
                 do_normalize,
+                do_template,
                 placeholder_override,
                 &mut params_buffer,
                 &mut ns_scratch,
