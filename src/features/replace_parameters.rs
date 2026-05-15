@@ -2,9 +2,13 @@ use compact_str::CompactString;
 use smallvec::SmallVec;
 use std::collections::HashMap;
 
-/// 参数替换缓冲区类型：keyed by (trxid, stmt)，value 为解析好的参数列表。
+/// 参数替换缓冲区类型：keyed by (`sess_id`, `stmt`)，value 为解析好的参数列表。
 ///
-/// - Key 使用 `CompactString`：trxid 和 stmt 通常 ≤23 字节，内联存储，无堆分配。
+/// Key 使用 `sess_id` 而非 `trxid`：DM 日志中 PARAMS 记录携带绑定时的 `trxid`，
+/// 但对应的 DML 执行记录在自动提交场景下 `trxid` 为 0，导致 key 不匹配。
+/// `sess_id` 在 PARAMS 和执行记录之间始终一致，是更稳定的关联键。
+///
+/// - Key 使用 `CompactString`：`sess_id`（指针地址）和 `stmt` 通常 ≤23 字节，内联存储，无堆分配。
 /// - Value 使用 `SmallVec<[ParamValue; 6]>`：≤6 个参数时不分配堆内存。
 pub type ParamBuffer = ahash::HashMap<(CompactString, CompactString), SmallVec<[ParamValue; 6]>>;
 
@@ -319,7 +323,7 @@ fn apply_params(sql: &str, params: &[ParamValue], colon_style: bool) -> String {
 /// the SQL statement extracted from `PerformanceMetrics::sql`.
 ///
 /// - If the record is a `PARAMS(...)` record, its values are stored in `buffer`
-///   (keyed by `(trxid, stmt)`) and `None` is returned.
+///   (keyed by `(sess_id, stmt)`) and `None` is returned.
 /// - If the record is an `[INS]`/`[DEL]`/`[UPD]`/`[SEL]` execution record that
 ///   has a matching entry in `buffer`, the SQL with substituted parameters is
 ///   returned as `Some(String)`.
@@ -355,10 +359,10 @@ pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
         if pm_sql.starts_with("PARAMS(") {
             if let Some(params) = parse_params(pm_sql) {
                 // CompactString 对短字符串（≤23 字节）内联存储，消除堆分配。
-                // trxid（如 "12345"）和 statement（如 "0x1"）通常都满足此条件。
+                // sess_id（指针如 "0xfffb81a474a0"）和 statement（如 "0x1"）通常都满足此条件。
                 buffer.insert(
                     (
-                        CompactString::from(meta.trxid.as_ref()),
+                        CompactString::from(meta.sess_id.as_ref()),
                         CompactString::from(meta.statement.as_ref()),
                     ),
                     params,
@@ -382,12 +386,13 @@ pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
     }
 
     let key = (
-        CompactString::from(meta.trxid.as_ref()),
+        CompactString::from(meta.sess_id.as_ref()),
         CompactString::from(meta.statement.as_ref()),
     );
 
-    // 消耗 buffer 条目：每个 PARAMS 只对应紧跟其后的一次执行
-    let params = buffer.remove(&key)?;
+    // buffer 条目保留不删除：DM 有时对同一次执行记录两条 SEL 日志（相同 EXEC_ID，
+    // 不同 ROWCOUNT），它们共享同一个 PARAMS。下一次绑定时新的 buffer.insert 会覆盖旧值。
+    let params = buffer.get(&key)?.clone();
 
     let colon_style = placeholder_override.unwrap_or(detected_colon);
 
@@ -396,7 +401,10 @@ pub fn compute_normalized<'a, S: std::hash::BuildHasher>(
             "replace_parameters: param count mismatch (params={}, placeholders={}) for sql: {}",
             params.len(),
             placeholder_count,
-            &pm_sql[..pm_sql.len().min(120)]
+            pm_sql
+                .char_indices()
+                .nth(80)
+                .map_or(pm_sql, |(i, _)| &pm_sql[..i])
         );
         return None;
     }

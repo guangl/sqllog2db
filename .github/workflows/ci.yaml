@@ -30,7 +30,10 @@ jobs:
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Run tests
-        run: cargo test --verbose
+        shell: bash
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo test --verbose
 
       - name: Run performance baseline (release)
         if: runner.os == 'Linux'
