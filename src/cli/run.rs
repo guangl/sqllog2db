@@ -121,7 +121,7 @@ fn process_log_file(
     limit: Option<usize>,
     interrupted: &Arc<AtomicBool>,
     do_normalize: bool,
-    do_template: bool,
+    _do_template: bool,
     placeholder_override: Option<bool>,
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
@@ -219,12 +219,12 @@ fn process_log_file(
                                 None
                             };
 
-                            // D-14：模板 key 暂存，供 Phase 13 TemplateAggregator::observe() 消费。
-                            let _tmpl_key: Option<String> = if do_template {
-                                Some(crate::features::normalize_template(pm.sql.as_ref()))
-                            } else {
-                                None
-                            };
+                            // D-14: Phase 13 will wire this into TemplateAggregator::observe().
+                            // let _tmpl_key = if do_template {
+                            //     Some(crate::features::normalize_template(pm.sql.as_ref()))
+                            // } else {
+                            //     None
+                            // };
 
                             // 检查是否即将超出本文件的剩余配额
                             if let Some(remaining) = limit {

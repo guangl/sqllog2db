@@ -22,6 +22,8 @@ const NEEDS_SPECIAL_NORM: [bool; 256] = {
 #[derive(Clone, Copy)]
 enum ScanMode {
     Fingerprint,
+    // Phase 13 will re-enable this variant when TemplateAggregator::observe() is wired in.
+    #[allow(dead_code)]
     Normalize,
 }
 
@@ -36,7 +38,9 @@ pub fn fingerprint(sql: &str) -> String {
 /// 将 SQL 字符串归一化为模板 key：去除注释、折叠 IN 列表、统一关键字大小写、折叠空白。
 ///
 /// 结构相同的 SQL（无论字面量值或数量）将得到同一模板 key，用于模板聚合统计。
+/// Phase 13 will call this via `TemplateAggregator::observe()`.
 #[must_use]
+#[allow(dead_code)]
 pub fn normalize_template(sql: &str) -> String {
     scan_sql_bytes(sql, ScanMode::Normalize)
 }
