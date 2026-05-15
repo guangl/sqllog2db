@@ -787,8 +787,11 @@ pub fn handle_run(
         total_records = processed_files.iter().map(|(_, c)| *c).sum();
         skipped_files = parallel_skipped;
 
-        // Phase 14 将消费 finalize() 结果并写出报告；此处先收集以完成聚合生命周期。
-        let _template_stats = parallel_agg.map(TemplateAggregator::finalize);
+        // Phase 14 将消费 finalize() 结果并写出报告；此处先记录聚合摘要。
+        let template_stats = parallel_agg.map(TemplateAggregator::finalize);
+        if let Some(ref stats) = template_stats {
+            info!("Template analysis: {} unique templates", stats.len());
+        }
 
         // 更新断点续传状态（并行路径完成后统一写入）。
         // 若被中断则不写入：并行任务无法区分"完整处理"与"中途截断"，
@@ -884,8 +887,11 @@ pub fn handle_run(
             exporter_manager.log_stats();
         }
 
-        // Phase 14 将消费 finalize() 结果并写出报告；此处先收集以完成聚合生命周期。
-        let _template_stats = template_agg.map(TemplateAggregator::finalize);
+        // Phase 14 将消费 finalize() 结果并写出报告；此处先记录聚合摘要。
+        let template_stats = template_agg.map(TemplateAggregator::finalize);
+        if let Some(ref stats) = template_stats {
+            info!("Template analysis: {} unique templates", stats.len());
+        }
     }
 
     pb.finish_and_clear();
@@ -974,5 +980,121 @@ mod tests {
             "header should skip exec_id: {header}"
         );
         assert!(header.contains("sql"), "sql column should remain: {header}");
+    }
+
+    /// 当 `features.template_analysis` 未配置时，`do_template=false`，
+    /// `handle_run` 应正常完成且不 panic。
+    #[test]
+    fn test_aggregator_disabled_none_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let log_path = dir.path().join("t.log");
+        std::fs::write(
+            &log_path,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT 1. EXECTIME: 1(ms) ROWCOUNT: 1(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+        let csv_path = dir.path().join("out.csv");
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        // 故意不添加 [features.template_analysis]，确保走 do_template=false 路径
+        let toml = format!(
+            "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\n",
+            logdir = dir.path().to_string_lossy().replace('\\', "/"),
+            errlog = error_log.to_string_lossy().replace('\\', "/"),
+            applog = app_log.to_string_lossy().replace('\\', "/"),
+            csv = csv_path.to_string_lossy().replace('\\', "/"),
+        );
+        let cfg: Config = toml::from_str(&toml).unwrap();
+
+        // do_template=false 路径：template_agg 为 None，finalize 不应被调用
+        let result = handle_run(
+            &cfg,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1,
+            None,
+        );
+        assert!(
+            result.is_ok(),
+            "handle_run 应在无 template_analysis 配置时成功: {result:?}"
+        );
+    }
+
+    /// 顺序路径（jobs=1）与并行路径（jobs=4，多文件）行为一致：
+    /// 两次运行均应成功完成，无 panic。
+    #[test]
+    fn test_parallel_merge_consistent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // 写入两个日志文件（并行路径要求 log_files.len() > 1）
+        let log_line = "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:A ip:10.0.0.1) [SEL] SELECT id FROM orders WHERE user_id = 42. EXECTIME: 5(ms) ROWCOUNT: 3(rows) EXEC_ID: 1.\n";
+        for name in ["a.log", "b.log"] {
+            std::fs::write(dir.path().join(name), log_line).unwrap();
+        }
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        let make_cfg = |csv_file: &str| {
+            let toml = format!(
+                "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\n[features.template_analysis]\nenabled = true\n",
+                logdir = dir.path().to_string_lossy().replace('\\', "/"),
+                errlog = error_log.to_string_lossy().replace('\\', "/"),
+                applog = app_log.to_string_lossy().replace('\\', "/"),
+                csv = csv_file,
+            );
+            toml::from_str::<Config>(&toml).unwrap()
+        };
+
+        // 顺序路径（jobs=1）
+        let csv_seq = dir
+            .path()
+            .join("out_seq.csv")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let cfg_seq = make_cfg(&csv_seq);
+        let result_seq = handle_run(
+            &cfg_seq,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1, // jobs=1 → 顺序路径
+            None,
+        );
+        assert!(result_seq.is_ok(), "顺序路径应成功: {result_seq:?}");
+
+        // 并行路径（jobs=4，多文件 + CSV 导出器 + 无 limit）
+        let csv_par = dir
+            .path()
+            .join("out_par.csv")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let cfg_par = make_cfg(&csv_par);
+        let result_par = handle_run(
+            &cfg_par,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            4, // jobs=4 → 并行路径
+            None,
+        );
+        assert!(result_par.is_ok(), "并行路径应成功: {result_par:?}");
+
+        // 两路径输出的行数（含 header）应相同
+        let seq_lines = std::fs::read_to_string(&csv_seq).unwrap().lines().count();
+        let par_lines = std::fs::read_to_string(&csv_par).unwrap().lines().count();
+        assert_eq!(seq_lines, par_lines, "顺序与并行输出行数应一致");
     }
 }
