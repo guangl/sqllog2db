@@ -12,7 +12,7 @@
 /// | `exclude_passthrough`   | exclude config present but zero hits (pure overhead)     |
 /// | `exclude_active`        | all records excluded by OR-veto (100% hit rate)          |
 ///
-/// Run with: `cargo bench --bench bench_filters --features "filters,csv"`
+/// Run with: `cargo bench --bench bench_filters`
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dm_database_sqllog2db::cli::run::handle_run;
 use dm_database_sqllog2db::config::Config;
