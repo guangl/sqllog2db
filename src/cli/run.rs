@@ -5,7 +5,9 @@ use crate::error::{Error, Result};
 use crate::exporter::{CsvExporter, ExporterManager};
 use crate::features::filters::RecordMeta;
 use crate::features::replace_parameters::ParamBuffer;
-use crate::features::{CompiledMetaFilters, CompiledSqlFilters, FieldMask, LogProcessor, Pipeline};
+use crate::features::{
+    CompiledMetaFilters, CompiledSqlFilters, FieldMask, LogProcessor, Pipeline, TemplateAggregator,
+};
 use crate::parser::SqllogParser;
 use ahash::HashSet as AHashSet;
 use compact_str::CompactString;
@@ -121,7 +123,7 @@ fn process_log_file(
     limit: Option<usize>,
     interrupted: &Arc<AtomicBool>,
     do_normalize: bool,
-    _do_template: bool,
+    mut aggregator: Option<&mut TemplateAggregator>,
     placeholder_override: Option<bool>,
     params_buffer: &mut ParamBuffer,
     ns_scratch: &mut Vec<u8>,
@@ -219,12 +221,19 @@ fn process_log_file(
                                 None
                             };
 
-                            // D-14: Phase 13 will wire this into TemplateAggregator::observe().
-                            // let _tmpl_key = if do_template {
-                            //     Some(crate::features::normalize_template(pm.sql.as_ref()))
-                            // } else {
-                            //     None
-                            // };
+                            // 模板聚合：仅对 DML 记录（有 tag）生效；PARAMS 记录不计入统计。
+                            if let Some(ref mut agg) = aggregator {
+                                if record.tag.is_some() {
+                                    let tmpl_key =
+                                        crate::features::normalize_template(pm.sql.as_ref());
+                                    #[allow(
+                                        clippy::cast_possible_truncation,
+                                        clippy::cast_sign_loss
+                                    )]
+                                    let exectime_us = (pm.exectime * 1000.0) as u64;
+                                    agg.observe(&tmpl_key, exectime_us, record.ts.as_ref());
+                                }
+                            }
 
                             // 检查是否即将超出本文件的剩余配额
                             if let Some(remaining) = limit {
@@ -463,7 +472,7 @@ fn process_csv_parallel(
     field_mask: FieldMask,
     ordered_indices: &[usize],
     sql_record_filter: Option<&CompiledSqlFilters>,
-) -> Result<(Vec<(PathBuf, usize)>, usize)> {
+) -> Result<(Vec<(PathBuf, usize)>, usize, Option<TemplateAggregator>)> {
     use rayon::prelude::*;
 
     let csv_cfg = cfg
@@ -507,8 +516,8 @@ fn process_csv_parallel(
         .build()
         .map_err(|e| Error::Io(std::io::Error::other(e)))?;
 
-    // 每个任务返回 Some((orig_path, temp_path, count)) 或 None（跳过/中断）
-    type TaskResult = Option<(PathBuf, PathBuf, usize)>;
+    // 每个任务返回 Some((orig_path, temp_path, count, task_agg)) 或 None（跳过/中断）
+    type TaskResult = Option<(PathBuf, PathBuf, usize, Option<TemplateAggregator>)>;
     let results: Vec<Result<TaskResult>> = pool.install(|| {
         log_files
             .par_iter()
@@ -545,6 +554,9 @@ fn process_csv_parallel(
                 let mut params_buf = ParamBuffer::default();
                 let mut ns_scratch = Vec::with_capacity(4096);
 
+                // 每个 rayon 任务持有独立聚合器，主线程 merge（map-reduce 模式）
+                let mut task_agg = do_template.then(TemplateAggregator::new);
+
                 let count = process_log_file(
                     &file.to_string_lossy(),
                     idx + 1,
@@ -555,7 +567,7 @@ fn process_csv_parallel(
                     None,
                     interrupted,
                     do_normalize,
-                    do_template,
+                    task_agg.as_mut(),
                     placeholder_override,
                     &mut params_buf,
                     &mut ns_scratch,
@@ -564,19 +576,29 @@ fn process_csv_parallel(
                 )?;
 
                 em.finalize()?;
-                Ok(Some((file.clone(), temp_path, count)))
+                Ok(Some((file.clone(), temp_path, count, task_agg)))
             })
             .collect()
     });
 
     // 收集成功的任务；遇到错误先清理再返回
-    // (orig, temp, count) 三元组，保持 rayon 的原始文件顺序
+    // (orig, temp, count, task_agg) 四元组，保持 rayon 的原始文件顺序
     let mut parts_info: Vec<(PathBuf, PathBuf, usize)> = Vec::with_capacity(log_files.len());
+    let mut merged_agg: Option<TemplateAggregator> = None;
     let mut first_err: Option<Error> = None;
     let mut skipped = 0usize;
     for result in results {
         match result {
-            Ok(Some(p)) => parts_info.push(p),
+            Ok(Some((orig, temp, count, task_agg))) => {
+                parts_info.push((orig, temp, count));
+                // map-reduce：将各 rayon task 的聚合器合并到主线程
+                if let Some(task_agg) = task_agg {
+                    match &mut merged_agg {
+                        Some(base) => base.merge(task_agg),
+                        None => merged_agg = Some(task_agg),
+                    }
+                }
+            }
             Ok(None) => skipped += 1,
             Err(e) if first_err.is_none() => first_err = Some(e),
             Err(_) => {}
@@ -609,13 +631,14 @@ fn process_csv_parallel(
     }
     concat_result?;
 
-    // 返回 (已处理文件列表, 跳过文件数)，供 handle_run 更新 resume state 及摘要行
+    // 返回 (已处理文件列表, 跳过文件数, 合并后聚合器)，供 handle_run 消费
     Ok((
         parts_info
             .into_iter()
             .map(|(orig, _, count)| (orig, count))
             .collect(),
         skipped,
+        merged_agg,
     ))
 }
 
@@ -744,7 +767,7 @@ pub fn handle_run(
     if use_parallel {
         info!("Parsing and exporting SQL logs (parallel, {jobs} jobs)...");
 
-        let (processed_files, parallel_skipped) = process_csv_parallel(
+        let (processed_files, parallel_skipped, parallel_agg) = process_csv_parallel(
             &log_files,
             final_cfg,
             &pipeline,
@@ -763,6 +786,9 @@ pub fn handle_run(
 
         total_records = processed_files.iter().map(|(_, c)| *c).sum();
         skipped_files = parallel_skipped;
+
+        // Phase 14 将消费 finalize() 结果并写出报告；此处先收集以完成聚合生命周期。
+        let _template_stats = parallel_agg.map(TemplateAggregator::finalize);
 
         // 更新断点续传状态（并行路径完成后统一写入）。
         // 若被中断则不写入：并行任务无法区分"完整处理"与"中途截断"，
@@ -794,6 +820,9 @@ pub fn handle_run(
         let mut params_buffer = ParamBuffer::default();
         // 预分配 1024 字节：避免首条参数化 SQL 触发初始堆分配
         let mut ns_scratch: Vec<u8> = Vec::with_capacity(4096);
+
+        // 模板聚合器：do_template=true 时创建，Phase 14 负责将 finalize() 结果写出
+        let mut template_agg = do_template.then(TemplateAggregator::new);
 
         for (idx, log_file) in log_files.iter().enumerate() {
             if interrupted.load(Ordering::Relaxed) {
@@ -829,7 +858,7 @@ pub fn handle_run(
                 remaining,
                 interrupted,
                 do_normalize,
-                do_template,
+                template_agg.as_mut(),
                 placeholder_override,
                 &mut params_buffer,
                 &mut ns_scratch,
@@ -854,6 +883,9 @@ pub fn handle_run(
         if !quiet {
             exporter_manager.log_stats();
         }
+
+        // Phase 14 将消费 finalize() 结果并写出报告；此处先收集以完成聚合生命周期。
+        let _template_stats = template_agg.map(TemplateAggregator::finalize);
     }
 
     pb.finish_and_clear();

@@ -6,9 +6,10 @@ pub use replace_parameters::compute_normalized;
 
 pub mod sql_fingerprint;
 pub use sql_fingerprint::fingerprint;
-// Phase 13 will re-enable this when TemplateAggregator::observe() is wired in.
-#[allow(unused_imports)]
 pub use sql_fingerprint::normalize_template;
+
+pub mod template_aggregator;
+pub use template_aggregator::TemplateAggregator;
 
 use dm_database_parser_sqllog::{MetaParts, Sqllog};
 use serde::Deserialize;
