@@ -1,177 +1,295 @@
 # Feature Research
 
-**Domain:** CLI log processing tool — exclusion filters, hot-path optimization, CLI startup speed
-**Researched:** 2026-05-10
-**Confidence:** HIGH (analysis from existing codebase) / MEDIUM (external UX patterns)
+**Domain:** CLI SQL log analysis tool — SQL template normalization, workload statistics, SVG chart generation
+**Researched:** 2026-05-15
+**Milestone:** v1.3
+**Confidence:** HIGH (existing codebase analysis) / MEDIUM (external tool patterns)
 
 ---
 
-## Feature Landscape
+## Context: What Already Exists
 
-### Table Stakes (Users Expect These)
+Before categorizing new features, the relevant existing capabilities that v1.3 builds on:
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| FILTER-03: 元数据字段排除模式 | 现有 include 支持正则，exclude 是对称补集；`record_sql`/`SqlFilters` 已有 `exclude_patterns`，用户自然期待元数据字段也有同等能力 | LOW | 只需在 `MetaFilters` / `CompiledMetaFilters` 中镜像 `exclude_*` 列表，并在 `should_keep` 中增加排除短路判断 |
-| FILTER-03: include 与 exclude 可同时配置 | 工业级日志工具（CloudWatch、Loki、grep -v）均支持"先选入再排除"语义 | LOW | include 通过后再检查 exclude，顺序清晰；和已有 `CompiledSqlFilters.matches()` 逻辑一致 |
-| FILTER-03: 空 exclude 不影响性能 | 无配置场景必须保持零开销 | LOW | `None` 短路已是当前 `match_any_regex` 惯例，直接复用 |
-| PERF-10: 热路径剩余瓶颈标定 | v1.1 已做 profiling 但改进留有空间；用户期待每版继续推进 | MEDIUM | 需基于 flamegraph + criterion 实测，不凭猜测 |
-| PERF-11: `sqllog2db validate` / `run` 冷启动可感知延迟应最小 | 交互式使用时，等待 >100ms 会被感知为"卡顿" | LOW-MEDIUM | Rust 冷启动本身极快（<5ms），主要开销在：TOML 解析、regex 编译、文件 I/O（log 目录扫描）、update check 网络请求 |
-| DEBT-01: sqlite.rs 错误不静默吞掉 | 错误静默 = 数据丢失无感知，对任何导出工具不可接受 | LOW | 现有 `error log` 基础设施已就绪，只需把 `let _ =` 和 `unwrap_or(())` 替换为记录到 error log |
-| DEBT-02: table_name SQL 注入白名单校验 | 用户可在 config 填写任意 `table_name`，当前直接字符串拼接 SQL，存在注入面 | LOW | 简单白名单正则 `^[A-Za-z_][A-Za-z0-9_]*$` 即可；或在 `validate()` 阶段拦截 |
+- `sql_fingerprint::fingerprint()` — literals replaced with `?`, whitespace collapsed (ALREADY DONE)
+- `cli/digest.rs` — `DigestEntry` with count, total/avg/max exec_ms, example_sql, first_seen (ALREADY DONE)
+- `cli/stats.rs` — time-bucket aggregation, group-by user/app/ip, slow query heap (ALREADY DONE)
+- `features/replace_parameters.rs` — parameter substitution into SQL placeholders (ALREADY DONE)
+- `Pipeline` + `LogProcessor` trait — pluggable processor architecture (ALREADY DONE)
+- `FeaturesConfig` in `config.rs` — TOML deserialization + validation pattern (ALREADY DONE)
 
-### Differentiators (Competitive Advantage)
+The `digest` command already produces per-fingerprint statistics (count, avg/max exec). The v1.3 work
+**extends** this foundation rather than replacing it:
+1. Richer template normalization (comment stripping, IN list collapse, keyword casing)
+2. Richer statistics (p50/p95/p99 percentiles + histogram buckets)
+3. Persistent output (JSON/CSV report files, SQLite table, CSV companion)
+4. Visual output (SVG charts)
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| FILTER-03: 排除模式对所有 7 个元数据字段均生效 | 竞品（grep -v）只能全行排除；本工具可精确按 username/ip/appname 等字段排除，粒度更细 | LOW | 字段集合固定（trxid、ip、sess、thrd、user、stmt、app、tag），逐字段对称扩展 |
-| FILTER-03: include + exclude 在同一字段可并存 | 例：username 匹配 `^admin` 但排除 `admin_readonly`，一次配置完成，无需两次运行 | LOW | 语义：include（字段内 OR）全部通过后，再检查 exclude（字段内 OR 任一命中即丢弃） |
-| PERF-10: 基于实测 flamegraph 的精确优化 | 不猜测热点，从数据驱动改进，每项优化有 criterion 数据支撑 | MEDIUM | 依赖 `cargo flamegraph` + 真实 1.1GB 日志文件 |
-| PERF-11: `validate` 命令亚秒响应 | CLI 工具"立即响应"是 UX 基线；避免 update check 网络请求阻塞配置校验路径 | LOW | update check 已在 `!quiet` 分支，可进一步改为异步/延迟 check |
+---
 
-### Anti-Features (Commonly Requested, Often Problematic)
+## Table Stakes
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| OR 语义的排除组合（exclude A OR exclude B 在跨字段层面） | 用户有时想"排除 userA 或排除 ip X"——跨字段的 OR 排除 | 大幅增加配置复杂度，与现有 AND 语义混淆，测试矩阵爆炸 | 当前字段内 OR 已足够：同字段多 pattern 是 OR，跨字段是 AND；这一约束明确标注在 PROJECT.md Out of Scope |
-| 运行时动态排除规则（热重载） | 有时需要临时屏蔽某个用户 | 状态管理复杂，违反"启动时加载一次"的简单模型 | 修改 config + 重新运行；CONFIG.md 已明确 Out of Scope |
-| exclude 对 trxid 字段支持正则 | trxid 是数字字符串，regex 毫无意义 | 引入 `TrxidSet` exclude 的数据结构变化，收益几乎为零 | trxid exclude 可通过字面字符串列表实现（如同 include），保持 `HashSet` 精确匹配 |
-| PERF-11: 把 update check 改为后台线程阻塞 | 想并行执行 | 引入线程同步复杂性；update check 对 `run` 命令已被跳过（quiet 路径），收益边际 | 直接在 `!quiet && !run` 路径内做同步 check 已经够快（网络超时即返回） |
+Features users expect from any SQL workload analysis tool. Missing = incomplete product.
+
+| Feature | Why Expected | Complexity | Existing Dependency |
+|---------|--------------|------------|---------------------|
+| **TMPL-01**: Template normalization via config | Every SQL digest tool (pt-query-digest, MySQL Performance Schema, pg_stat_statements) groups queries by normalized template; users discovering `digest` command expect this to be configurable | MEDIUM | Extends `fingerprint()` in `sql_fingerprint.rs`; output feeds `DigestEntry` |
+| **TMPL-01**: Comment stripping | SQL logs from ORMs (Hibernate, MyBatis) often embed `/* comment */` hints that break grouping | LOW | New pass in normalization pipeline; pure string processing |
+| **TMPL-01**: IN list collapse | `IN (1,2,3)` vs `IN (1,2,3,4,5)` should map to same template; pt-query-digest does this | LOW | Regex or state-machine replacement; confined to normalization module |
+| **TMPL-01**: Keyword uppercase normalization | Templates should compare consistently; lowercase SQL should normalize the same as uppercase | LOW | Simple `to_uppercase()` pass on keyword tokens OR full lowercasing |
+| **TMPL-02**: p50/p95/p99 per template | Averages mask tail latency; p95/p99 are standard DBA metrics for SLA analysis | MEDIUM | Requires storing all per-template samples OR approximate algorithm (see Pitfalls) |
+| **TMPL-02**: min/max alongside percentiles | Industry standard: pt-query-digest reports min/max/avg/95pct for every metric | LOW | Already have total/max; need to track min |
+| **TMPL-03**: Standalone JSON report output | Machine-readable output is required for CI pipelines, alerting, and programmatic consumption | LOW | `serde_json` already in Cargo.toml; pattern identical to `DigestJson` in `digest.rs` |
+| **TMPL-03**: Standalone CSV report output | DBAs use CSV for spreadsheet analysis; simpler to consume than JSON for non-programmers | LOW | `itoa`/`ryu` already used; write with `BufWriter` |
+| **TMPL-04**: SQLite `sql_templates` table | Users using SQLite export expect template data alongside raw records in the same database | MEDIUM | `rusqlite` already in Cargo.toml; needs DDL + batch INSERT |
+| **TMPL-04**: CSV `*_templates.csv` companion | Users using CSV export expect a parallel summary file without switching to SQLite | LOW | Reuses CSV writer infrastructure |
+| **CHART-01**: Config-driven SVG output directory | Charts only generated when user explicitly enables them; no surprises in default mode | LOW | New config section `[features.template_stats.charts]` |
+| **CHART-02**: Top-N template frequency bar chart | Answering "which queries run most often?" is the primary use case of every SQL digest tool | MEDIUM | Bar chart with template fingerprint labels on Y-axis |
+| **CHART-03**: Execution time distribution histogram | Answering "how is query latency distributed?" requires a histogram, not just avg/max | MEDIUM | Logarithmic buckets (powers of 10, matching pt-query-digest convention) |
+
+---
+
+## Differentiators
+
+Features that distinguish this tool from generic SQL digest tools.
+
+| Feature | Value Proposition | Complexity | Existing Dependency |
+|---------|-------------------|------------|---------------------|
+| **TMPL-02**: Histogram bucket data in JSON output | pt-query-digest only shows histogram visually; exporting bucket counts as data enables downstream tooling | LOW | Bucket array added to JSON output struct |
+| **TMPL-02**: Per-template histogram (not just global) | pt-query-digest shows a global histogram; per-template histograms identify bimodal distributions in individual queries | MEDIUM | Memory cost: 10-20 buckets per template entry in `HashMap` |
+| **CHART-04**: Execution frequency time trend line chart | Shows when SQL load spiked; directly answers "was this query always slow or did it start recently?" | MEDIUM | Depends on `stats.rs` time-bucket data already collected |
+| **CHART-05**: User/Schema activity pie chart | Immediately identifies which users or schemas dominate workload; useful for capacity planning | MEDIUM | Depends on `stats.rs` group-by data already collected |
+| **TMPL-01**: Normalization rules configurable per-run | Users can tune normalization aggressiveness (e.g., disable IN-list collapse for debugging) | LOW | Boolean flags in `TemplateNormalizationConfig` |
+| **TMPL-03**: `first_seen` / `last_seen` timestamps in report | Helps identify recently-introduced slow queries; `digest.rs` already captures `first_seen` | LOW | Add `last_seen` field to `FingerprintAccumulator` |
+
+---
+
+## Anti-Features
+
+Features to explicitly avoid.
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| **Interactive HTML dashboard** | Requires a web server or embedded JS runtime; breaks the "static file" contract; html+js is platform-dependent to open | Generate standalone SVG files that open in any browser without JS; clearly document this limitation |
+| **Exact p50/p95/p99 via full sample storage** | Storing every `exec_time_ms` per template blows memory: 100K templates × 1M samples = hundreds of GB | Use fixed-size histogram buckets (10-20 logarithmic buckets cover 0.001ms to 1000s); document that percentiles are approximate |
+| **Template diff across time windows** | Comparing "this week vs last week" requires two-pass storage and complex diff logic; out of scope for a streaming CLI | Users can run the tool on date-filtered log files separately and compare JSON outputs manually |
+| **Real-time / live-tail mode** | Would require inotify/kqueue polling; fundamentally changes the tool's batch-processing model | Batch processing is the correct model for log files; document this explicitly |
+| **SQL parsing / AST-based normalization** | A full SQL parser (sqlparser-rs, nom-sql) is a heavy dependency, adds compile time, and is DM-dialect-specific | Rule-based normalization (regex + string state machine) is sufficient for grouping purposes; exact semantic equivalence is not required |
+| **Per-template alert thresholds** | Config becomes complex; threshold management is a monitoring system's job (Prometheus, Grafana) | Export JSON; let downstream monitoring tools handle alerting |
+| **Template clustering / similarity detection** | "These two templates are 90% similar" requires edit-distance computation across all template pairs; O(N²) cost | Group by exact fingerprint match only; document that near-duplicates appear as separate entries |
+| **Normalization applied to the main export columns** | Changing `normalized_sql` column behavior mid-stream breaks existing consumers | Template normalization lives in the statistics path (`template_stats` feature) separate from `replace_parameters` |
 
 ---
 
 ## Feature Dependencies
 
 ```
-FILTER-03 元数据字段排除
-    └──镜像于──> CompiledMetaFilters（现有 include 结构）
-                    └──无需──> 新的编译基础设施（复用 compile_patterns + match_any_regex）
-    └──影响──> validate.rs 输出（需展示 exclude 字段数量）
-    └──影响──> init.rs 生成的配置模板（需增加注释示例）
+TMPL-01 (template normalization)
+    └──extends──> sql_fingerprint::fingerprint() (existing)
+    └──feeds──> TMPL-02 (statistics accumulator uses normalized template as key)
+    └──independent of──> replace_parameters (different code path)
 
-PERF-10 热路径优化
-    └──依赖──> v1.1 flamegraph/criterion 基础设施（已就绪）
-    └──无依赖──> FILTER-03（可并行开发）
+TMPL-02 (statistics accumulator — streaming)
+    └──depends on──> TMPL-01 (normalized template as HashMap key)
+    └──feeds──> TMPL-03, TMPL-04 (output of accumulated data)
+    └──feeds──> CHART-02, CHART-03 (chart input is TMPL-02 data)
+    └──note──> must NOT buffer all records in memory; histogram buckets are O(1) per template
 
-PERF-11 CLI 启动提速
-    └──独立于──> FILTER-03 / PERF-10
-    └──影响──> main.rs run() 的初始化顺序
+TMPL-03 (standalone JSON/CSV report)
+    └──depends on──> TMPL-02 (data source)
+    └──independent of──> exporter choice (CSV or SQLite)
+    └──writes──> user-specified output path from config
 
-DEBT-01 sqlite 错误修复
-    └──独立于──> 所有 FILTER/PERF 功能
+TMPL-04 (SQLite table / CSV companion)
+    └──depends on──> TMPL-02 (data source)
+    └──depends on──> exporter choice: SQLite → sql_templates table; CSV → *_templates.csv
+    └──integrates with──> ExporterManager (flush hook after streaming completes)
 
-DEBT-02 table_name 校验
-    └──属于──> Config::validate() 扩展，独立
+CHART-01/02/03 (SVG charts)
+    └──depends on──> TMPL-02 data (frequency bar, exec histogram)
+    └──CHART-04 depends on──> stats.rs time-bucket data (already collected)
+    └──CHART-05 depends on──> stats.rs group-by data (already collected)
+    └──independent of──> main export path
+    └──writes──> SVG files to config-specified directory
 ```
 
-### Dependency Notes
+### Key Integration Point: Pipeline vs. Post-Processing
 
-- **FILTER-03 复用现有基础设施：** `compile_patterns`、`match_any_regex`、`validate_pattern_list` 无需修改，只需在 `MetaFilters`/`CompiledMetaFilters` 中增加 `exclude_*` 字段并在 `should_keep` 末尾追加排除检查。
-- **FILTER-03 与 PERF-10 无冲突：** 两者可在不同 phase 独立推进，排除过滤在热路径中是追加的短路判断，不改变现有过滤器的结构。
-- **DEBT-01/02 是独立的小任务：** 无外部依赖，任何 phase 均可单独合并。
+TMPL-02 (statistics accumulator) should be a **post-streaming accumulator**, not a `LogProcessor` in the Pipeline. Reason: the existing `Pipeline` contract returns `bool` (keep/discard record), but template statistics need to accumulate ALL records after filter decisions. The cleanest design:
 
----
+1. Existing Pipeline runs filters (keep/discard)
+2. After each kept record, a `TemplateStatsAccumulator` struct updates its `HashMap<String, TemplateEntry>`
+3. After streaming completes, `TemplateStatsAccumulator::flush()` writes TMPL-03 reports and TMPL-04 tables
 
-## MVP Definition
-
-### v1.2 必须交付（对应 Active 需求）
-
-- [x] **FILTER-03** — 在 `MetaFilters` 中增加与 include 对称的 exclude 字段（`exclude_usernames`、`exclude_client_ips`、`exclude_sess_ids`、`exclude_thrd_ids`、`exclude_statements`、`exclude_appnames`、`exclude_tags`），编译进 `CompiledMetaFilters`，在 `should_keep` 中作为最后一道关卡（include 全通过 → exclude 任一命中即丢弃）
-- [x] **DEBT-01** — sqlite.rs 静默错误改为写 error log
-- [x] **DEBT-02** — table_name 白名单校验在 `SqliteExporter::validate()` 中实现
-
-### 条件交付（基于 profiling 结果）
-
-- [ ] **PERF-10** — 必须先运行 flamegraph，若剩余热点 >5% 可消除则实施；否则标注"已达当前瓶颈"跳过
-- [ ] **PERF-11** — 用 `hyperfine` 测量 `validate` 冷启动时间；若 >50ms 则调查具体开销点再优化
-
-### 推迟
-
-- 无新增推迟项（v1.2 范围已明确收敛）
+This avoids modifying the `LogProcessor` trait or `Pipeline` struct.
 
 ---
 
-## Feature Prioritization Matrix
+## Expected UX: Configuration Format
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| FILTER-03 元数据排除模式 | HIGH | LOW | P1 |
-| DEBT-01 sqlite 静默错误修复 | HIGH（数据正确性） | LOW | P1 |
-| DEBT-02 table_name SQL 注入 | HIGH（安全） | LOW | P1 |
-| PERF-10 热路径优化 | MEDIUM | MEDIUM（需 profiling） | P2 |
-| PERF-11 CLI 启动提速 | LOW-MEDIUM | LOW-MEDIUM | P2 |
-| DEBT-03 Nyquist 补签 | LOW（流程合规） | LOW | P2 |
+Consistent with existing `config.toml` style. New sections under `[features]`:
 
----
-
-## 实现细节说明
-
-### FILTER-03：排除语义的 UX 预期
-
-基于对 grep/ripgrep（`-v`）、AWS CloudWatch（`NOT EXISTS`）、Google Cloud Logging（`!~`）、Grafana Loki（`!~`）的分析，业界一致语义为：
-
-- **exclude 在 include 之后判断**：只有通过 include 的记录才进入 exclude 检查（避免 exclude 空配置把所有记录都吞掉的 Loki bug，见 issue #3523）
-- **字段内 OR**：同字段多个 exclude pattern，任意命中即丢弃（与 include 字段内 OR 对称）
-- **跨字段 AND**：若 `exclude_usernames` 和 `exclude_client_ips` 均配置，则两者任意一个命中都丢弃该记录（等价于分别排除）
-- **空 exclude = 不排除**：`None` 或空列表直接跳过，保持当前 `match_any_regex(None, ...)` 的零开销行为
-
-**配置示例（TOML）：**
 ```toml
-[features.filters]
-enable = true
-usernames = ["^admin"]          # include: 只保留 admin* 用户
-exclude_usernames = ["admin_ro$"] # exclude: 但排除只读账号
-exclude_client_ips = ["^10\\.0\\.0\\."]  # 同时排除特定 IP 段
+[features.template_stats]
+# Enable SQL template statistics aggregation (default: false)
+enable = false
+
+# --- Normalization rules (all default to true when enable = true) ---
+# Normalize SQL keywords to uppercase (SELECT → SELECT, select → SELECT)
+normalize_keywords = true
+# Strip -- and /* */ comments from SQL before fingerprinting
+strip_comments = true
+# Collapse IN (...) lists to IN (?) regardless of element count
+collapse_in_lists = true
+
+# --- Output: standalone report files ---
+# Write per-template statistics to a JSON file (omit to skip)
+# json_report = "reports/sql_templates.json"
+# Write per-template statistics to a CSV file (omit to skip)
+# csv_report = "reports/sql_templates.csv"
+
+# --- Output: charts ---
+# Directory to write SVG chart files (omit to skip chart generation)
+# charts_dir = "reports/charts"
+# Number of top templates to include in frequency bar chart (default: 20)
+top_n = 20
+
+# --- Filtering ---
+# Minimum call count to include in report (default: 1)
+min_count = 1
 ```
 
-**注意：trxid 的排除**应使用字面字符串列表（保持与 include 的 `HashSet` 精确匹配一致），不支持正则——和 include 的语义保持对称。
+When `[exporter.sqlite]` is active AND `[features.template_stats]` is enabled, a `sql_templates` table
+is automatically created in the same database. No additional config key is needed — presence of SQLite
+exporter implies the companion table.
 
-### PERF-10：热路径优化方法论
+When `[exporter.csv]` is active AND `[features.template_stats]` is enabled, a companion `*_templates.csv`
+file is written alongside the main CSV output (same directory, `_templates` suffix).
 
-当前基准：~5.2M records/sec（CSV synthetic），~1.55M records/sec（真实 1.1GB 文件）。
+### SQLite `sql_templates` Table Schema (Recommended)
 
-优化前必须先 profile：
-1. `cargo flamegraph --profile flamegraph -- run -c config.toml` 生成火焰图
-2. `cargo bench --bench bench_filters` 运行过滤器微基准
-3. 识别 >5% 占比的热点后再动手
+```sql
+CREATE TABLE sql_templates (
+    id              INTEGER PRIMARY KEY,
+    fingerprint     TEXT NOT NULL UNIQUE,
+    call_count      INTEGER NOT NULL,
+    total_exec_ms   REAL NOT NULL,
+    avg_exec_ms     REAL NOT NULL,
+    min_exec_ms     REAL NOT NULL,
+    max_exec_ms     REAL NOT NULL,
+    p50_exec_ms     REAL,
+    p95_exec_ms     REAL,
+    p99_exec_ms     REAL,
+    first_seen      TEXT,
+    last_seen       TEXT,
+    example_sql     TEXT
+);
+```
 
-潜在剩余优化点（基于代码阅读，需实测验证）：
-- `parse_meta()` 返回值中字段是否有不必要的堆分配（`CompactString` 已优化，但需确认）
-- `regex::Regex::is_match` vs `find` 的选择（`is_match` 已是最轻量调用）
-- `pipeline.run_with_meta` 中各处理器顺序：失败率最高的过滤器排最前（短路收益）
+### JSON Report Schema (Recommended)
 
-**不应该做的**：在没有 flamegraph 数据的情况下猜测瓶颈并重构。
+Mirrors `DigestJson` in `digest.rs` but adds percentile fields and histogram buckets:
 
-### PERF-11：CLI 启动开销分析
+```json
+{
+  "generated_at": "2026-05-15T10:00:00",
+  "total_records": 1234567,
+  "unique_templates": 42,
+  "entries": [
+    {
+      "rank": 1,
+      "fingerprint": "SELECT * FROM t WHERE id = ?",
+      "call_count": 45230,
+      "total_exec_ms": 90460.0,
+      "avg_exec_ms": 2.0,
+      "min_exec_ms": 0.1,
+      "max_exec_ms": 350.0,
+      "p50_exec_ms": 1.8,
+      "p95_exec_ms": 12.0,
+      "p99_exec_ms": 85.0,
+      "first_seen": "2026-05-15 08:01:02",
+      "last_seen": "2026-05-15 09:59:58",
+      "example_sql": "SELECT * FROM t WHERE id = 12345",
+      "histogram_buckets": [
+        {"label": "<1ms", "count": 32000},
+        {"label": "1-10ms", "count": 11000},
+        {"label": "10-100ms", "count": 1800},
+        {"label": ">100ms", "count": 430}
+      ]
+    }
+  ]
+}
+```
 
-`main.rs::run()` 的冷启动路径依次执行：
-1. `std::env::args().collect()` — 几乎零开销
-2. `lang::detect(&raw_args)` — 字符串扫描，微秒级
-3. `cli::opts::Cli::command()` + `clap` 解析 — 可能 ~1-5ms（clap 4.x 已优化）
-4. `cli::update::check_for_updates_at_startup()` — 网络请求，若超时可能阻塞数百毫秒
-5. `load_config()` → `std::fs::read_to_string` + `toml::from_str` — 文件 I/O + TOML 解析，通常 <1ms
-6. `Config::validate()` → `validate_regexes()` — regex 编译开销在 pattern 数量多时显著
+---
 
-**最高价值优化**：update check 网络请求。当前代码在 `run` 命令的 quiet 模式下已跳过，但 `validate` 命令默认会触发。可考虑：
-- 增加 TTL 缓存（上次 check 时间写入临时文件，24h 内不重复请求）
-- 或 `validate` 命令默认跳过 update check（不影响功能）
+## SVG Chart Design Principles
 
-**测量方式**：`hyperfine --warmup 3 'sqllog2db validate -c config.toml'`，目标 <30ms（不含 update check）。
+For a CLI tool generating static SVG files (no JS, no interactive library), the following principles
+produce good output:
+
+### What Makes a Good Minimal CLI SVG Chart
+
+1. **Fully self-contained SVG**: All styles inline via `style="..."` attributes; no `<style>` blocks
+   that might be stripped by SVG viewers. No external fonts (use `font-family="monospace"` or
+   `sans-serif`).
+
+2. **Fixed canvas size**: 800×400px covers most use cases. Large enough for labels, small enough to
+   open quickly. Do not depend on dynamic layout.
+
+3. **Bar chart (CHART-02)**: Horizontal bar chart (not vertical) for template labels — fingerprints
+   are long strings, horizontal layout gives more readable space. Sort bars by frequency descending.
+   Cap at `top_n` templates (default 20). Include count labels at bar end.
+
+4. **Histogram (CHART-03)**: Logarithmic x-axis buckets matching pt-query-digest convention:
+   `<0.001ms`, `0.001–0.01ms`, `0.01–0.1ms`, `0.1–1ms`, `1–10ms`, `10–100ms`, `>100ms`.
+   Vertical bars. Label the p50/p95/p99 lines as vertical dashed overlays.
+
+5. **Line chart (CHART-04)**: Time on x-axis (derived from time-bucket data in `stats.rs`),
+   count on y-axis. Simple polyline with data point dots. Date labels at regular intervals.
+
+6. **Pie chart (CHART-05)**: User/schema share. SVG `<path>` arc segments. Include a legend
+   beside the pie (not embedded in the arc). Cap at top-10 segments + "Others" slice.
+
+7. **Recommended library**: `plotters` with `default-features = false, features = ["svg"]`.
+   The `plotters-svg` backend is a separate crate since plotters 0.3, enabling SVG-only builds
+   without bitmap codec dependencies. Compile time is well under 10 seconds with this configuration.
+   Alternative: generate raw SVG strings directly (zero dependencies, ~200 lines per chart type),
+   which is viable given the small number of chart types.
+
+---
+
+## Complexity Notes
+
+| Feature ID | Estimated Complexity | Rationale |
+|------------|---------------------|-----------|
+| TMPL-01 normalization rules | LOW-MEDIUM | String processing with memchr already available; IN-list collapse is the hardest part (stateful parser) |
+| TMPL-02 histogram buckets | LOW | Fixed 7-10 log buckets; O(1) per record, O(templates) memory |
+| TMPL-02 p50/p95/p99 from buckets | LOW | Linear interpolation within bucket; approximate but sufficient |
+| TMPL-03 JSON output | LOW | Reuse `serde_json` pattern from `digest.rs` |
+| TMPL-03 CSV output | LOW | Reuse `BufWriter` + `itoa`/`ryu` pattern from CSV exporter |
+| TMPL-04 SQLite table | MEDIUM | Needs DDL + batch INSERT + integration with `ExporterManager` flush |
+| TMPL-04 CSV companion | LOW | Write after main CSV is closed; same directory logic |
+| CHART-01/02/03 bar + histogram | MEDIUM | plotters SVG backend; label layout for long fingerprints |
+| CHART-04 time trend | MEDIUM | Depends on time-bucket data; x-axis label formatting |
+| CHART-05 pie chart | MEDIUM | SVG arc math or plotters pie series |
 
 ---
 
 ## Sources
 
-- 代码库阅读：`src/features/filters.rs`（CompiledMetaFilters、SqlFilters、match_any_regex）
-- 代码库阅读：`src/cli/run.rs`（FilterProcessor、hot loop、build_pipeline）
-- 代码库阅读：`src/main.rs`（启动序列、update check 位置）
-- [Grafana Loki issue #3523](https://github.com/grafana/loki/issues/3523) — 空 exclude pattern 吞掉所有记录的 UX 陷阱（MEDIUM confidence）
-- [AWS CloudWatch Filter Pattern Syntax](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html) — NOT EXISTS / exclude 语义（MEDIUM confidence）
-- [rust-lang/regex discussions #960](https://github.com/rust-lang/regex/discussions/960) — regex 热路径是否瓶颈的社区分析（MEDIUM confidence）
-- [hyperfine](https://github.com/sharkdp/hyperfine) — CLI 启动时间测量工具（HIGH confidence）
-- [The Rust Performance Book - Profiling](https://nnethercote.github.io/perf-book/profiling.html) — flamegraph 方法论（HIGH confidence）
+- 代码库阅读：`src/cli/digest.rs` — 现有 `DigestEntry`, `FingerprintAccumulator`, 指纹统计结构
+- 代码库阅读：`src/cli/stats.rs` — 时间分桶、group-by 聚合，CHART-04/05 的数据来源
+- 代码库阅读：`src/features/sql_fingerprint.rs` — 现有指纹化逻辑（字面量替换 + 空白折叠）
+- 代码库阅读：`src/features/mod.rs` — `Pipeline` / `LogProcessor` 架构约束
+- 代码库阅读：`Cargo.toml` — 已有依赖（`serde_json`, `rusqlite`, `itoa`, `ryu`, `memchr`）
+- [pt-query-digest documentation](https://docs.percona.com/percona-toolkit/pt-query-digest.html) — 工业标准 SQL digest 工具的功能集（MEDIUM confidence，规范参考）
+- [plotters-rs GitHub](https://github.com/plotters-rs/plotters) — Rust SVG 图表库，`default-features = false, features = ["svg"]` 可最小化二进制体积（MEDIUM confidence）
+- [plotters-svg crate](https://github.com/plotters-rs/plotters-svg) — 独立 SVG backend crate（MEDIUM confidence）
+- [charts-rs crate](https://docs.rs/crate/charts-rs/latest) — 备选图表库，支持 16 种图表类型，内置主题（LOW confidence，未深度验证）
+- [pt-query-digest histogram convention](https://docs.percona.com/percona-toolkit/pt-query-digest.html) — 对数分桶（10µs → 1s 范围）是工业惯例（MEDIUM confidence）
 
 ---
 
-*Feature research for: sqllog2db v1.2 — FILTER-03 排除模式、PERF-10/11 热路径与启动优化*
-*Researched: 2026-05-10*
+*Feature research for: sqllog2db v1.3 — SQL 模板分析 & 可视化*
+*Researched: 2026-05-15*

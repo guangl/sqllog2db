@@ -453,3 +453,321 @@ PERF-10 → FILTER-03, PERF-11 (profile after both)
 ---
 *Architecture research for: sqllog2db v1.2 — FILTER-03, PERF-10, PERF-11, DEBT-01, DEBT-02*
 *Researched: 2026-05-10*
+
+---
+
+# v1.3 Architecture: SQL Template Analysis & SVG Chart Generation
+
+**Researched:** 2026-05-15
+**Confidence:** HIGH (all findings from direct source code inspection + confirmed library versions)
+
+## v1.3 New Data Flow
+
+```
+Input .log files
+    ↓ SqllogParser
+    ↓ LogParser.iter()
+    ↓ Pipeline (filter processors — unchanged, pipeline.is_empty() fast path preserved)
+    ↓ compute_normalized()               (unchanged)
+    ↓ normalize_template()               [NEW] — post-process normalized_sql → canonical key
+    ├─→ TemplateAggregator.observe()     [NEW] — side-channel accumulation (Option<&mut>)
+    ↓ ExporterManager.export_one_preparsed()   (unchanged)
+    ↓ Output file(s)                     (unchanged)
+
+After streaming completes:
+    TemplateAggregator.finalize()
+    ↓ TemplateStats (owned, move semantics)
+    ├─→ ReportWriter.write()             [NEW] — standalone JSON/CSV report file
+    ├─→ ExporterManager.write_templates() [NEW] — sql_templates table / companion CSV
+    └─→ ChartGenerator.render()          [NEW] — 4 SVG chart files
+```
+
+## Core Decision: Aggregator Placement
+
+### Option A — Extend LogProcessor trait with finalize()
+
+Add `fn finalize(&self) -> Option<AggregationResult>` to the `LogProcessor` trait.
+
+**Problems:**
+- `process()` takes `&self` (immutable). Aggregation is stateful — requires `Mutex<HashMap>` interior mutability in the hot loop, adding ~20ns lock overhead per record.
+- `finalize()` return type would need a type-erased enum or `Box<dyn Any>` — fragile.
+- Merges two orthogonal concepts: filter semantics (bool per record) and accumulation (stateful mutation).
+- The `pipeline.is_empty()` fast path must now check both filter-empty AND aggregator-empty — complicates the invariant.
+- Parallel CSV path runs separate `Pipeline` clones per rayon thread; aggregating across threads would require `Arc<Mutex<TemplateAggregator>>` in the hot loop.
+
+**Verdict: REJECT.**
+
+### Option B — Aggregator as separate struct, called from process_log_file() (RECOMMENDED)
+
+```rust
+// src/features/template_aggregator.rs
+pub struct TemplateAggregator {
+    templates: HashMap<String, TemplateEntry>,
+    config: TemplateAnalysisConfig,
+}
+
+impl TemplateAggregator {
+    pub fn observe(&mut self, template_key: &str, exec_time_us: u32, ts_prefix: &str);
+    pub fn finalize(self) -> TemplateStats;
+    pub fn merge(&mut self, other: TemplateAggregator);  // for parallel path
+}
+```
+
+`process_log_file()` gains `aggregator: Option<&mut TemplateAggregator>` parameter. When `None`, zero overhead. When `Some`, one `HashMap::entry()` call per passing record.
+
+**Advantages:**
+- `pipeline.is_empty()` fast path completely unaffected — aggregator is a separate code path.
+- No interior mutability needed — `&mut self` owned by `handle_run()`.
+- Lifecycle is explicit: created before streaming, consumed by `finalize()` after streaming.
+- Parallel CSV path: each rayon task creates a local `TemplateAggregator`, returns it alongside the record count, then caller merges via `merge()`.
+- Clean separation: Pipeline = filter (returns bool), Aggregator = accumulate (mutation).
+
+**Verdict: RECOMMENDED.**
+
+### Option C — Second streaming pass for aggregation
+
+Re-stream all log files a second time dedicated to template aggregation.
+
+**Problems:** Doubles I/O for large log sets (GBs of data). Requires re-computing `normalized_sql` and `normalize_template()` again. No memory benefit since we still need the HashMap in memory.
+
+**Verdict: REJECT.**
+
+## Component Map
+
+```
+src/
+├── features/
+│   ├── mod.rs                     MODIFY: add TemplateAnalysisConfig to FeaturesConfig
+│   ├── template_normalizer.rs     NEW — normalize_template(normalized_sql: &str) -> String
+│   └── template_aggregator.rs     NEW — TemplateAggregator + TemplateStats
+├── exporter/
+│   ├── mod.rs                     MODIFY: add write_templates() to ExporterManager
+│   ├── csv.rs                     MODIFY: impl companion _templates.csv writer
+│   └── sqlite.rs                  MODIFY: impl sql_templates table writer
+├── report/
+│   └── mod.rs                     NEW — standalone JSON/CSV report writer
+├── chart/
+│   └── mod.rs                     NEW — SVG chart generation via charts-rs
+└── cli/
+    └── run.rs                     MODIFY: wire aggregator into process_log_file(),
+                                           call finalize() + write_templates() + render()
+```
+
+## Component Boundaries
+
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| `template_normalizer.rs` | `normalize_template(normalized_sql) -> String` — lowercase, whitespace collapse, comment strip, IN list unification | Called inline in hot loop in `run.rs` |
+| `template_aggregator.rs` | `observe(key, time_us, ts)` — accumulate per-template count + exec times + user/schema frequency | Called from `process_log_file()` via `Option<&mut TemplateAggregator>` |
+| `report/mod.rs` | Serialize `TemplateStats` → JSON or CSV standalone file | Takes owned `TemplateStats`, uses `serde_json` (already in deps) |
+| `exporter/csv.rs` | Write `{stem}_templates.csv` companion file | Takes `&TemplateStats` |
+| `exporter/sqlite.rs` | Write `sql_templates` table | Takes `&TemplateStats`, uses existing `rusqlite` |
+| `chart/mod.rs` | Render 4 SVG chart files to output dir | Takes `&TemplateStats`, writes SVG via `charts-rs` |
+
+## Template Normalizer Design
+
+Input: `normalized_sql` already produced by `compute_normalized()` — parameters already replaced.
+
+Transforms (pure string ops, no external parser needed):
+
+1. ASCII lowercase (DM SQL keywords are ASCII)
+2. Strip `--` line comments and `/* */` block comments using `memchr` (already in deps)
+3. Collapse any sequence of whitespace to single space, trim
+4. Normalize `IN (?, ?, ...)` → `IN (?+)` — regex or manual scan
+
+**No external SQL parser dependency needed.** `sqlparser` and `sqlformat` crates are designed for formatting/pretty-printing, not for the minimal string normalization required here. Using `memchr` (already in Cargo.toml) for comment detection keeps the dependency footprint flat. Confidence: MEDIUM — validate edge cases during implementation.
+
+## Memory Footprint Analysis
+
+### Per-template storage with Vec<u32>
+
+```rust
+struct TemplateEntry {
+    count: u64,               // 8 bytes
+    exec_times_us: Vec<u32>,  // 24 bytes header + N * 4 bytes (u32 microseconds)
+    min_us: u32,              // 4 bytes
+    max_us: u32,              // 4 bytes
+    // CHART-04: time bucket counters (e.g., 24 hourly buckets * 8 bytes = 192 bytes)
+    // CHART-05: HashMap<user_key, u64> — separate, small
+}
+```
+
+Use `u32` microseconds (max ~71 minutes per query, covers all realistic DM exec times). Halves storage vs `u64`.
+
+### Scale estimates
+
+| Scenario | Templates | Records/template | Vec memory |
+|----------|-----------|-----------------|------------|
+| Typical workload | 500 | 20,000 | ~40 MB |
+| Large workload | 2,000 | 50,000 | ~400 MB |
+| Pathological | 50,000 | 1,000 | ~200 MB |
+
+Real-world SQL logs: most workloads have 50–500 unique templates. A 1.1 GB log at ~1.55M records/sec implies ~10M records. 500 templates × 20K records = 160 MB at u64; 80 MB at u32.
+
+**Decision:** Store all execution times (`Vec<u32>`) by default. Enables exact p50/p95/p99 via sort. Add config option `max_samples_per_template: u32` (default 0 = unlimited) as escape hatch. Warn in logs if any template exceeds 100K samples.
+
+**Fallback option (if needed):** `hdrhistogram` v7.5.4 (confirmed via `cargo info`). Fixed ~24 KB per histogram, ~1-2% percentile error. At 500 templates = 12 MB. Adopt only if Vec approach causes OOM in practice.
+
+## Parallel CSV Path: Aggregator Strategy
+
+Current `process_csv_parallel()` spawns rayon tasks that each write a temp CSV, then concatenates. For aggregation:
+
+1. Each rayon task creates a local `TemplateAggregator`.
+2. `process_log_file()` signature change: add `aggregator: Option<&mut TemplateAggregator>`.
+3. After all tasks complete, merge partial aggregators via `TemplateAggregator::merge()`.
+4. `merge()` cost: O(unique templates) — negligible vs I/O time.
+
+No `Arc<Mutex<>>` needed in the hot path. Preserves the existing parallel architecture.
+
+## SVG Generation: Call Chain Position
+
+```
+handle_run()
+    ↓ [streaming loop — process_log_file per file]
+    ↓ exporter_manager.finalize()             writes main output (unchanged)
+    ↓ let stats = aggregator.finalize()       → TemplateStats (if aggregator enabled)
+    ↓ report_writer.write(&stats)             → standalone JSON/CSV (if configured)
+    ↓ exporter_manager.write_templates(&stats) → sql_templates table / companion CSV
+    ↓ chart_generator.render(&stats)          → SVG files (if [charts] config present)
+```
+
+SVG generation lives **after** all record-level export. It takes `&TemplateStats` (immutable, finalized). No dependency on exporter type. Called from `handle_run()` directly, not from inside `ExporterManager`. Preserves single responsibility of each component.
+
+## Dual-Output Without Coupling
+
+Two separate write operations consuming `&TemplateStats`:
+
+1. `ReportWriter` (standalone) — config-gated by `[features.template_analysis.output]`. Always available regardless of active exporter. Uses `serde_json` (already in Cargo.toml).
+
+2. `ExporterManager::write_templates()` — delegates to `CsvExporter::write_templates()` or `SqliteExporter::write_templates()`. Each exporter implements its own format-specific logic. Neither knows about chart generation.
+
+3. `ChartGenerator::render()` — separate module, separate config section `[charts]`. Knows nothing about exporters or reports.
+
+No coupling between the three output paths. All consume the same `TemplateStats` value.
+
+## Config Changes
+
+```toml
+[features.template_analysis]
+enable = true
+max_samples_per_template = 0   # 0 = unlimited
+
+[features.template_analysis.output]
+format = "json"                # or "csv"
+file = "templates_report.json"
+
+[charts]
+output_dir = "charts/"
+top_n = 20
+```
+
+Both sections are `Option<T>` in Rust structs. When absent: zero overhead — no `TemplateAggregator` created, no `normalize_template()` called.
+
+Integration into config validation: `template_analysis.output.format` must be "json" or "csv"; `charts.output_dir` must be a valid path prefix.
+
+## Build Order (Dependency-Driven)
+
+### Phase 1: Template Normalizer
+
+**Files:** `src/features/template_normalizer.rs` (new), `src/features/mod.rs` (add config struct), `src/config.rs` (add `TemplateAnalysisConfig`)
+
+- Pure function `normalize_template(normalized_sql: &str) -> String`
+- `TemplateAnalysisConfig` stub (enable + max_samples)
+- Tests: IN list normalization, comment stripping, whitespace collapse, mixed-case keywords
+
+Dependencies: `memchr` (already in Cargo.toml). No new crates.
+
+### Phase 2: TemplateAggregator (depends on Phase 1)
+
+**Files:** `src/features/template_aggregator.rs` (new), `src/cli/run.rs` (modify)
+
+- `TemplateAggregator::observe()`, `finalize()`, `merge()`
+- `TemplateEntry` with `Vec<u32>` exec times + percentile computation
+- Wire into `process_log_file()`: add `Option<&mut TemplateAggregator>` param
+- Wire into `handle_run()`: create aggregator from config, call finalize after streaming
+- Handle parallel path: partial aggregators per rayon task, merge after pool completes
+
+**Highest-risk phase**: changes `process_log_file()` signature, touches hot loop and parallel path.
+
+### Phase 3: Standalone Report Writer (depends on Phase 2)
+
+**Files:** `src/report/mod.rs` (new), `src/cli/run.rs` (call after finalize)
+
+- Serialize `TemplateStats` → JSON via `serde_json` or CSV via `itoa`/`ryu`
+- Both already in Cargo.toml
+
+### Phase 4: Exporter Integration (depends on Phase 2, parallel to Phase 3)
+
+**Files:** `src/exporter/csv.rs`, `src/exporter/sqlite.rs`, `src/exporter/mod.rs`
+
+- `write_templates(&TemplateStats) -> Result<()>` on each exporter
+- SQLite: `CREATE TABLE sql_templates (template TEXT, count INTEGER, avg_ms REAL, ...)` + batch insert
+- CSV: write `{stem}_templates.csv` adjacent to main output
+
+### Phase 5: SVG Charts (depends on Phase 2, parallel to Phase 3/4)
+
+**New dependency:** `charts-rs = "0.4.2"` (Apache-2.0, confirmed via `cargo search`)
+**Files:** `src/chart/mod.rs` (new), `src/config.rs` (add `ChartsConfig`), `Cargo.toml`
+
+- Bar chart: Top N template frequency (CHART-02) — horizontal bar, `charts-rs` HorizontalBar
+- Histogram: Execution time distribution (CHART-03) — Bar chart with fixed buckets
+- Line chart: SQL execution frequency time trend (CHART-04) — requires timestamp bucketing in TemplateEntry
+- Pie chart: User/Schema distribution (CHART-05) — `charts-rs` Pie
+
+**charts-rs vs plotters decision:** `charts-rs` (0.4.2) provides ECharts-inspired high-level API with direct bar/pie/line chart types and SVG-only output option. `plotters` (0.3.7) requires assembling charts from drawing primitives. For 4 standard chart types with no custom rendering requirements, `charts-rs` wins on development speed. Maintenance confirmed active as of 2025.
+
+## Integration Points Summary
+
+| Component | Type | File | Scope of Change |
+|-----------|------|------|-----------------|
+| `template_normalizer.rs` | New file | `src/features/` | ~60 lines |
+| `template_aggregator.rs` | New file | `src/features/` | ~120 lines |
+| `report/mod.rs` | New module | `src/report/` | ~80 lines |
+| `chart/mod.rs` | New module | `src/chart/` | ~150 lines |
+| `features/mod.rs` | Modified | — | Add `TemplateAnalysisConfig` to `FeaturesConfig` |
+| `cli/run.rs` | Modified | — | `process_log_file()` gains `Option<&mut TemplateAggregator>`; `handle_run()` gains aggregator lifecycle + post-streaming writes |
+| `exporter/mod.rs` | Modified | — | Add `write_templates()` to `ExporterManager` |
+| `exporter/csv.rs` | Modified | — | Companion CSV writer |
+| `exporter/sqlite.rs` | Modified | — | `sql_templates` table writer |
+| `config.rs` | Modified | — | `TemplateAnalysisConfig`, `ChartsConfig` |
+| `Cargo.toml` | Modified | — | Add `charts-rs = "0.4.2"` |
+
+## Anti-Patterns to Avoid (v1.3)
+
+### Anti-Pattern: Extending LogProcessor for aggregation
+
+Adding `finalize()` or mutable accumulation to `LogProcessor` is architecturally incorrect. The trait is designed for stateless filter evaluation. Aggregation requires mutable state. Keep these concerns separate.
+
+### Anti-Pattern: Calling normalize_template() when feature is disabled
+
+The `normalize_template()` call must be guarded by the same `Option<&mut TemplateAggregator>` check as the aggregation step. If the aggregator is `None`, the normalizer should not run — it allocates a `String` for the canonical key that would be immediately discarded.
+
+### Anti-Pattern: SVG generation inside ExporterManager
+
+SVG charts are not "export" — they are derived analytics output. Putting `ChartGenerator` inside `ExporterManager` would couple chart generation to the active exporter type and violate the exporter's single responsibility.
+
+### Anti-Pattern: Storing timestamps as strings in TemplateEntry
+
+For CHART-04 (time trend), storing full timestamp strings per record is expensive. Instead, bucket by hour (or configurable interval) at `observe()` time: `let bucket = parse_hour_bucket(ts)` → increment `HashMap<u32, u64>` counter. Fixed memory regardless of record count.
+
+## Confidence Assessment
+
+| Area | Confidence | Notes |
+|------|------------|-------|
+| Aggregator placement (Option B) | HIGH | Verified against existing `&mut` patterns in codebase; `Option<&mut T>` is idiomatic Rust |
+| Memory estimates | MEDIUM | Based on real-world template count assumption; depends on actual log diversity |
+| Template normalizer without external parser | MEDIUM | Sufficient for typical DM SQL; edge cases (nested comments, string literals containing `--`) need testing |
+| charts-rs for SVG | MEDIUM | Version 0.4.2 confirmed active; API surface for 4 chart types needs validation during Phase 5 |
+| Build order (Phase 1→2→3/4/5) | HIGH | Dependency chain verified from code inspection |
+| Parallel path merge strategy | HIGH | Consistent with existing rayon + merge pattern used in pre-scan phase |
+
+## Sources
+
+- Code inspection: `src/features/mod.rs`, `src/cli/run.rs`, `src/exporter/mod.rs`, `src/config.rs`
+- `charts-rs` v0.4.2: confirmed via `cargo search` (2026-05-15)
+- `hdrhistogram` v7.5.4: confirmed via `cargo info` (2026-05-15)
+- `plotters` v0.3.7: confirmed via `cargo search`
+- Memory analysis: derived from project benchmark (1.55M records/sec on 1.1GB file, per PROJECT.md)
+
+---
+*v1.3 architecture research appended: 2026-05-15*
