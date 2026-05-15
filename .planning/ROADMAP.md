@@ -38,7 +38,7 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 - [ ] **Phase 8: 排除过滤器** - 实现 FILTER-03 排除模式（7 个元数据字段 exclude_* 支持）
 - [x] **Phase 9: CLI 启动提速** - 消除双重 regex 编译，后台化 update check (5/5 plans) — completed 2026-05-14
 - [x] **Phase 10: 热路径优化** - flamegraph 门控的热路径深化优化 (completed 2026-05-15)
-- [ ] **Phase 11: Nyquist 补签** - 补全 Phase 3/4/5/6 VALIDATION.md compliant 签署
+- [x] **Phase 11: Nyquist 补签** - 补全 Phase 3/4/5/6 VALIDATION.md compliant 签署 (completed 2026-05-15)
 
 ## Phase Details
 
@@ -139,10 +139,10 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 **Plans**: 2 plans
 
 **Wave 1**
-- [ ] 11-01-PLAN.md — 回溯更新 Phase 3/4/5 的 VALIDATION.md（全量补签 + Phase 5 WAL 项标记 N/A）
+- [x] 11-01-PLAN.md — 回溯更新 Phase 3/4/5 的 VALIDATION.md（全量补签 + Phase 5 WAL 项标记 N/A）
 
 **Wave 2** *(blocked on Wave 1 — 以 03/04-VALIDATION.md 为结构参考样本)*
-- [ ] 11-02-PLAN.md — 从零创建 Phase 6 的 VALIDATION.md（对齐 Phase 3-5 结构 + 直接以已完成状态写入）
+- [x] 11-02-PLAN.md — 从零创建 Phase 6 的 VALIDATION.md（对齐 Phase 3-5 结构 + 直接以已完成状态写入）
 
 ## Progress
 
@@ -158,4 +158,4 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
 | 10. 热路径优化 | v1.2 | 3/3 | Complete    | 2026-05-15 |
-| 11. Nyquist 补签 | v1.2 | 0/2 | Not started | - |
+| 11. Nyquist 补签 | v1.2 | 2/2 | Complete   | 2026-05-15 |
