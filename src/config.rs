@@ -252,6 +252,12 @@ impl Config {
                     .get_or_insert_with(Default::default)
                     .enable = parse_bool(value)?;
             }
+            "features.template_analysis.enabled" => {
+                self.features
+                    .template_analysis
+                    .get_or_insert_with(Default::default)
+                    .enabled = parse_bool(value)?;
+            }
 
             _ => return Err(unknown()),
         }
