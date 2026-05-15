@@ -121,7 +121,11 @@ impl TemplateAggregator {
             })
             .collect();
 
-        stats.sort_unstable_by(|a, b| b.count.cmp(&a.count));
+        stats.sort_unstable_by(|a, b| {
+            b.count
+                .cmp(&a.count)
+                .then_with(|| a.template_key.cmp(&b.template_key))
+        });
         stats
     }
 }
