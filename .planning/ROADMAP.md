@@ -136,7 +136,13 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
   2. Phase 4 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
   3. Phase 5 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
   4. Phase 6 VALIDATION.md 包含完整的 Nyquist compliant 签署条目
-**Plans**: TBD
+**Plans**: 2 plans
+
+**Wave 1**
+- [ ] 11-01-PLAN.md — 回溯更新 Phase 3/4/5 的 VALIDATION.md（全量补签 + Phase 5 WAL 项标记 N/A）
+
+**Wave 2** *(blocked on Wave 1 — 以 03/04-VALIDATION.md 为结构参考样本)*
+- [ ] 11-02-PLAN.md — 从零创建 Phase 6 的 VALIDATION.md（对齐 Phase 3-5 结构 + 直接以已完成状态写入）
 
 ## Progress
 
@@ -152,4 +158,4 @@ Full details: `.planning/milestones/v1.1-ROADMAP.md`
 | 8. 排除过滤器 | v1.2 | 0/2 | Not started | - |
 | 9. CLI 启动提速 | v1.2 | 5/5 | Complete | 2026-05-14 |
 | 10. 热路径优化 | v1.2 | 3/3 | Complete    | 2026-05-15 |
-| 11. Nyquist 补签 | v1.2 | 0/TBD | Not started | - |
+| 11. Nyquist 补签 | v1.2 | 0/2 | Not started | - |
