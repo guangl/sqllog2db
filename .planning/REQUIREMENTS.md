@@ -40,20 +40,20 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TMPL-01 | TBD | Pending |
-| TMPL-02 | TBD | Pending |
-| TMPL-04 | TBD | Pending |
-| CHART-01 | TBD | Pending |
-| CHART-02 | TBD | Pending |
-| CHART-03 | TBD | Pending |
-| CHART-04 | TBD | Pending |
-| CHART-05 | TBD | Pending |
+| TMPL-01 | Phase 12 | Pending |
+| TMPL-02 | Phase 13 | Pending |
+| TMPL-04 | Phase 14 | Pending |
+| CHART-01 | Phase 15 | Pending |
+| CHART-02 | Phase 15 | Pending |
+| CHART-03 | Phase 15 | Pending |
+| CHART-04 | Phase 16 | Pending |
+| CHART-05 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 8 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 8 ⚠️ (roadmap will fill these)
+- Mapped to phases: 8 ✓
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-05-15*
-*Last updated: 2026-05-15 — initial v1.3 definition*
+*Last updated: 2026-05-15 — Phase 12–16 mapped (v1.3 roadmap created)*

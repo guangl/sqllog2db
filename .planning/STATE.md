@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQL 模板分析 & 可视化
-status: planning
+status: active
 last_updated: "2026-05-15T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -23,10 +23,12 @@ See: .planning/PROJECT.md (updated 2026-05-15 — milestone v1.3 started)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 12 — SQL 模板归一化引擎 (Not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-15 — Milestone v1.3 started
+Status: Roadmap created, ready for Phase 12 planning
+Last activity: 2026-05-15 — v1.3 roadmap (Phases 12–16) created
+
+Progress: ░░░░░░░░░░ 0% (0/5 phases)
 
 ## Performance Metrics
 
@@ -49,6 +51,16 @@ Last activity: 2026-05-15 — Milestone v1.3 started
 | PERF-10 门控：flamegraph >5% 热点才优化 | 避免盲目优化，与 v1.1 策略一致 | 10 |
 | Phase 11 (DEBT-03) 排最后 | 纯文档，无代码依赖，不阻塞任何功能交付 | 11 |
 
+### Decisions (v1.3 — locked at roadmap)
+
+| Decision | Rationale | Phase |
+|----------|-----------|-------|
+| TemplateAggregator 不实现 LogProcessor trait | LogProcessor::process() 接收 &self，统计累积需 &mut self；加入 Pipeline 破坏 pipeline.is_empty() 快路径 | 13 |
+| 使用 hdrhistogram::Histogram<u64> 存储耗时样本 | Vec<u64> 全量存储在 5M 记录规模下单热模板达 40MB，多模板叠加超 200MB，打破恒定内存承诺；hdrhistogram ~24KB/模板，误差 <2% | 13 |
+| plotters SVG-only 配置（排除 bitmap 后端） | 无字体/图像系统依赖；禁止 charts-rs（字体依赖）和 charming（JS 渲染器） | 15 |
+| observe() 接收已归一化 key（非原始 SQL） | 避免 TemplateAggregator 内部重复归一化，key 稳定性由 Phase 12 归一化函数保证 | 13 |
+| 并行 CSV 路径采用 map-reduce merge() 策略 | 每 rayon task 独立 TemplateAggregator，主线程合并，消除锁竞争 | 13 |
+
 ### Blockers
 
 None.
@@ -60,3 +72,5 @@ None.
 | PERF-02 | CSV real-file ≥10% 真实量化（sqllogs/ 环境限制） | Accepted defer | v1.1 |
 | FILTER-04 | OR 条件组合 | Future Requirements | v1.1 |
 | FILTER-05 | 跨字段联合条件 | Future Requirements | v1.1 |
+| TMPL-03 | 独立 JSON 报告输出 | Future Requirements (v1.4+) | v1.3 |
+| TMPL-03b | 独立 CSV 报告输出 | Future Requirements (v1.4+) | v1.3 |
