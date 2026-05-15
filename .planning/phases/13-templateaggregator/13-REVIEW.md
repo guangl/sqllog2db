@@ -20,6 +20,8 @@ fixes_applied:
   - WR-01: 97405bb
   - WR-02: 95f448c
   - WR-03: 8dba975
+  - IN-01: e32ba14
+  - IN-02: 14e9eb1
 ---
 
 # Phase 13: Code Review Report
