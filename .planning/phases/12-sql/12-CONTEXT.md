@@ -36,7 +36,7 @@
 ### TemplateAnalysisConfig
 
 - **D-10:** `TemplateAnalysisConfig` 仅含 `enabled: bool`，不预定义后续阶段字段
-- **D-11:** 放入 `src/config.rs`，嵌套在 `FeaturesConfig` 下（与 `ReplaceParametersConfig` 并列）
+- **D-11:** 放入 `src/features/mod.rs`，嵌套在 `FeaturesConfig` 下（与 `ReplaceParametersConfig` 并列）
 - **D-12:** TOML 路径：`[features.template_analysis]`，字段 `enabled = true/false`（默认 `false`）
 
 ### 归一化在热循环中的调用
