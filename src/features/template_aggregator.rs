@@ -64,7 +64,9 @@ impl TemplateAggregator {
             .entry(key.to_string())
             .or_insert_with(|| TemplateEntry::new(ts.to_string()));
 
-        let _ = entry.histogram.record(exectime_us);
+        // 箝位到 [1, 60_000_000]：0us（< 1ms 的缓存命中查询）和超长慢查询都能计入（WR-01）
+        let clamped = exectime_us.clamp(1, 60_000_000);
+        let _ = entry.histogram.record(clamped);
 
         if ts < entry.first_seen.as_str() {
             entry.first_seen = ts.to_string();
