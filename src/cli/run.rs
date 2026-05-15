@@ -222,6 +222,13 @@ fn process_log_file(
                                 None
                             };
 
+                            // 先检查配额，再聚合（CR-02：避免对未导出记录计入统计）
+                            if let Some(remaining) = limit {
+                                if records_in_file >= remaining {
+                                    break 'outer;
+                                }
+                            }
+
                             // 模板聚合：仅对 DML 记录（有 tag）生效；PARAMS 记录不计入统计。
                             if let Some(ref mut agg) = aggregator {
                                 if record.tag.is_some() {
@@ -233,13 +240,6 @@ fn process_log_file(
                                     )]
                                     let exectime_us = (pm.exectime * 1000.0) as u64;
                                     agg.observe(&tmpl_key, exectime_us, record.ts.as_ref());
-                                }
-                            }
-
-                            // 检查是否即将超出本文件的剩余配额
-                            if let Some(remaining) = limit {
-                                if records_in_file >= remaining {
-                                    break 'outer;
                                 }
                             }
 
