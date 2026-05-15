@@ -118,6 +118,12 @@ pub fn handle_show_config(cfg: &Config, config_path: &str, diff: bool) {
         }
         println!();
     }
+
+    if let Some(ta) = &cfg.features.template_analysis {
+        println!("{}", color::cyan("[features.template_analysis]"));
+        kv("enabled", &ta.enabled.to_string(), None, diff);
+        println!();
+    }
 }
 
 /// Print a key=value line, optionally highlighting if the value differs from its default.
