@@ -251,15 +251,13 @@ impl CsvExporter {
                             line_buf.extend_from_slice(itoa_buf.format(pm.exec_id).as_bytes());
                         }
                     }
-                    14 => {
-                        // D-03：normalize=false 时跳过 normalized_sql，与 header 逻辑一致
-                        if normalize {
-                            w_sep!();
-                            if let Some(ns) = normalized_sql {
-                                line_buf.push(b'"');
-                                write_csv_escaped(line_buf, ns.as_bytes());
-                                line_buf.push(b'"');
-                            }
+                    // D-03：normalize=false 时跳过 normalized_sql，与 header 逻辑一致
+                    14 if normalize => {
+                        w_sep!();
+                        if let Some(ns) = normalized_sql {
+                            line_buf.push(b'"');
+                            write_csv_escaped(line_buf, ns.as_bytes());
+                            line_buf.push(b'"');
                         }
                     }
                     _ => {}
