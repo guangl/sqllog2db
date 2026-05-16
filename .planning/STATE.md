@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQL 模板分析 & 可视化
-status: in_progress
+status: shipped
 last_updated: "2026-05-17T00:00:00.000Z"
-last_activity: 2026-05-17 -- Phase 16 COMPLETE (Plan 16-05: trend_line + user_pie wired into generate_charts(); 418 tests pass)
+last_activity: 2026-05-17 -- v1.3 milestone COMPLETE (archived, git tag v1.3)
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 19
+  completed_plans: 19
   percent: 100
 ---
 
@@ -17,16 +17,16 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-15 — milestone v1.3 started)
+See: .planning/PROJECT.md (updated 2026-05-17 after v1.3 milestone)
 
 **Core value:** 用户能够精确指定"导出哪些记录的哪些字段"——过滤逻辑清晰可配置，输出结果完全可控
-**Current focus:** v1.3 — SQL 模板分析 & 可视化
+**Current focus:** v1.3 已发布 ✅ — 准备规划 v1.4
 
 ## Current Position
 
-Phase: 16 — 剩余图表 (COMPLETE)
-Status: Phase 16 全部 5/5 计划完成；trend_line + user_pie SVG 图表实现并接入 generate_charts()，dead_code 清理完毕，418 tests pass
-Last activity: 2026-05-17 -- Phase 16 COMPLETE (418 tests pass, cargo clippy clean)
+Milestone: v1.3 — SQL 模板分析 & 可视化 (SHIPPED 2026-05-17)
+Status: 5 phases / 19 plans 全部完成，归档完毕，git tag v1.3 已创建
+Last activity: 2026-05-17 -- v1.3 milestone archived
 
 Progress: [██████████] Phase 16 complete — v1.3 milestone 全部可视化需求完成
 

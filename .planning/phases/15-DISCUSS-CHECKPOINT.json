@@ -1,0 +1,18 @@
+{
+  "phase": "15",
+  "phase_name": "SVG 图表基础设施 + 前两类图表",
+  "gathered": "2026-05-16",
+  "areas_completed": ["直方图桶数据来源", "ChartsConfig 结构设计", "Top N 条形图细节"],
+  "decisions": {
+    "histogram_data_source": "在 finalize() 之前生成图表，直接访问 TemplateAggregator 原始 histogram",
+    "histogram_granularity": "Top N 模板各自独立一张 latency_histogram_<key>.svg",
+    "histogram_x_axis": "对数轴（X 轴按 hdrhistogram bucket 对数刻度展示耗时区间）",
+    "charts_config_location": "独立 [features.charts] 段，与 template_analysis 解耦",
+    "charts_config_fields": "output_dir + top_n（默认 10）+ 每图类独立开关（frequency_bar: true/false、latency_hist: true/false，默认全开）",
+    "charts_config_validation": "charts 存在但 template_analysis.enabled = false 时报错",
+    "bar_chart_label_truncation": "Y 轴标签截断到 40 字符 + '…'",
+    "bar_chart_size": "1200x600 像素，边距和标题由 Claude 决定",
+    "bar_chart_x_axis": "执行次数（count），横向条形图，频率降序排列"
+  },
+  "areas_remaining": ["模块代码结构"]
+}

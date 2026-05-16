@@ -1,0 +1,40 @@
+{
+  "phase": "13",
+  "phase_name": "TemplateAggregator 流式统计累积器",
+  "timestamp": "2026-05-16T00:00:00Z",
+  "areas_completed": ["耗时单位", "first_seen/last_seen 类型"],
+  "areas_remaining": ["聚合开关设计"],
+  "decisions": {
+    "耗时单位": [
+      {
+        "question": "hdrhistogram 存储单位选哪个？",
+        "answer": "微秒 µs：(pm.exectime * 1000.0) as u64",
+        "options_presented": ["微秒 µs（推荐）", "毫秒 ms"]
+      },
+      {
+        "question": "hdrhistogram sigfig 选多少？",
+        "answer": "sigfig=2，~24 KB/模板",
+        "options_presented": ["sigfig=2（推荐）", "sigfig=3"]
+      },
+      {
+        "question": "hdrhistogram high 设为多少 µs？",
+        "answer": "60_000_000 µs（60秒）",
+        "options_presented": ["60_000_000 µs（推荐）", "3_600_000_000 µs"]
+      }
+    ],
+    "first_seen/last_seen 类型": [
+      {
+        "question": "first_seen/last_seen 用什么类型存储？",
+        "answer": "String 原始字符串",
+        "options_presented": ["String 原始字符串（推荐）", "i64 Unix 时间戳 ms"]
+      },
+      {
+        "question": "merge() 合并时 first_seen/last_seen 的语义？",
+        "answer": "字符串字典序比较 min/max",
+        "options_presented": ["字符串字典序比较 min/max（推荐）", "只保留其中一个 aggregator 的值"]
+      }
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": []
+}

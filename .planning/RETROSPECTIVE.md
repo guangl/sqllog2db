@@ -1,5 +1,52 @@
 # Retrospective
 
+## Milestone: v1.3 — SQL 模板分析 & 可视化
+
+**Shipped:** 2026-05-17
+**Phases:** 5 | **Plans:** 19
+
+### What Was Built
+
+- `normalize_template()` 共享扫描引擎（`ScanMode` enum 复用 `fingerprint()` 基础设施）——注释去除、IN 折叠、关键字大写、字面量保护四项变换
+- `TemplateAggregator` 侧路径聚合——`Option<&mut TemplateAggregator>` 绑路，hdrhistogram ~24KB/模板，rayon map-reduce merge，`pipeline.is_empty()` 快路径零影响
+- 双路统计输出——SQLite `sql_templates` 表（单事务 INSERT）+ CSV `*_templates.csv` 伴随文件（itoa 零分配）
+- SVG 图表基础设施——plotters SVG-only，Top N 频率横向条形图 + 对数轴耗时直方图
+- 时间趋势折线图（`hour_counts` BTreeMap 小时桶）+ 用户/Schema 饼图（`user_counts` AHashMap + HSL 颜色生成）
+
+### What Worked
+
+- **侧路径设计（Option<&mut T>）** — 避免了 `TemplateAggregator` 实现 `LogProcessor` 的架构困难（`process()` 要求 `&self`），直接解决了可变性冲突
+- **ScanMode 枚举复用扫描引擎** — Phase 12 复用 `fingerprint()` 的扫描状态机，避免了维护两套几乎相同的 SQL 扫描代码
+- **骨架 + `#[allow(dead_code)]` 渐进接入** — Phase 14/15 的骨架阶段先用 `#[allow(dead_code)]` 占位，后续 Plan 接入后自动消除；与 v1.0/v1.2 相同的成熟模式
+- **plotters SVG-only 约束** — 从一开始排除 bitmap 后端，避免了字体/图像系统依赖，跨平台构建干净
+
+### What Was Inefficient
+
+- **ROADMAP.md 进度表陈旧** — Phase 12 实际 3/3 完成但 ROADMAP 显示 "0/3 Planned"，Phase 15 显示 "2/5" 但实际 5/5——进度表未同步执行状态
+- **VERIFICATION.md 文档缺失** — 4 个 phases（12/13/14/16）缺少 VERIFICATION.md，导致审计 `gaps_found`；代码已验证但文档记录滞后
+- **REQUIREMENTS.md traceability 表格过期** — CHART-01~05 全部显示 Pending，实际已完成；计划阶段写入后未同步更新
+
+### Patterns Established
+
+- `Option<&mut TemplateAggregator>` 侧路径——安全、零额外 trait 实现、热路径隔离的可变聚合器接入模式
+- SVG 图表模块结构：`src/charts/mod.rs` (generate_charts dispatch) + 各图表独立文件（frequency_bar/latency_hist/trend_line/user_pie）
+- `draw_*` 函数规范：接收借用数据 + 路径 + `top_n`，显式调用 `root.present()?`（flush 保证）
+- BTreeMap 时间桶（前 13 字符 `YYYY-MM-DD HH`）——有序遍历免排序，单日/多日标签格式自动切换
+
+### Key Lessons
+
+- 侧路径聚合优于 trait 实现：当聚合器需要可变性而 trait 方法是不可变引用时，`Option<&mut T>` 参数是比 `Mutex<T>` 更简洁的解决方案
+- 文档债务应与代码同步——VERIFICATION.md 在 plan 完成时就应创建，而非留到里程碑关闭时补签
+- plotters SVG 对数轴需要手动离散化 X 轴标签（`iter_recorded()` bucket 值不均匀），这不是 API 缺陷而是数据特性
+
+### Cost Observations
+
+- Timeline: 3 days (2026-05-15 → 2026-05-17)
+- Commits: ~102 since v1.2
+- Notable: Phase 16 review cycle（16-REVIEW.md → 16-REVIEW-FIX.md）在同一天内完成，SVG 渲染问题（黑色遮层、canvas 高度、数值溢出）均在首轮 review 中发现并修复
+
+---
+
 ## Milestone: v1.0 — 增强 SQL 内容过滤与字段投影
 
 **Shipped:** 2026-04-18

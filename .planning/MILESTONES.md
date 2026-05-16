@@ -1,5 +1,41 @@
 # Milestones
 
+## v1.3 — SQL 模板分析 & 可视化
+
+**Shipped:** 2026-05-17
+**Phases:** 12–16 | **Plans:** 19 | **Commits:** ~102
+
+### Delivered
+
+实现完整的 SQL 模板分析流水线：`normalize_template()` 归一化引擎、`TemplateAggregator` 流式统计累积器（hdrhistogram）、双路统计输出（SQLite 表 + CSV 伴随文件）、四类 SVG 图表（频率条形图、耗时直方图、时间趋势折线图、用户饼图）。全程恒定内存，热循环快路径零影响。418 项测试通过，cargo clippy 零警告。
+
+### Key Accomplishments
+
+1. `normalize_template()` 共享扫描引擎——注释去除、IN 折叠、关键字大写、字面量保护，`ScanMode` 枚举复用 `fingerprint()` 扫描基础（TMPL-01，Phase 12）
+2. TemplateAggregator 侧路径聚合——`Option<&mut TemplateAggregator>` 绑路，hdrhistogram ~24KB/模板，rayon map-reduce 合并，`pipeline.is_empty()` 快路径不受影响（TMPL-02，Phase 13）
+3. 双路统计输出——SQLite `sql_templates` 表（单事务批量 INSERT）+ CSV `*_templates.csv` 伴随文件（itoa 零分配序列化），写入在 `finalize()` 之后（TMPL-04，Phase 14）
+4. SVG 图表基础设施——plotters SVG-only（无字体/图像系统依赖），Top N 频率横向条形图 + 对数轴耗时直方图，`generate_charts` 在 `finalize()` 前调用（CHART-01/02/03，Phase 15）
+5. 时间趋势折线图 + 用户饼图——`hour_counts` BTreeMap 小时桶 + `user_counts` AHashMap 用户桶，HSL 颜色生成，"Others" 溢出聚合（CHART-04/05，Phase 16）
+
+### Stats
+
+- Rust LOC: ~14,164 (src/)
+- Src files modified: 18 (+3,121 / -96 lines)
+- Test suite: 418 tests passing
+- Timeline: 3 days (2026-05-15 → 2026-05-17)
+- Commits: ~102
+
+### Known Deferred Items at Close
+
+- VERIFICATION.md 缺失（Phases 12/13/14/16）— 文档差距，非功能差距（见 v1.3-MILESTONE-AUDIT.md）
+
+### Archive
+
+- `.planning/milestones/v1.3-ROADMAP.md`
+- `.planning/milestones/v1.3-REQUIREMENTS.md`
+
+---
+
 ## v1.2 — 质量强化 & 性能深化
 
 **Shipped:** 2026-05-15
