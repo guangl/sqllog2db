@@ -4,7 +4,7 @@ milestone: v1.3
 milestone_name: SQL 模板分析 & 可视化
 status: in_progress
 last_updated: "2026-05-17T00:00:00.000Z"
-last_activity: 2026-05-17 -- Phase 15 COMPLETE (Plans 03/04/05: plotters charts module + frequency_bar + latency_hist + run.rs integration)
+last_activity: 2026-05-17 -- Phase 16 COMPLETE (Plan 16-05: trend_line + user_pie wired into generate_charts(); 418 tests pass)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-05-15 — milestone v1.3 started)
 
 ## Current Position
 
-Phase: 15 — SVG 可视化图表 (COMPLETE)
-Status: Phase 15 全部 5/5 计划完成；plotters 0.3.7 集成、frequency_bar + latency_hist SVG 图表、run.rs 两条路径接入、dead_code 清理全部完成
-Last activity: 2026-05-17 -- Phase 15 COMPLETE (416 tests pass, cargo clippy clean)
+Phase: 16 — 剩余图表 (COMPLETE)
+Status: Phase 16 全部 5/5 计划完成；trend_line + user_pie SVG 图表实现并接入 generate_charts()，dead_code 清理完毕，418 tests pass
+Last activity: 2026-05-17 -- Phase 16 COMPLETE (418 tests pass, cargo clippy clean)
 
-Progress: [██████████] Phase 15 complete — Phase 16 剩余图表为下一阶段
+Progress: [██████████] Phase 16 complete — v1.3 milestone 全部可视化需求完成
 
 ## Performance Metrics
 

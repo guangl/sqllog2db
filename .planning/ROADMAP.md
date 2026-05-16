@@ -136,7 +136,7 @@ Cross-cutting constraints:
 - [x] 16-02-PLAN.md — ChartsConfig 新增 trend_line/user_pie 开关
 - [x] 16-03-PLAN.md — 实现 trend_line.rs 时间趋势折线图
 - [x] 16-04-PLAN.md — 实现 user_pie.rs 用户执行占比饼图
-- [ ] 16-05-PLAN.md — charts/mod.rs 接入新图表模块
+- [x] 16-05-PLAN.md — charts/mod.rs 接入新图表模块
 **UI hint**: yes
 
 ## Progress
@@ -158,4 +158,4 @@ Cross-cutting constraints:
 | 13. TemplateAggregator 流式统计累积器 | v1.3 | 2/2 | Complete   | 2026-05-15 |
 | 14. Exporter 集成输出 | v1.3 | 4/4 | Complete   | 2026-05-16 |
 | 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 2/5 | In Progress | - |
-| 16. 剩余图表 | v1.3 | 0/? | Not started | - |
+| 16. 剩余图表 | v1.3 | 5/5 | Complete | 2026-05-17 |
