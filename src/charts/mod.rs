@@ -1,5 +1,6 @@
 pub mod frequency_bar;
 pub mod latency_hist;
+pub mod trend_line;
 
 use crate::error::{FileError, Result};
 use crate::features::{ChartEntry, ChartsConfig};
