@@ -91,7 +91,11 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   2. CSV 导出模式下，run 结束后在 CSV 文件同目录生成 `<basename>_templates.csv` 伴随文件，列结构与 SQLite 表一致
   3. `sql_templates` 写入在主 exporter `finalize()` 之后执行，任何主导出提前终止时伴随文件不被写出（数据完整性保证）
   4. 未启用模板统计（`template_analysis.enabled = false`）时，SQLite 数据库不创建 `sql_templates` 表，CSV 目录不生成伴随文件
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 14-01-PLAN.md — Exporter trait 新增 write_template_stats 默认方法 + ExporterKind 透传 + ExporterManager 公共接口 + DryRunExporter no-op 覆盖 + features::TemplateStats re-export
+- [ ] 14-02-PLAN.md — SqliteExporter::write_template_stats 实现（DROP/CREATE sql_templates 表 + 单事务批量 INSERT，遵循 overwrite/append 语义）+ 3 项集成测试
+- [ ] 14-03-PLAN.md — CsvExporter::write_template_stats 实现（伴随文件路径推导 + ensure_parent_dir + write_csv_escaped + itoa + flush）+ 2 项集成测试
+- [ ] 14-04-PLAN.md — run.rs 顺序/并行两条路径接入 write_template_stats 调用（并行路径用临时 ExporterManager::from_csv）+ disabled-state 集成测试
 **UI hint**: no
 
 ### Phase 15: SVG 图表基础设施 + 前两类图表
@@ -136,6 +140,6 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 11. Nyquist 补签 | v1.2 | 2/2 | Complete | 2026-05-15 |
 | 12. SQL 模板归一化引擎 | v1.3 | 0/3 | Planned | - |
 | 13. TemplateAggregator 流式统计累积器 | v1.3 | 2/2 | Complete   | 2026-05-15 |
-| 14. Exporter 集成输出 | v1.3 | 0/? | Not started | - |
+| 14. Exporter 集成输出 | v1.3 | 0/4 | Planned | - |
 | 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 0/? | Not started | - |
 | 16. 剩余图表 | v1.3 | 0/? | Not started | - |
