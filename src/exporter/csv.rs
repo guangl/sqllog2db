@@ -22,7 +22,7 @@ fn write_csv_escaped(buf: &mut Vec<u8>, bytes: &[u8]) {
 }
 
 /// 根据主 CSV 路径推导伴随文件路径（D-09）：`<stem>_templates.csv`
-fn build_companion_path(base_path: &Path) -> PathBuf {
+pub(crate) fn build_companion_path(base_path: &Path) -> PathBuf {
     let stem = base_path.file_stem().unwrap_or_default();
     base_path.with_file_name(format!("{}_templates.csv", stem.to_string_lossy()))
 }
@@ -72,7 +72,10 @@ fn io_err(path: &Path, reason: String) -> Error {
 }
 
 /// 将模板统计写入伴随 CSV 文件（D-10：始终覆盖写入）
-fn write_companion_rows(path: &Path, stats: &[crate::features::TemplateStats]) -> Result<()> {
+pub(crate) fn write_companion_rows(
+    path: &Path,
+    stats: &[crate::features::TemplateStats],
+) -> Result<()> {
     ensure_parent_dir(path).map_err(|e| io_err(path, format!("create dir failed: {e}")))?;
     let file =
         File::create(path).map_err(|e| io_err(path, format!("create companion failed: {e}")))?;

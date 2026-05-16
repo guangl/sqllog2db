@@ -803,9 +803,10 @@ pub fn handle_run(
         if let Some(ref stats) = template_stats {
             info!("Template analysis: {} unique templates", stats.len());
             if let Some(csv_cfg) = final_cfg.exporter.csv.as_ref() {
-                let tmp_csv = CsvExporter::new(&csv_cfg.file);
-                let mut tmp_em = ExporterManager::from_csv(tmp_csv);
-                tmp_em.write_template_stats(stats, Some(Path::new(&csv_cfg.file)))?;
+                // 直接调用 pub(crate) 函数，无需构造未初始化的 CsvExporter + ExporterManager 壳。
+                let base_path = Path::new(&csv_cfg.file);
+                let companion = crate::exporter::csv::build_companion_path(base_path);
+                crate::exporter::csv::write_companion_rows(&companion, stats)?;
             }
         }
 
