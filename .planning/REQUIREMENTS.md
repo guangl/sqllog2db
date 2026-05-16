@@ -9,7 +9,7 @@
 
 - [ ] **TMPL-01**: 用户可在 config 中启用模板归一化，`normalize_template()` 在 `replace_parameters` 之后对 sql_text 执行注释去除、IN 列表折叠、关键字大小写统一，生成稳定的模板 key
 - [x] **TMPL-02**: 用户可启用模板统计聚合，run 结束后每个模板输出 count + avg/min/max + p50/p95/p99 + first_seen/last_seen；使用 hdrhistogram（~24 KB/模板），禁止 Vec 全量样本存储
-- [ ] **TMPL-04**: SQLite 导出时自动写入 `sql_templates` 统计表；CSV 导出时自动生成 `*_templates.csv` 伴随文件
+- [x] **TMPL-04**: SQLite 导出时自动写入 `sql_templates` 统计表；CSV 导出时自动生成 `*_templates.csv` 伴随文件
 
 ### SVG 图表生成（CHART）
 
@@ -42,7 +42,7 @@
 |-------------|-------|--------|
 | TMPL-01 | Phase 12 | Pending |
 | TMPL-02 | Phase 13 | Complete |
-| TMPL-04 | Phase 14 | Pending |
+| TMPL-04 | Phase 14 | Complete |
 | CHART-01 | Phase 15 | Pending |
 | CHART-02 | Phase 15 | Pending |
 | CHART-03 | Phase 15 | Pending |
