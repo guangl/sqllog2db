@@ -36,6 +36,15 @@ pub struct TemplateStats {
     pub last_seen: String,
 }
 
+/// 图表生成专用的只读视图：在 finalize 前调用，不消耗 self
+#[derive(Debug)]
+#[allow(dead_code)] // Phase 15 Plan 03+ 将实现图表生成时使用
+pub struct ChartEntry<'a> {
+    pub key: &'a str,
+    pub count: u64,
+    pub histogram: &'a hdrhistogram::Histogram<u64>,
+}
+
 /// SQL 模板执行时间聚合器
 ///
 /// 每个模板 key（来自 `normalize_template()`）对应一个 hdrhistogram，
@@ -127,6 +136,24 @@ impl TemplateAggregator {
                 .then_with(|| a.template_key.cmp(&b.template_key))
         });
         stats
+    }
+
+    /// 返回图表生成专用的只读迭代器，按 count 降序排列（count 相同时按 key 升序）
+    ///
+    /// 在 `finalize()` 之前调用，不消耗 self。
+    #[allow(dead_code)] // Phase 15 Plan 03+ 将实现图表生成时使用
+    pub fn iter_chart_entries(&self) -> impl Iterator<Item = ChartEntry<'_>> {
+        let mut entries: Vec<ChartEntry<'_>> = self
+            .entries
+            .iter()
+            .map(|(k, entry)| ChartEntry {
+                key: k.as_str(),
+                count: entry.histogram.len(),
+                histogram: &entry.histogram,
+            })
+            .collect();
+        entries.sort_unstable_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(b.key)));
+        entries.into_iter()
     }
 }
 
@@ -251,5 +278,54 @@ mod tests {
         assert_eq!(stats[1].count, 2);
         assert_eq!(stats[2].template_key, "key_c");
         assert_eq!(stats[2].count, 1);
+    }
+
+    #[test]
+    fn test_iter_chart_entries_empty() {
+        let agg = TemplateAggregator::new();
+        let entries: Vec<_> = agg.iter_chart_entries().collect();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_iter_chart_entries_single_key() {
+        let mut agg = TemplateAggregator::new();
+        let key = "SELECT * FROM t WHERE id = ?";
+        let ts = "2025-01-15 10:00:00";
+        agg.observe(key, 100, ts);
+        agg.observe(key, 200, ts);
+        agg.observe(key, 300, ts);
+
+        let entries: Vec<_> = agg.iter_chart_entries().collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].key, key);
+        assert_eq!(entries[0].count, 3);
+        // histogram 引用可调用 .len() 返回观测数量
+        assert_eq!(entries[0].histogram.len(), 3);
+    }
+
+    #[test]
+    fn test_iter_chart_entries_sort_order() {
+        let mut agg = TemplateAggregator::new();
+        let ts = "2025-01-15 10:00:00";
+
+        // key_a 2次，key_b 5次，key_c 1次 → 迭代结果应为 [key_b(5), key_a(2), key_c(1)]
+        agg.observe("key_a", 100, ts);
+        agg.observe("key_a", 200, ts);
+
+        for _ in 0..5 {
+            agg.observe("key_b", 300, ts);
+        }
+
+        agg.observe("key_c", 400, ts);
+
+        let entries: Vec<_> = agg.iter_chart_entries().collect();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].key, "key_b");
+        assert_eq!(entries[0].count, 5);
+        assert_eq!(entries[1].key, "key_a");
+        assert_eq!(entries[1].count, 2);
+        assert_eq!(entries[2].key, "key_c");
+        assert_eq!(entries[2].count, 1);
     }
 }
