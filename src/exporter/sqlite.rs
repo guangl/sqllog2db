@@ -132,38 +132,6 @@ impl SqliteExporter {
         })
     }
 
-    /// 根据 overwrite/append 语义为 `sql_templates` 表执行 DROP + CREATE DDL。
-    ///
-    /// - `overwrite=true`：先 DROP 旧表（若存在），再 CREATE TABLE IF NOT EXISTS
-    /// - `overwrite=false`：直接 CREATE TABLE IF NOT EXISTS（保留已有行）
-    fn create_or_replace_template_table(&self) -> Result<()> {
-        let overwrite = self.overwrite;
-        let conn = self
-            .conn
-            .as_ref()
-            .ok_or_else(|| Self::db_err("create_or_replace_template_table: not initialized"))?;
-        if overwrite {
-            conn.execute("DROP TABLE IF EXISTS sql_templates", [])
-                .map_err(|e| Self::db_err(format!("drop sql_templates failed: {e}")))?;
-        }
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS sql_templates \
-             (template_key TEXT NOT NULL PRIMARY KEY, \
-              count INTEGER NOT NULL, \
-              avg_us INTEGER NOT NULL, \
-              min_us INTEGER NOT NULL, \
-              max_us INTEGER NOT NULL, \
-              p50_us INTEGER NOT NULL, \
-              p95_us INTEGER NOT NULL, \
-              p99_us INTEGER NOT NULL, \
-              first_seen TEXT NOT NULL, \
-              last_seen TEXT NOT NULL)",
-            [],
-        )
-        .map_err(|e| Self::db_err(format!("create sql_templates failed: {e}")))?;
-        Ok(())
-    }
-
     /// 批量提交：每写入 `batch_size` 行后执行一次 `COMMIT; BEGIN`，
     /// 将大事务拆分为多个小事务，降低内存占用并提升写入稳定性。
     fn batch_commit_if_needed(&mut self) -> Result<()> {
@@ -443,13 +411,33 @@ impl Exporter for SqliteExporter {
         stats: &[crate::features::TemplateStats],
         _final_path: Option<&std::path::Path>,
     ) -> Result<()> {
-        self.create_or_replace_template_table()?;
         let conn = self
             .conn
             .as_ref()
             .ok_or_else(|| Self::db_err("write_template_stats: not initialized"))?;
+        // BEGIN 必须在 DDL 之前：SQLite 支持事务性 DDL，将 DROP/CREATE 与 INSERT
+        // 合并到同一事务内，确保任意步骤失败时均可整体回滚，不留半截建表结果。
         conn.execute_batch("BEGIN;")
             .map_err(|e| Self::db_err(format!("begin failed: {e}")))?;
+        if self.overwrite {
+            conn.execute("DROP TABLE IF EXISTS sql_templates", [])
+                .map_err(|e| Self::db_err(format!("drop sql_templates failed: {e}")))?;
+        }
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sql_templates \
+             (template_key TEXT NOT NULL PRIMARY KEY, \
+              count INTEGER NOT NULL, \
+              avg_us INTEGER NOT NULL, \
+              min_us INTEGER NOT NULL, \
+              max_us INTEGER NOT NULL, \
+              p50_us INTEGER NOT NULL, \
+              p95_us INTEGER NOT NULL, \
+              p99_us INTEGER NOT NULL, \
+              first_seen TEXT NOT NULL, \
+              last_seen TEXT NOT NULL)",
+            [],
+        )
+        .map_err(|e| Self::db_err(format!("create sql_templates failed: {e}")))?;
         #[allow(clippy::cast_possible_wrap)]
         for s in stats {
             #[rustfmt::skip]
