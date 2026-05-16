@@ -21,7 +21,7 @@ pub fn draw_trend_line(
     root.fill(&WHITE)
         .map_err(|e| to_write_err(output_path, e))?;
 
-    draw_chart(&root, &labels, &counts, max_count, n, output_path)
+    draw_chart(&root, &labels, &counts, max_count, n)
         .map_err(|e| box_err_to_write_err(output_path, &*e))?;
 
     root.present().map_err(|e| to_write_err(output_path, e))?;
@@ -61,7 +61,6 @@ fn draw_chart<DB: DrawingBackend>(
     counts: &[u64],
     max_count: u64,
     n: usize,
-    output_path: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error + 'static>>
 where
     DB::ErrorType: 'static,
@@ -109,7 +108,6 @@ where
             .map(|(i, &c)| Circle::new((SegmentValue::CenterOf(i), c), 4, LINE_COLOR.filled())),
     )?;
 
-    let _ = output_path;
     Ok(())
 }
 
