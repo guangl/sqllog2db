@@ -46,8 +46,6 @@ pub trait Exporter {
 
     /// 将 SQL 模板聚合统计写入导出目标。
     /// 默认实现为 no-op，向后兼容现有 exporter。
-    // Plan 04 将在 run.rs 接入此方法；骨架阶段暂未调用。
-    #[allow(dead_code)]
     fn write_template_stats(
         &mut self,
         stats: &[crate::features::TemplateStats],
@@ -118,7 +116,6 @@ impl ExporterKind {
     }
 
     #[inline]
-    #[allow(dead_code)]
     fn write_template_stats(
         &mut self,
         stats: &[crate::features::TemplateStats],
@@ -317,8 +314,6 @@ impl ExporterManager {
         Ok(())
     }
 
-    // Plan 04 将在 run.rs 接入此方法；骨架阶段暂未调用。
-    #[allow(dead_code)]
     pub fn write_template_stats(
         &mut self,
         stats: &[crate::features::TemplateStats],
