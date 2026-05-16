@@ -231,6 +231,9 @@ fn process_log_file(
 
                             // 模板聚合：仅对 DML 记录（有 tag）生效；PARAMS 记录不计入统计。
                             if let Some(ref mut agg) = aggregator {
+                                // 防御性检查：外层 `passes=true` 已隐含 DML 路径，
+                                // 但 needs_pm 也可对无 tag 的 PARAMS 记录成立（do_normalize 时）。
+                                // 此处显式排除 tag.is_none() 的记录，防止重构时意外计入 PARAMS。
                                 if record.tag.is_some() {
                                     let tmpl_key =
                                         crate::features::normalize_template(pm.sql.as_ref());
