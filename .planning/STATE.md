@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: SQL 模板分析 & 可视化
-status: Phase 15 — SVG 可视化图表 next
-last_updated: "2026-05-16T11:09:02.476Z"
-last_activity: 2026-05-16 -- Phase 14 completed (write_template_stats e2e wiring — SC-1 to SC-4)
+status: completed
+last_updated: "2026-05-16T15:39:09.123Z"
+last_activity: 2026-05-16 -- Phase 15 Wave 1 completed (ChartsConfig + ChartEntry/iter_chart_entries, 375 tests passing)
 progress:
   total_phases: 5
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 60
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 11
+  percent: 80
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-05-15 — milestone v1.3 started)
 
 ## Current Position
 
-Phase: 14 — Exporter 集成输出 (COMPLETED)
-Status: Phase 15 — SVG 可视化图表 next
-Last activity: 2026-05-16 -- Phase 14 completed (write_template_stats e2e wiring — SC-1 to SC-4)
+Phase: 15 — SVG 可视化图表 (IN PROGRESS — Wave 1 完成)
+Status: Phase 15 Wave 1 completed；待实现 Plan 03（Top-N 频率条形图）/ Plan 04（耗时直方图）/ Plan 05（run.rs 接入）
+Last activity: 2026-05-16 -- Phase 15 Wave 1 completed (ChartsConfig + ChartEntry/iter_chart_entries, 375 tests passing)
 
-Progress: [██████████] 100%
+Progress: [██████████] Wave 1 done — Plan 03/04/05 TBD
 
 ## Performance Metrics
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 |--------|--------------|-------------|
 | CSV synthetic benchmark | ~5.2M records/sec | ~5.2M records/sec (已达当前瓶颈，D-G1 未触发) |
 | SQLite (batch tx) | 35.4ms→7.1ms (5x) | 无回归（D-O3 ≤5% 容差） |
-| Test suite | 673 passing | 729 passing (+56) |
+| Test suite | 673 passing | 375 passing (lib only; Wave 1 +3 tests) |
 | Rust LOC | ~9,889 | ~11,139 |
 
 ## Accumulated Context
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 | observe() 接收已归一化 key（非原始 SQL） | 避免 TemplateAggregator 内部重复归一化，key 稳定性由 Phase 12 归一化函数保证 | 13 |
 | 并行 CSV 路径采用 map-reduce merge() 策略 | 每 rayon task 独立 TemplateAggregator，主线程合并，消除锁竞争 | 13 |
 | 骨架阶段用 #[allow(dead_code)] 抑制 write_template_stats lint | Plan 04 run.rs 接入后自动消除，无需额外清理 | 14 |
+| ChartsConfig/ChartEntry 骨架阶段 #[allow(dead_code/unused_imports)] | Plan 03/04/05 接入后自动消除；与 Phase 14 同等处理 | 15 |
 
 ### Blockers
 
