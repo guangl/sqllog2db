@@ -124,6 +124,20 @@ pub fn handle_show_config(cfg: &Config, config_path: &str, diff: bool) {
         kv("enabled", &ta.enabled.to_string(), None, diff);
         println!();
     }
+
+    if let Some(charts) = &cfg.features.charts {
+        println!("{}", color::cyan("[features.charts]"));
+        kv("output_dir", &charts.output_dir, None, diff);
+        kv("top_n", &charts.top_n.to_string(), None, diff);
+        kv(
+            "frequency_bar",
+            &charts.frequency_bar.to_string(),
+            None,
+            diff,
+        );
+        kv("latency_hist", &charts.latency_hist.to_string(), None, diff);
+        println!();
+    }
 }
 
 /// Print a key=value line, optionally highlighting if the value differs from its default.
