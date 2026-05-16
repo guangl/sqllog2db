@@ -77,6 +77,20 @@ impl Config {
                 }
             }
         }
+        if self.features.charts.is_some() {
+            let ta_enabled = self
+                .features
+                .template_analysis
+                .as_ref()
+                .is_some_and(|ta| ta.enabled);
+            if !ta_enabled {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts".to_string(),
+                    value: String::new(),
+                    reason: "启用 [features.charts] 需要先设置 [features.template_analysis]\nenabled = true".to_string(),
+                }));
+            }
+        }
         Ok(())
     }
 
@@ -124,6 +138,20 @@ impl Config {
                         ),
                     }));
                 }
+            }
+        }
+        if self.features.charts.is_some() {
+            let ta_enabled = self
+                .features
+                .template_analysis
+                .as_ref()
+                .is_some_and(|ta| ta.enabled);
+            if !ta_enabled {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts".to_string(),
+                    value: String::new(),
+                    reason: "启用 [features.charts] 需要先设置 [features.template_analysis]\nenabled = true".to_string(),
+                }));
             }
         }
 
@@ -257,6 +285,38 @@ impl Config {
                     .template_analysis
                     .get_or_insert_with(Default::default)
                     .enabled = parse_bool(value)?;
+            }
+
+            "features.charts.output_dir" => {
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .output_dir = value.to_string();
+            }
+            "features.charts.top_n" => {
+                let parsed = value.parse::<usize>().map_err(|_| {
+                    Error::Config(ConfigError::InvalidValue {
+                        field: key.to_string(),
+                        value: value.to_string(),
+                        reason: "expected a positive integer".to_string(),
+                    })
+                })?;
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .top_n = parsed;
+            }
+            "features.charts.frequency_bar" => {
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .frequency_bar = parse_bool(value)?;
+            }
+            "features.charts.latency_hist" => {
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .latency_hist = parse_bool(value)?;
             }
 
             _ => return Err(unknown()),
@@ -1065,5 +1125,111 @@ file = "out.csv"
         let cfg = default_config();
         assert!(cfg.validate().is_ok());
         assert!(cfg.validate_and_compile().is_ok());
+    }
+
+    // ── features.charts D-06 跨字段依赖校验 ───────────────────
+    #[test]
+    fn test_validate_charts_requires_template_analysis() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.charts]
+output_dir = "charts/"
+[features.template_analysis]
+enabled = false
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("features.charts"),
+            "错误信息应包含 features.charts，实际: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("[features.template_analysis]"),
+            "错误信息应包含 [features.template_analysis]，实际: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_charts_with_template_analysis_enabled_passes() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.charts]
+output_dir = "charts/"
+[features.template_analysis]
+enabled = true
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_and_compile_charts_requires_template_analysis() {
+        let toml = r#"
+[sqllog]
+path = "sqllogs"
+[features.charts]
+output_dir = "charts/"
+[exporter.csv]
+file = "out.csv"
+"#;
+        let cfg: Config = toml::from_str(toml).unwrap();
+        let result = cfg.validate_and_compile();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("features.charts"),
+            "错误信息应包含 features.charts，实际: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("[features.template_analysis]"),
+            "错误信息应包含 [features.template_analysis]，实际: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_apply_one_charts_output_dir() {
+        let mut cfg = Config::default();
+        cfg.apply_one("features.charts.output_dir", "mydir")
+            .expect("apply_one should succeed");
+        assert_eq!(cfg.features.charts.unwrap().output_dir, "mydir");
+    }
+
+    #[test]
+    fn test_apply_one_charts_top_n() {
+        let mut cfg = Config::default();
+        cfg.apply_one("features.charts.top_n", "20")
+            .expect("apply_one should succeed");
+        assert_eq!(cfg.features.charts.unwrap().top_n, 20);
+    }
+
+    #[test]
+    fn test_apply_one_charts_top_n_invalid() {
+        let mut cfg = Config::default();
+        let result = cfg.apply_one("features.charts.top_n", "abc");
+        assert!(result.is_err(), "非法整数应返回错误");
+    }
+
+    #[test]
+    fn test_apply_one_charts_frequency_bar_false() {
+        let mut cfg = Config::default();
+        cfg.apply_one("features.charts.frequency_bar", "false")
+            .expect("apply_one should succeed");
+        assert!(!cfg.features.charts.unwrap().frequency_bar);
+    }
+
+    #[test]
+    fn test_apply_one_charts_latency_hist_false() {
+        let mut cfg = Config::default();
+        cfg.apply_one("features.charts.latency_hist", "false")
+            .expect("apply_one should succeed");
+        assert!(!cfg.features.charts.unwrap().latency_hist);
     }
 }
