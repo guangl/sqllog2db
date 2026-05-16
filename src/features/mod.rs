@@ -136,6 +136,7 @@ pub struct TemplateAnalysisConfig {
 
 /// `[features.charts]` 配置段
 #[derive(Debug, Deserialize, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ChartsConfig {
     /// 图表输出目录（必填，无默认值）
     pub output_dir: String,
@@ -148,6 +149,14 @@ pub struct ChartsConfig {
     /// 是否生成延迟直方图（默认 true）
     #[serde(default = "default_true")]
     pub latency_hist: bool,
+    /// 是否生成时间趋势折线图（默认 true）
+    #[serde(default = "default_true")]
+    #[allow(dead_code)]
+    pub trend_line: bool,
+    /// 是否生成用户占比饼图（默认 true）
+    #[serde(default = "default_true")]
+    #[allow(dead_code)]
+    pub user_pie: bool,
 }
 
 impl Default for ChartsConfig {
@@ -157,6 +166,8 @@ impl Default for ChartsConfig {
             top_n: 10,
             frequency_bar: true,
             latency_hist: true,
+            trend_line: true,
+            user_pie: true,
         }
     }
 }
@@ -328,6 +339,8 @@ mod tests {
         assert_eq!(cfg.top_n, 10);
         assert!(cfg.frequency_bar);
         assert!(cfg.latency_hist);
+        assert!(cfg.trend_line);
+        assert!(cfg.user_pie);
     }
 
     #[test]
@@ -352,6 +365,8 @@ latency_hist = false
         assert_eq!(cfg.top_n, 5);
         assert!(!cfg.frequency_bar);
         assert!(!cfg.latency_hist);
+        assert!(cfg.trend_line); // defaults to true even when not in TOML
+        assert!(cfg.user_pie);
     }
 
     #[test]
@@ -439,6 +454,27 @@ latency_hist = false
         let indices = cfg.ordered_field_indices();
         let expected: Vec<usize> = (0..15).rev().collect();
         assert_eq!(indices, expected);
+    }
+
+    #[test]
+    fn test_charts_config_deserialize_trend_user_flags() {
+        let toml_str = r#"
+output_dir = "out/"
+trend_line = false
+user_pie = false
+"#;
+        let cfg: ChartsConfig = toml::from_str(toml_str).unwrap();
+        assert!(!cfg.trend_line);
+        assert!(!cfg.user_pie);
+        assert!(cfg.frequency_bar); // defaults to true
+        assert!(cfg.latency_hist); // defaults to true
+    }
+
+    #[test]
+    fn test_charts_config_new_fields_default_true() {
+        let cfg: ChartsConfig = toml::from_str(r#"output_dir = "out/""#).unwrap();
+        assert!(cfg.trend_line);
+        assert!(cfg.user_pie);
     }
 
     #[test]
