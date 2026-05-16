@@ -52,9 +52,13 @@ fn format_companion_row(
     buf.push(b',');
     buf.extend_from_slice(itoa_buf.format(s.p99_us).as_bytes());
     buf.push(b',');
-    buf.extend_from_slice(s.first_seen.as_bytes());
+    buf.push(b'"');
+    write_csv_escaped(buf, s.first_seen.as_bytes());
+    buf.push(b'"');
     buf.push(b',');
-    buf.extend_from_slice(s.last_seen.as_bytes());
+    buf.push(b'"');
+    write_csv_escaped(buf, s.last_seen.as_bytes());
+    buf.push(b'"');
     buf.push(b'\n');
 }
 
@@ -1116,12 +1120,26 @@ mod tests {
         );
 
         // 验证数值字段可直接 parse
-        // 格式："<key>",count,avg_us,...
-        // 找到第一个 " 结束的位置后的数值
-        let after_key = &first_row[first_row.rfind('"').unwrap() + 1..];
+        // 格式："<key>",count,avg_us,...,p99_us,"first_seen","last_seen"
+        // template_key 以 ," 开头，找到 key 结束引号后提取数值部分（不含末尾时间戳字段）
+        // 第一个 template_key 是 `"SELECT * FROM t WHERE name = ""John"", age = ?"`,
+        // 末尾 `?"` 即 key 结束。之后的格式为 ,count,avg,...,p99_us,"first_seen","last_seen"
+        // 用逗号分割，提取第 1、2 个数值字段（count, avg_us）。
+        let after_key = {
+            // key 的结束引号后紧跟 `,count`，key 内部含有 `?` 后接 `"` 的组合。
+            // 找到第一组 `,"` 之后的第一个逗号分隔边界——更稳妥地直接按 CSV 字段拆分。
+            // 简化做法：用 `","` 定位 key 的末尾（key 以 `?"` 结尾，其后紧随 `,42,`）。
+            // key 末尾实际是 `= ?"`, 故找 `?"` 再跳过一个 `,` 最简单。
+            let end_marker = "?\"";
+            let pos = first_row.find(end_marker).expect("应找到 key 结尾标记");
+            &first_row[pos + end_marker.len()..]
+        };
         let nums: Vec<&str> = after_key.trim_start_matches(',').split(',').collect();
         assert_eq!(nums[0].parse::<u64>().unwrap(), 42u64);
         assert_eq!(nums[1].parse::<u64>().unwrap(), 150u64);
+        // first_seen 和 last_seen 应被双引号包裹（nums[7] 和 nums[8]）
+        assert_eq!(nums[7], "\"2025-01-01 00:00:00\"");
+        assert_eq!(nums[8], "\"2025-01-01 12:00:00\"");
     }
 
     /// TMPL-04-H：验证 `final_path` 覆盖路径推导（D-09）
