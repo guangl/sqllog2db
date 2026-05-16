@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use hdrhistogram::Histogram;
 
 /// 单个 SQL 模板的内部统计条目（私有）
@@ -52,6 +54,8 @@ pub struct ChartEntry<'a> {
 #[derive(Debug, Default)]
 pub struct TemplateAggregator {
     entries: ahash::AHashMap<String, TemplateEntry>,
+    hour_counts: BTreeMap<String, u64>,
+    user_counts: ahash::AHashMap<String, u64>,
 }
 
 impl TemplateAggregator {
@@ -66,7 +70,8 @@ impl TemplateAggregator {
     /// - `key`: 已归一化的模板 key（来自 `normalize_template()`）
     /// - `exectime_us`: 执行时间（微秒）
     /// - `ts`: 时间戳字符串（达梦日志 ISO 8601 格式，字典序与时间序一致）
-    pub fn observe(&mut self, key: &str, exectime_us: u64, ts: &str) {
+    /// - `user`: 执行用户名（空串表示未知）
+    pub fn observe(&mut self, key: &str, exectime_us: u64, ts: &str, user: &str) {
         let entry = self
             .entries
             .entry(key.to_string())
@@ -81,6 +86,16 @@ impl TemplateAggregator {
         }
         if ts > entry.last_seen.as_str() {
             entry.last_seen = ts.to_string();
+        }
+
+        // hour bucket：取 ts 前 13 字符，如 "2025-01-15 10"
+        if ts.len() >= 13 {
+            *self.hour_counts.entry(ts[..13].to_string()).or_insert(0) += 1;
+        }
+
+        // user count
+        if !user.is_empty() {
+            *self.user_counts.entry(user.to_string()).or_insert(0) += 1;
         }
     }
 
@@ -111,6 +126,15 @@ impl TemplateAggregator {
                     self.entries.insert(key, other_entry);
                 }
             }
+        }
+
+        // merge hour_counts
+        for (k, v) in other.hour_counts {
+            *self.hour_counts.entry(k).or_insert(0) += v;
+        }
+        // merge user_counts
+        for (k, v) in other.user_counts {
+            *self.user_counts.entry(k).or_insert(0) += v;
         }
     }
 
@@ -162,6 +186,24 @@ impl TemplateAggregator {
         entries.sort_unstable_by(|a, b| b.count.cmp(&a.count).then_with(|| a.key.cmp(b.key)));
         entries.into_iter()
     }
+
+    /// 按 hour bucket key 升序返回 (`bucket_key`, count) 迭代器
+    #[allow(dead_code)]
+    pub fn iter_hour_counts(&self) -> impl Iterator<Item = (&str, u64)> {
+        self.hour_counts.iter().map(|(k, &v)| (k.as_str(), v))
+    }
+
+    /// 按 count 降序返回 (user, count) 迭代器（count 相同时按 user 升序）
+    #[allow(dead_code)]
+    pub fn iter_user_counts(&self) -> impl Iterator<Item = (&str, u64)> + '_ {
+        let mut pairs: Vec<(&str, u64)> = self
+            .user_counts
+            .iter()
+            .map(|(k, &v)| (k.as_str(), v))
+            .collect();
+        pairs.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        pairs.into_iter()
+    }
 }
 
 #[cfg(test)]
@@ -171,7 +213,12 @@ mod tests {
     #[test]
     fn test_observe_single() {
         let mut agg = TemplateAggregator::new();
-        agg.observe("SELECT * FROM t WHERE id = ?", 500, "2025-01-15 10:00:00");
+        agg.observe(
+            "SELECT * FROM t WHERE id = ?",
+            500,
+            "2025-01-15 10:00:00",
+            "",
+        );
         let stats = agg.finalize();
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].count, 1);
@@ -184,7 +231,7 @@ mod tests {
         let key = "SELECT * FROM t";
         // 插入 100 个样本：1..=100 微秒
         for i in 1u64..=100 {
-            agg.observe(key, i, "2025-01-15 10:00:00");
+            agg.observe(key, i, "2025-01-15 10:00:00", "");
         }
         let stats = agg.finalize();
         assert_eq!(stats.len(), 1);
@@ -205,12 +252,12 @@ mod tests {
         let ts = "2025-01-15 10:00:00";
 
         let mut agg1 = TemplateAggregator::new();
-        agg1.observe(key, 100, ts);
-        agg1.observe(key, 200, ts);
+        agg1.observe(key, 100, ts, "");
+        agg1.observe(key, 200, ts, "");
 
         let mut agg2 = TemplateAggregator::new();
-        agg2.observe(key, 300, ts);
-        agg2.observe(key, 400, ts);
+        agg2.observe(key, 300, ts, "");
+        agg2.observe(key, 400, ts, "");
 
         agg1.merge(agg2);
         let stats = agg1.finalize();
@@ -234,12 +281,12 @@ mod tests {
         let key = "SELECT 1";
 
         let mut agg1 = TemplateAggregator::new();
-        agg1.observe(key, 100, "2025-01-15 10:00:00");
-        agg1.observe(key, 200, "2025-01-15 12:00:00");
+        agg1.observe(key, 100, "2025-01-15 10:00:00", "");
+        agg1.observe(key, 200, "2025-01-15 12:00:00", "");
 
         let mut agg2 = TemplateAggregator::new();
-        agg2.observe(key, 300, "2025-01-15 08:00:00"); // 更早
-        agg2.observe(key, 400, "2025-01-15 14:00:00"); // 更晚
+        agg2.observe(key, 300, "2025-01-15 08:00:00", ""); // 更早
+        agg2.observe(key, 400, "2025-01-15 14:00:00", ""); // 更晚
 
         agg1.merge(agg2);
         let stats = agg1.finalize();
@@ -254,9 +301,9 @@ mod tests {
     fn test_observe_first_last_seen() {
         let key = "SELECT 1";
         let mut agg = TemplateAggregator::new();
-        agg.observe(key, 100, "2025-01-15 10:00:00");
-        agg.observe(key, 200, "2025-01-14 09:00:00"); // 更早
-        agg.observe(key, 300, "2025-01-16 11:00:00"); // 更晚
+        agg.observe(key, 100, "2025-01-15 10:00:00", "");
+        agg.observe(key, 200, "2025-01-14 09:00:00", ""); // 更早
+        agg.observe(key, 300, "2025-01-16 11:00:00", ""); // 更晚
         let stats = agg.finalize();
         assert_eq!(stats[0].first_seen, "2025-01-14 09:00:00");
         assert_eq!(stats[0].last_seen, "2025-01-16 11:00:00");
@@ -268,14 +315,14 @@ mod tests {
         let ts = "2025-01-15 10:00:00";
 
         // key_a 2次，key_b 5次，key_c 1次 → 排序应为 b(5), a(2), c(1)
-        agg.observe("key_a", 100, ts);
-        agg.observe("key_a", 200, ts);
+        agg.observe("key_a", 100, ts, "");
+        agg.observe("key_a", 200, ts, "");
 
         for _ in 0..5 {
-            agg.observe("key_b", 300, ts);
+            agg.observe("key_b", 300, ts, "");
         }
 
-        agg.observe("key_c", 400, ts);
+        agg.observe("key_c", 400, ts, "");
 
         let stats = agg.finalize();
         assert_eq!(stats.len(), 3);
@@ -299,9 +346,9 @@ mod tests {
         let mut agg = TemplateAggregator::new();
         let key = "SELECT * FROM t WHERE id = ?";
         let ts = "2025-01-15 10:00:00";
-        agg.observe(key, 100, ts);
-        agg.observe(key, 200, ts);
-        agg.observe(key, 300, ts);
+        agg.observe(key, 100, ts, "");
+        agg.observe(key, 200, ts, "");
+        agg.observe(key, 300, ts, "");
 
         let entries: Vec<_> = agg.iter_chart_entries().collect();
         assert_eq!(entries.len(), 1);
@@ -317,14 +364,14 @@ mod tests {
         let ts = "2025-01-15 10:00:00";
 
         // key_a 2次，key_b 5次，key_c 1次 → 迭代结果应为 [key_b(5), key_a(2), key_c(1)]
-        agg.observe("key_a", 100, ts);
-        agg.observe("key_a", 200, ts);
+        agg.observe("key_a", 100, ts, "");
+        agg.observe("key_a", 200, ts, "");
 
         for _ in 0..5 {
-            agg.observe("key_b", 300, ts);
+            agg.observe("key_b", 300, ts, "");
         }
 
-        agg.observe("key_c", 400, ts);
+        agg.observe("key_c", 400, ts, "");
 
         let entries: Vec<_> = agg.iter_chart_entries().collect();
         assert_eq!(entries.len(), 3);
@@ -334,5 +381,68 @@ mod tests {
         assert_eq!(entries[1].count, 2);
         assert_eq!(entries[2].key, "key_c");
         assert_eq!(entries[2].count, 1);
+    }
+
+    #[test]
+    fn test_iter_hour_counts_basic() {
+        let mut agg = TemplateAggregator::new();
+        agg.observe("k", 100, "2025-01-15 10:00:00", "alice");
+        agg.observe("k", 200, "2025-01-15 10:30:00", "bob");
+        agg.observe("k", 300, "2025-01-15 11:00:00", "alice");
+        let counts: Vec<_> = agg.iter_hour_counts().collect();
+        assert_eq!(counts.len(), 2);
+        // BTreeMap 保证升序
+        assert_eq!(counts[0], ("2025-01-15 10", 2));
+        assert_eq!(counts[1], ("2025-01-15 11", 1));
+    }
+
+    #[test]
+    fn test_iter_user_counts_basic() {
+        let mut agg = TemplateAggregator::new();
+        agg.observe("k", 100, "2025-01-15 10:00:00", "alice");
+        agg.observe("k", 200, "2025-01-15 10:30:00", "bob");
+        agg.observe("k", 300, "2025-01-15 11:00:00", "alice");
+        let counts: Vec<_> = agg.iter_user_counts().collect();
+        assert_eq!(counts.len(), 2);
+        assert_eq!(counts[0], ("alice", 2));
+        assert_eq!(counts[1], ("bob", 1));
+    }
+
+    #[test]
+    fn test_iter_hour_counts_empty() {
+        let agg = TemplateAggregator::new();
+        let counts: Vec<_> = agg.iter_hour_counts().collect();
+        assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn test_iter_user_counts_empty() {
+        let agg = TemplateAggregator::new();
+        let counts: Vec<_> = agg.iter_user_counts().collect();
+        assert!(counts.is_empty());
+    }
+
+    #[test]
+    fn test_merge_hour_user_counts() {
+        let mut agg1 = TemplateAggregator::new();
+        agg1.observe("k", 100, "2025-01-15 10:00:00", "alice");
+        let mut agg2 = TemplateAggregator::new();
+        agg2.observe("k", 200, "2025-01-15 10:30:00", "alice");
+        agg2.observe("k", 300, "2025-01-15 11:00:00", "bob");
+        agg1.merge(agg2);
+        let hours: Vec<_> = agg1.iter_hour_counts().collect();
+        let hour_10 = hours
+            .iter()
+            .find(|&&(h, _)| h == "2025-01-15 10")
+            .map(|&(_, c)| c);
+        let hour_11 = hours
+            .iter()
+            .find(|&&(h, _)| h == "2025-01-15 11")
+            .map(|&(_, c)| c);
+        assert_eq!(hour_10, Some(2));
+        assert_eq!(hour_11, Some(1));
+        let users: Vec<_> = agg1.iter_user_counts().collect();
+        assert_eq!(users[0], ("alice", 2));
+        assert_eq!(users[1], ("bob", 1));
     }
 }

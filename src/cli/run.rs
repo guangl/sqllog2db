@@ -252,7 +252,12 @@ fn process_log_file(
                                     } else {
                                         0
                                     };
-                                    agg.observe(&tmpl_key, exectime_us, record.ts.as_ref());
+                                    agg.observe(
+                                        &tmpl_key,
+                                        exectime_us,
+                                        record.ts.as_ref(),
+                                        meta.username.as_ref(),
+                                    );
                                 }
                             }
 

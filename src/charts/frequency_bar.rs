@@ -142,8 +142,8 @@ mod tests {
         let output_path = tmp.path().join("test.svg");
 
         let mut agg = TemplateAggregator::new();
-        agg.observe("SELECT 1", 100, "2025-01-15 10:00:00");
-        agg.observe("SELECT 2", 200, "2025-01-15 10:00:01");
+        agg.observe("SELECT 1", 100, "2025-01-15 10:00:00", "");
+        agg.observe("SELECT 2", 200, "2025-01-15 10:00:01", "");
         let entries: Vec<_> = agg.iter_chart_entries().collect();
 
         draw_frequency_bar(&entries, 10, &output_path).unwrap();
