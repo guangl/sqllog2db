@@ -9,6 +9,8 @@ pub use sql_fingerprint::fingerprint;
 pub use sql_fingerprint::normalize_template;
 
 pub mod template_aggregator;
+#[allow(unused_imports)] // Phase 15 Plan 03+ 将实现图表生成时使用
+pub use template_aggregator::ChartEntry;
 pub use template_aggregator::TemplateAggregator;
 pub use template_aggregator::TemplateStats;
 
