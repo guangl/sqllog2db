@@ -86,11 +86,20 @@ impl TemplateAggregator {
     }
 
     /// 合并另一个聚合器的结果（用于 rayon map-reduce 并行路径）
+    ///
+    /// # Panics
+    ///
+    /// 如果两个聚合器中的 histogram 边界不一致（bounds mismatch），则 panic。
+    /// 正常情况下所有 `TemplateEntry` 都使用相同的边界（`new_with_bounds(1, 60_000_000, 2)`），
+    /// 该 panic 只在代码逻辑错误时触发。
     pub fn merge(&mut self, other: TemplateAggregator) {
         for (key, other_entry) in other.entries {
             match self.entries.get_mut(&key) {
                 Some(entry) => {
-                    let _ = entry.histogram.add(&other_entry.histogram);
+                    entry
+                        .histogram
+                        .add(&other_entry.histogram)
+                        .expect("histogram bounds mismatch: all TemplateEntry histograms must use identical bounds");
 
                     if other_entry.first_seen < entry.first_seen {
                         entry.first_seen = other_entry.first_seen;
