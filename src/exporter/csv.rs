@@ -3,6 +3,7 @@ use super::{ensure_parent_dir, f32_ms_to_i64, strip_ip_prefix};
 use crate::config;
 use crate::error::{Error, ExportError, Result};
 use dm_database_parser_sqllog::{MetaParts, PerformanceMetrics, Sqllog};
+use log::info;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -18,6 +19,77 @@ fn write_csv_escaped(buf: &mut Vec<u8>, bytes: &[u8]) {
         remaining = &remaining[pos + 1..];
     }
     buf.extend_from_slice(remaining);
+}
+
+/// 根据主 CSV 路径推导伴随文件路径（D-09）：`<stem>_templates.csv`
+fn build_companion_path(base_path: &Path) -> PathBuf {
+    let stem = base_path.file_stem().unwrap_or_default();
+    base_path.with_file_name(format!("{}_templates.csv", stem.to_string_lossy()))
+}
+
+/// 将单行模板统计序列化到 `buf`（`template_key` 含双引号包裹 + CSV 转义，数值用 itoa）
+fn format_companion_row(
+    buf: &mut Vec<u8>,
+    itoa_buf: &mut itoa::Buffer,
+    s: &crate::features::TemplateStats,
+) {
+    buf.clear();
+    buf.push(b'"');
+    write_csv_escaped(buf, s.template_key.as_bytes());
+    buf.push(b'"');
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.count).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.avg_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.min_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.max_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.p50_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.p95_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(itoa_buf.format(s.p99_us).as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(s.first_seen.as_bytes());
+    buf.push(b',');
+    buf.extend_from_slice(s.last_seen.as_bytes());
+    buf.push(b'\n');
+}
+
+/// 将 I/O 错误包装为 `ExportError::WriteFailed`
+#[inline]
+fn io_err(path: &Path, reason: String) -> Error {
+    Error::Export(ExportError::WriteFailed {
+        path: path.to_path_buf(),
+        reason,
+    })
+}
+
+/// 将模板统计写入伴随 CSV 文件（D-10：始终覆盖写入）
+fn write_companion_rows(path: &Path, stats: &[crate::features::TemplateStats]) -> Result<()> {
+    ensure_parent_dir(path).map_err(|e| io_err(path, format!("create dir failed: {e}")))?;
+    let file =
+        File::create(path).map_err(|e| io_err(path, format!("create companion failed: {e}")))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(
+            b"template_key,count,avg_us,min_us,max_us,p50_us,p95_us,p99_us,first_seen,last_seen\n",
+        )
+        .map_err(|e| io_err(path, format!("write header failed: {e}")))?;
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut line_buf: Vec<u8> = Vec::with_capacity(512);
+    for s in stats {
+        format_companion_row(&mut line_buf, &mut itoa_buf, s);
+        writer
+            .write_all(&line_buf)
+            .map_err(|e| io_err(path, format!("write row failed: {e}")))?;
+    }
+    writer
+        .flush()
+        .map_err(|e| io_err(path, format!("flush failed: {e}")))?;
+    Ok(())
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -485,6 +557,18 @@ impl Exporter for CsvExporter {
 
     fn stats_snapshot(&self) -> Option<ExportStats> {
         Some(self.stats)
+    }
+
+    fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        let base_path: &Path = final_path.unwrap_or(self.path.as_path());
+        let companion = build_companion_path(base_path);
+        write_companion_rows(&companion, stats)?;
+        info!("Template companion CSV written: {}", companion.display());
+        Ok(())
     }
 }
 
@@ -961,5 +1045,124 @@ mod tests {
         assert!(header.contains("exec_time_ms"));
         assert!(header.contains("row_count"));
         assert!(header.contains("exec_id"));
+    }
+
+    /// TMPL-04-B：验证 `write_template_stats` 写入伴随文件，含 CSV 转义
+    #[test]
+    fn test_csv_write_template_stats() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let outfile = dir.path().join("output.csv");
+
+        let mut exporter = CsvExporter::new(&outfile);
+        exporter.initialize().unwrap();
+        exporter.finalize().unwrap();
+
+        // 第一个 template_key 含逗号，需转义
+        let stats = vec![
+            crate::features::TemplateStats {
+                template_key: r#"SELECT * FROM t WHERE name = "John", age = ?"#.to_string(),
+                count: 42,
+                avg_us: 150,
+                min_us: 10,
+                max_us: 500,
+                p50_us: 120,
+                p95_us: 400,
+                p99_us: 480,
+                first_seen: "2025-01-01 00:00:00".to_string(),
+                last_seen: "2025-01-01 12:00:00".to_string(),
+            },
+            crate::features::TemplateStats {
+                template_key: "INSERT INTO t VALUES (?)".to_string(),
+                count: 7,
+                avg_us: 80,
+                min_us: 5,
+                max_us: 200,
+                p50_us: 70,
+                p95_us: 180,
+                p99_us: 195,
+                first_seen: "2025-01-01 01:00:00".to_string(),
+                last_seen: "2025-01-01 11:00:00".to_string(),
+            },
+        ];
+
+        exporter.write_template_stats(&stats, None).unwrap();
+
+        let companion = dir.path().join("output_templates.csv");
+        assert!(companion.exists(), "伴随文件应存在");
+
+        let content = std::fs::read_to_string(&companion).unwrap();
+        let mut lines = content.lines();
+
+        // 验证表头精确匹配
+        let header = lines.next().unwrap();
+        assert_eq!(
+            header,
+            "template_key,count,avg_us,min_us,max_us,p50_us,p95_us,p99_us,first_seen,last_seen"
+        );
+
+        // 验证数据行数量 = 2
+        let data_lines: Vec<&str> = lines.collect();
+        assert_eq!(data_lines.len(), 2);
+
+        // 验证第一行：template_key 含引号+逗号，应被双引号包裹且引号转义
+        let first_row = data_lines[0];
+        assert!(
+            first_row.starts_with('"'),
+            "含特殊字符的 template_key 应被双引号包裹"
+        );
+        assert!(
+            first_row.contains("\"\"John\"\""),
+            "引号应被转义为 \"\", row: {first_row}"
+        );
+
+        // 验证数值字段可直接 parse
+        // 格式："<key>",count,avg_us,...
+        // 找到第一个 " 结束的位置后的数值
+        let after_key = &first_row[first_row.rfind('"').unwrap() + 1..];
+        let nums: Vec<&str> = after_key.trim_start_matches(',').split(',').collect();
+        assert_eq!(nums[0].parse::<u64>().unwrap(), 42u64);
+        assert_eq!(nums[1].parse::<u64>().unwrap(), 150u64);
+    }
+
+    /// TMPL-04-H：验证 `final_path` 覆盖路径推导（D-09）
+    #[test]
+    fn test_parallel_csv_companion_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // self.path = output.csv（并行前的占位路径）
+        let self_path = dir.path().join("output.csv");
+        // final_path = actual_output.csv（并行实际写入路径）
+        let final_path = dir.path().join("actual_output.csv");
+
+        let mut exporter = CsvExporter::new(&self_path);
+
+        let stats = vec![crate::features::TemplateStats {
+            template_key: "SELECT 1".to_string(),
+            count: 1,
+            avg_us: 100,
+            min_us: 10,
+            max_us: 200,
+            p50_us: 90,
+            p95_us: 180,
+            p99_us: 195,
+            first_seen: "2025-01-01 00:00:00".to_string(),
+            last_seen: "2025-01-01 01:00:00".to_string(),
+        }];
+
+        exporter
+            .write_template_stats(&stats, Some(final_path.as_path()))
+            .unwrap();
+
+        // 伴随文件应在 actual_output_templates.csv，而非 output_templates.csv
+        let expected_companion = dir.path().join("actual_output_templates.csv");
+        let wrong_companion = dir.path().join("output_templates.csv");
+
+        assert!(
+            expected_companion.exists(),
+            "伴随文件应在 actual_output_templates.csv"
+        );
+        assert!(
+            !wrong_companion.exists(),
+            "output_templates.csv 不应存在（应使用 final_path 推导）"
+        );
     }
 }

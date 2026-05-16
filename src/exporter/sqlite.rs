@@ -132,6 +132,38 @@ impl SqliteExporter {
         })
     }
 
+    /// 根据 overwrite/append 语义为 `sql_templates` 表执行 DROP + CREATE DDL。
+    ///
+    /// - `overwrite=true`：先 DROP 旧表（若存在），再 CREATE TABLE IF NOT EXISTS
+    /// - `overwrite=false`：直接 CREATE TABLE IF NOT EXISTS（保留已有行）
+    fn create_or_replace_template_table(&self) -> Result<()> {
+        let overwrite = self.overwrite;
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| Self::db_err("create_or_replace_template_table: not initialized"))?;
+        if overwrite {
+            conn.execute("DROP TABLE IF EXISTS sql_templates", [])
+                .map_err(|e| Self::db_err(format!("drop sql_templates failed: {e}")))?;
+        }
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sql_templates \
+             (template_key TEXT NOT NULL PRIMARY KEY, \
+              count INTEGER NOT NULL, \
+              avg_us INTEGER NOT NULL, \
+              min_us INTEGER NOT NULL, \
+              max_us INTEGER NOT NULL, \
+              p50_us INTEGER NOT NULL, \
+              p95_us INTEGER NOT NULL, \
+              p99_us INTEGER NOT NULL, \
+              first_seen TEXT NOT NULL, \
+              last_seen TEXT NOT NULL)",
+            [],
+        )
+        .map_err(|e| Self::db_err(format!("create sql_templates failed: {e}")))?;
+        Ok(())
+    }
+
     /// 批量提交：每写入 `batch_size` 行后执行一次 `COMMIT; BEGIN`，
     /// 将大事务拆分为多个小事务，降低内存占用并提升写入稳定性。
     fn batch_commit_if_needed(&mut self) -> Result<()> {
@@ -402,6 +434,35 @@ impl Exporter for SqliteExporter {
         info!(
             "SQLite export finished: {} (success: {}, failed: {})",
             self.database_url, self.stats.exported, self.stats.failed
+        );
+        Ok(())
+    }
+
+    fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        _final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        self.create_or_replace_template_table()?;
+        let conn = self
+            .conn
+            .as_ref()
+            .ok_or_else(|| Self::db_err("write_template_stats: not initialized"))?;
+        conn.execute_batch("BEGIN;")
+            .map_err(|e| Self::db_err(format!("begin failed: {e}")))?;
+        #[allow(clippy::cast_possible_wrap)]
+        for s in stats {
+            #[rustfmt::skip]
+            let p = rusqlite::params![s.template_key, s.count as i64, s.avg_us as i64, s.min_us as i64, s.max_us as i64, s.p50_us as i64, s.p95_us as i64, s.p99_us as i64, s.first_seen, s.last_seen];
+            conn.execute("INSERT INTO sql_templates VALUES (?,?,?,?,?,?,?,?,?,?)", p)
+                .map_err(|e| Self::db_err(format!("insert sql_templates failed: {e}")))?;
+        }
+        conn.execute_batch("COMMIT;")
+            .map_err(|e| Self::db_err(format!("commit sql_templates failed: {e}")))?;
+        info!(
+            "sql_templates: {} rows written to {}",
+            stats.len(),
+            self.database_url
         );
         Ok(())
     }
@@ -886,5 +947,173 @@ mod tests {
             count, 5,
             "5 条记录经过批量提交后必须全部持久化，实际: {count}"
         );
+    }
+
+    /// 辅助：构造 `TemplateStats` 测试数据
+    fn make_template_stats_sqlite(key: &str) -> crate::features::TemplateStats {
+        crate::features::TemplateStats {
+            template_key: key.to_string(),
+            count: 5,
+            avg_us: 100,
+            min_us: 50,
+            max_us: 200,
+            p50_us: 90,
+            p95_us: 180,
+            p99_us: 195,
+            first_seen: "2025-01-15 10:00:00".to_string(),
+            last_seen: "2025-01-15 10:05:00".to_string(),
+        }
+    }
+
+    /// TMPL-04-A：基本写入验证 — initialize → finalize → `write_template_stats` → 验证 COUNT=2
+    #[test]
+    fn test_sqlite_write_template_stats() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("out.db");
+
+        let stats = vec![
+            make_template_stats_sqlite("SELECT 1"),
+            make_template_stats_sqlite("SELECT 2"),
+        ];
+
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+            exporter.write_template_stats(&stats, None).unwrap();
+        } // exporter drops here, releasing EXCLUSIVE lock
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sql_templates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2, "expected 2 rows in sql_templates, got {count}");
+
+        let (key, row_count, avg_us, p99_us, first_seen): (String, i64, i64, i64, String) = conn
+            .query_row(
+                "SELECT template_key, count, avg_us, p99_us, first_seen \
+                 FROM sql_templates ORDER BY template_key LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(key, "SELECT 1");
+        assert_eq!(row_count, 5);
+        assert_eq!(avg_us, 100);
+        assert_eq!(p99_us, 195);
+        assert_eq!(first_seen, "2025-01-15 10:00:00");
+    }
+
+    /// TMPL-04-E：overwrite 覆盖 — 旧行被 DROP，只保留新行
+    #[test]
+    fn test_sqlite_templates_overwrite() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("overwrite.db");
+
+        // 第一次写入：overwrite=true，写入 "OLD"
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+            exporter
+                .write_template_stats(&[make_template_stats_sqlite("OLD")], None)
+                .unwrap();
+        }
+
+        // 第二次写入：overwrite=true，写入 "NEW"（应 DROP 旧表）
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+            exporter
+                .write_template_stats(&[make_template_stats_sqlite("NEW")], None)
+                .unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sql_templates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "overwrite should leave exactly 1 row, got {count}"
+        );
+
+        let key: String = conn
+            .query_row("SELECT template_key FROM sql_templates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(key, "NEW", "only NEW row should remain after overwrite");
+    }
+
+    /// TMPL-04-F：append 累加 — 旧行保留，新行累加
+    #[test]
+    fn test_sqlite_templates_append() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let dbfile = dir.path().join("append_tpl.db");
+
+        // 第一次写入：overwrite=true，写入 "A"
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                true,
+                false,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+            exporter
+                .write_template_stats(&[make_template_stats_sqlite("A")], None)
+                .unwrap();
+        }
+
+        // 第二次写入：overwrite=false、append=true，写入 "B"（应保留 "A"）
+        {
+            let mut exporter = SqliteExporter::new(
+                dbfile.to_string_lossy().into(),
+                "sqllog_records".into(),
+                false,
+                true,
+            );
+            exporter.initialize().unwrap();
+            exporter.finalize().unwrap();
+            exporter
+                .write_template_stats(&[make_template_stats_sqlite("B")], None)
+                .unwrap();
+        }
+
+        let conn = rusqlite::Connection::open(&dbfile).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sql_templates", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            count, 2,
+            "append should retain old row + add new, got {count}"
+        );
+
+        let keys: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT template_key FROM sql_templates ORDER BY template_key")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect()
+        };
+        assert_eq!(keys, vec!["A", "B"], "expected keys [A, B], got {keys:?}");
     }
 }

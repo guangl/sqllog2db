@@ -715,22 +715,34 @@ mod tests {
         let mut dry_run = ExporterKind::DryRun(DryRunExporter::default());
         assert!(dry_run.write_template_stats(&stats, None).is_ok());
 
-        // CSV variant — 默认实现（Plan 02 尚未实现具体覆盖）
-        let csv = CsvExporter::new(std::path::PathBuf::from("/tmp/test_dispatch.csv"));
+        // CSV variant — 空 stats，伴随文件写入成功
+        let dir = tempfile::TempDir::new().unwrap();
+        let csv_path = dir.path().join("test_dispatch.csv");
+        let mut csv = CsvExporter::new(&csv_path);
+        csv.initialize().unwrap();
+        csv.finalize().unwrap();
         let mut csv_kind = ExporterKind::Csv(csv);
         assert!(csv_kind.write_template_stats(&stats, None).is_ok());
 
-        // SQLite variant — 默认实现（Plan 02 尚未实现具体覆盖）
+        // SQLite variant — 需要先 initialize 建立数据库连接
         use crate::config::SqliteExporter as SqliteExporterCfg;
+        let db_path = dir.path().join("test_dispatch.db");
         let sqlite_cfg = SqliteExporterCfg {
-            database_url: "/tmp/test_dispatch.db".to_string(),
+            database_url: db_path.to_string_lossy().into(),
             table_name: "records".to_string(),
             overwrite: true,
             append: false,
             batch_size: 10_000,
         };
-        let sqlite = SqliteExporter::from_config(&sqlite_cfg);
+        let mut sqlite = SqliteExporter::from_config(&sqlite_cfg);
+        sqlite.initialize().unwrap();
+        // finalize() commits the main transaction so write_template_stats can open its own
+        sqlite.finalize().unwrap();
         let mut sqlite_kind = ExporterKind::Sqlite(sqlite);
-        assert!(sqlite_kind.write_template_stats(&stats, None).is_ok());
+        let result = sqlite_kind.write_template_stats(&stats, None);
+        assert!(
+            result.is_ok(),
+            "sqlite write_template_stats failed: {result:?}"
+        );
     }
 }
