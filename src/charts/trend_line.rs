@@ -71,7 +71,10 @@ where
         .margin(20)
         .x_label_area_size(60)
         .y_label_area_size(80)
-        .build_cartesian_2d((0..n).into_segmented(), 0u64..(max_count * 11 / 10 + 1))?;
+        .build_cartesian_2d(
+            (0..n).into_segmented(),
+            0u64..(max_count.saturating_mul(11) / 10 + 1),
+        )?;
 
     let labels_clone = labels.to_vec();
     chart
