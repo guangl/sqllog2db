@@ -234,11 +234,21 @@ fn process_log_file(
                                 if record.tag.is_some() {
                                     let tmpl_key =
                                         crate::features::normalize_template(pm.sql.as_ref());
-                                    #[allow(
-                                        clippy::cast_possible_truncation,
-                                        clippy::cast_sign_loss
-                                    )]
-                                    let exectime_us = (pm.exectime * 1000.0) as u64;
+                                    let exectime_us = if pm.exectime.is_finite()
+                                        && pm.exectime > 0.0
+                                    {
+                                        // pm.exectime > 0 已确保无符号损失；
+                                        // u64::MAX as f32 精度损失可接受（上限保护）。
+                                        #[allow(
+                                            clippy::cast_possible_truncation,
+                                            clippy::cast_sign_loss,
+                                            clippy::cast_precision_loss
+                                        )]
+                                        let us = (pm.exectime * 1000.0).min(u64::MAX as f32) as u64;
+                                        us
+                                    } else {
+                                        0
+                                    };
                                     agg.observe(&tmpl_key, exectime_us, record.ts.as_ref());
                                 }
                             }
