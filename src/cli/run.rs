@@ -792,6 +792,11 @@ pub fn handle_run(
         let template_stats = parallel_agg.map(TemplateAggregator::finalize);
         if let Some(ref stats) = template_stats {
             info!("Template analysis: {} unique templates", stats.len());
+            if let Some(csv_cfg) = final_cfg.exporter.csv.as_ref() {
+                let tmp_csv = CsvExporter::new(&csv_cfg.file);
+                let mut tmp_em = ExporterManager::from_csv(tmp_csv);
+                tmp_em.write_template_stats(stats, Some(Path::new(&csv_cfg.file)))?;
+            }
         }
 
         // 更新断点续传状态（并行路径完成后统一写入）。
@@ -892,6 +897,7 @@ pub fn handle_run(
         let template_stats = template_agg.map(TemplateAggregator::finalize);
         if let Some(ref stats) = template_stats {
             info!("Template analysis: {} unique templates", stats.len());
+            exporter_manager.write_template_stats(stats, None)?;
         }
     }
 
@@ -1097,5 +1103,119 @@ mod tests {
         let seq_lines = std::fs::read_to_string(&csv_seq).unwrap().lines().count();
         let par_lines = std::fs::read_to_string(&csv_par).unwrap().lines().count();
         assert_eq!(seq_lines, par_lines, "顺序与并行输出行数应一致");
+    }
+
+    /// TMPL-04-D：template_analysis 未启用时不生成伴随文件
+    #[test]
+    fn test_no_template_stats_when_disabled() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let log_path = dir.path().join("input.log");
+        std::fs::write(
+            &log_path,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT id FROM orders WHERE user_id = 42. EXECTIME: 5(ms) ROWCOUNT: 3(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+        let csv_path = dir.path().join("out.csv");
+        let companion_path = dir.path().join("out_templates.csv");
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        // 不设置 [features.template_analysis]，触发 disabled 路径（template_agg=None）
+        let toml = format!(
+            "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\n",
+            logdir = dir.path().to_string_lossy().replace('\\', "/"),
+            errlog = error_log.to_string_lossy().replace('\\', "/"),
+            applog = app_log.to_string_lossy().replace('\\', "/"),
+            csv = csv_path.to_string_lossy().replace('\\', "/"),
+        );
+        let cfg: Config = toml::from_str(&toml).unwrap();
+
+        handle_run(
+            &cfg,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1,
+            None,
+        )
+        .unwrap();
+
+        assert!(csv_path.exists(), "主 CSV 文件应存在");
+        assert!(
+            !companion_path.exists(),
+            "disabled 状态下不应生成伴随文件 out_templates.csv"
+        );
+    }
+
+    /// TMPL-04-C 端到端 e2e：顺序路径 enabled=true 时主 CSV + 伴随文件同时存在
+    #[test]
+    fn test_template_stats_enabled_end_to_end_sequential() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let log_path = dir.path().join("input.log");
+        std::fs::write(
+            &log_path,
+            "2025-01-15 10:30:28.001 (EP[0] sess:0x0001 user:U trxid:1 stmt:0x1 appname:App ip:10.0.0.1) [SEL] SELECT id FROM orders WHERE user_id = 42. EXECTIME: 5(ms) ROWCOUNT: 3(rows) EXEC_ID: 1.\n",
+        )
+        .unwrap();
+        let csv_path = dir.path().join("out.csv");
+        let companion_path = dir.path().join("out_templates.csv");
+        let error_log = dir.path().join("errors.log");
+        let app_log = dir.path().join("app.log");
+
+        // jobs=1 强制走顺序路径；enabled=true 启用模板分析
+        let toml = format!(
+            "[sqllog]\ndirectory = \"{logdir}\"\n[error]\nfile = \"{errlog}\"\n[logging]\nfile = \"{applog}\"\nlevel = \"warn\"\nretention_days = 1\n[exporter.csv]\nfile = \"{csv}\"\noverwrite = true\nappend = false\n[features.template_analysis]\nenabled = true\n",
+            logdir = dir.path().to_string_lossy().replace('\\', "/"),
+            errlog = error_log.to_string_lossy().replace('\\', "/"),
+            applog = app_log.to_string_lossy().replace('\\', "/"),
+            csv = csv_path.to_string_lossy().replace('\\', "/"),
+        );
+        let cfg: Config = toml::from_str(&toml).unwrap();
+
+        handle_run(
+            &cfg,
+            None,
+            false,
+            true,
+            &Arc::new(AtomicBool::new(false)),
+            80,
+            false,
+            None,
+            1, // jobs=1 → 顺序路径
+            None,
+        )
+        .unwrap();
+
+        // 主 CSV 存在且非空
+        assert!(csv_path.exists(), "主 CSV 文件应存在");
+        assert!(
+            std::fs::metadata(&csv_path).unwrap().len() > 0,
+            "主 CSV 文件应非空"
+        );
+
+        // 伴随文件存在（间接验证 write_template_stats 在 finalize 之后被调用）
+        assert!(
+            companion_path.exists(),
+            "enabled=true 时应生成伴随文件 out_templates.csv"
+        );
+
+        let companion_content = std::fs::read_to_string(&companion_path).unwrap();
+        let mut lines = companion_content.lines();
+        let header = lines.next().unwrap();
+        assert_eq!(
+            header,
+            "template_key,count,avg_us,min_us,max_us,p50_us,p95_us,p99_us,first_seen,last_seen",
+            "伴随文件表头应完整匹配"
+        );
+        // 至少有 1 行数据（表头 + ≥1 行）
+        let data_lines = companion_content.lines().count();
+        assert!(
+            data_lines >= 2,
+            "伴随文件应包含表头 + 至少 1 行数据，实际行数: {data_lines}"
+        );
     }
 }
