@@ -134,8 +134,8 @@ Cross-cutting constraints:
 **Plans**: 5 plans
 - [x] 16-01-PLAN.md — TemplateAggregator 扩展 + run.rs observe 调用点更新
 - [x] 16-02-PLAN.md — ChartsConfig 新增 trend_line/user_pie 开关
-- [ ] 16-03-PLAN.md — 实现 trend_line.rs 时间趋势折线图
-- [ ] 16-04-PLAN.md — 实现 user_pie.rs 用户执行占比饼图
+- [x] 16-03-PLAN.md — 实现 trend_line.rs 时间趋势折线图
+- [x] 16-04-PLAN.md — 实现 user_pie.rs 用户执行占比饼图
 - [ ] 16-05-PLAN.md — charts/mod.rs 接入新图表模块
 **UI hint**: yes
 
