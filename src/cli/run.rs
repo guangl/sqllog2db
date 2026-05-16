@@ -801,6 +801,12 @@ pub fn handle_run(
         total_records = processed_files.iter().map(|(_, c)| *c).sum();
         skipped_files = parallel_skipped;
 
+        if let Some(ref agg) = parallel_agg {
+            if let Some(charts_cfg) = final_cfg.features.charts.as_ref() {
+                crate::charts::generate_charts(agg, charts_cfg)?;
+            }
+        }
+
         // Phase 14 将消费 finalize() 结果并写出报告；此处先记录聚合摘要。
         let template_stats = parallel_agg.map(TemplateAggregator::finalize);
         if let Some(ref stats) = template_stats {
@@ -899,6 +905,12 @@ pub fn handle_run(
             total_records += processed;
             if limit.is_some_and(|l| total_records >= l) {
                 break;
+            }
+        }
+
+        if let Some(ref agg) = template_agg {
+            if let Some(charts_cfg) = final_cfg.features.charts.as_ref() {
+                crate::charts::generate_charts(agg, charts_cfg)?;
             }
         }
 

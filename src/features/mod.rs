@@ -9,7 +9,6 @@ pub use sql_fingerprint::fingerprint;
 pub use sql_fingerprint::normalize_template;
 
 pub mod template_aggregator;
-#[allow(unused_imports)] // Phase 15 Plan 03+ 将实现图表生成时使用
 pub use template_aggregator::ChartEntry;
 pub use template_aggregator::TemplateAggregator;
 pub use template_aggregator::TemplateStats;
@@ -137,7 +136,6 @@ pub struct TemplateAnalysisConfig {
 
 /// `[features.charts]` 配置段
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)] // Phase 15 Plan 02 将实现图表生成时使用
 pub struct ChartsConfig {
     /// 图表输出目录（必填，无默认值）
     pub output_dir: String,
@@ -171,7 +169,6 @@ pub struct FeaturesConfig {
     /// 字段投影：仅导出指定字段，默认为全部 15 个字段
     pub fields: Option<Vec<String>>,
     pub template_analysis: Option<TemplateAnalysisConfig>,
-    #[allow(dead_code)] // Phase 15 Plan 02 将实现图表生成时使用
     pub charts: Option<ChartsConfig>,
 }
 

@@ -38,7 +38,6 @@ pub struct TemplateStats {
 
 /// 图表生成专用的只读视图：在 finalize 前调用，不消耗 self
 #[derive(Debug)]
-#[allow(dead_code)] // Phase 15 Plan 03+ 将实现图表生成时使用
 pub struct ChartEntry<'a> {
     pub key: &'a str,
     pub count: u64,
@@ -150,7 +149,6 @@ impl TemplateAggregator {
     /// 返回图表生成专用的只读迭代器，按 count 降序排列（count 相同时按 key 升序）
     ///
     /// 在 `finalize()` 之前调用，不消耗 self。
-    #[allow(dead_code)] // Phase 15 Plan 03+ 将实现图表生成时使用
     pub fn iter_chart_entries(&self) -> impl Iterator<Item = ChartEntry<'_>> {
         let mut entries: Vec<ChartEntry<'_>> = self
             .entries
