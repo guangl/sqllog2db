@@ -6,6 +6,16 @@ pub mod user_pie;
 use crate::error::{FileError, Result};
 use crate::features::{ChartEntry, ChartsConfig};
 
+pub(super) fn truncate_label(key: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = key.chars().collect();
+    if chars.len() <= max_chars {
+        key.to_string()
+    } else {
+        let truncated: String = chars[..max_chars - 1].iter().collect();
+        format!("{truncated}…")
+    }
+}
+
 pub fn generate_charts(
     agg: &crate::features::TemplateAggregator,
     cfg: &ChartsConfig,

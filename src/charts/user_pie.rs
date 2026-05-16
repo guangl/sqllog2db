@@ -9,16 +9,6 @@ struct PieSlice {
     color: RGBColor,
 }
 
-fn truncate_label(name: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = name.chars().collect();
-    if chars.len() <= max_chars {
-        name.to_string()
-    } else {
-        let truncated: String = chars[..max_chars - 1].iter().collect();
-        format!("{truncated}…")
-    }
-}
-
 #[allow(clippy::many_single_char_names)]
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> RGBColor {
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
@@ -60,7 +50,7 @@ fn prepare_slices(user_counts: &[(&str, u64)], top_n: usize) -> Vec<PieSlice> {
         .iter()
         .enumerate()
         .map(|(i, (name, count))| PieSlice {
-            label: truncate_label(name, MAX_LABEL_CHARS),
+            label: super::truncate_label(name, MAX_LABEL_CHARS),
             count: *count,
             color: make_color(i, total_named),
         })
@@ -197,6 +187,7 @@ pub fn draw_user_pie(
 
 #[cfg(test)]
 mod tests {
+    use super::super::truncate_label;
     use super::*;
     use tempfile::TempDir;
 

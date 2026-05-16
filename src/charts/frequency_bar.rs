@@ -15,7 +15,7 @@ pub fn draw_frequency_bar(
     let data: Vec<(String, u64)> = entries
         .iter()
         .take(top_n)
-        .map(|e| (truncate_label(e.key, MAX_LABEL_CHARS), e.count))
+        .map(|e| (super::truncate_label(e.key, MAX_LABEL_CHARS), e.count))
         .collect();
 
     if data.is_empty() {
@@ -91,18 +91,9 @@ fn box_err_to_write_err(path: &std::path::Path, e: &dyn std::error::Error) -> Er
     })
 }
 
-fn truncate_label(key: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = key.chars().collect();
-    if chars.len() <= max_chars {
-        key.to_string()
-    } else {
-        let truncated: String = chars[..max_chars - 1].iter().collect();
-        format!("{truncated}…")
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::truncate_label;
     use super::*;
 
     #[test]
