@@ -360,6 +360,18 @@ impl Config {
                     .get_or_insert_with(Default::default)
                     .latency_hist = parse_bool(value)?;
             }
+            "features.charts.trend_line" => {
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .trend_line = parse_bool(value)?;
+            }
+            "features.charts.user_pie" => {
+                self.features
+                    .charts
+                    .get_or_insert_with(Default::default)
+                    .user_pie = parse_bool(value)?;
+            }
 
             _ => return Err(unknown()),
         }
