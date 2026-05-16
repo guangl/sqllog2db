@@ -141,7 +141,10 @@ fn render_pie(
 ) -> crate::error::Result<()> {
     use std::f64::consts::PI;
 
-    let root = SVGBackend::new(output_path, (1000, 600)).into_drawing_area();
+    #[allow(clippy::cast_possible_truncation)]
+    let required_h = 60 + (slices.len() as u32 + 1) * 25 + 20;
+    let chart_h = required_h.max(600);
+    let root = SVGBackend::new(output_path, (1000, chart_h)).into_drawing_area();
     root.fill(&WHITE)
         .map_err(|e| to_write_err(output_path, &e))?;
 
@@ -164,9 +167,7 @@ fn render_pie(
         let end_angle = current_angle + sweep;
 
         let pts = sector_points(cx, cy, r, current_angle, end_angle);
-        root.draw(&Polygon::new(pts.clone(), slice.color.filled()))
-            .map_err(|e| to_write_err(output_path, &e))?;
-        root.draw(&Polygon::new(pts, BLACK.mix(0.3)))
+        root.draw(&Polygon::new(pts, slice.color.filled()))
             .map_err(|e| to_write_err(output_path, &e))?;
 
         current_angle = end_angle;
