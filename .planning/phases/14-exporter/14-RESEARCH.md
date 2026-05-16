@@ -526,17 +526,19 @@ if let Some(ref stats) = template_stats {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **并行路径的 `write_template_stats` 调用者构造**
    - What we know: 并行路径无公共 `ExporterManager` 实例；`csv_cfg.file` 是最终路径
    - What's unclear: 是在 `handle_run()` 临时创建 `ExporterManager::from_csv(CsvExporter::new(output_path))`，还是直接将 `CsvExporter::write_template_stats` 暴露为关联函数
    - Recommendation: 临时创建 `ExporterManager` 最符合 D-02（唯一调用点通过 ExporterManager），且代码量最小；ExporterManager 不需要 initialize/finalize，直接调用 write_template_stats 即可
+   - **RESOLVED:** Plan 04 在 `handle_run()` 并行路径分支构造临时 `ExporterManager::from_csv(CsvExporter::new(&csv_cfg.file))`，调用 `write_template_stats(stats, Some(Path::new(&csv_cfg.file)))`。临时 manager 不调用 initialize/finalize；CsvExporter::write_template_stats 仅依赖 self.path（在 final_path=Some 时不使用）和 final_path 参数。该方案符合 D-02 唯一调用点约束，代码量最小。
 
 2. **`write_template_stats` 是否需要默认实现（no-op）**
    - What we know: DryRunExporter 需要 no-op + info!；未来可能有新 exporter
    - What's unclear: 默认实现 no-op vs 强制每个 exporter 实现
    - Recommendation: 提供默认实现 `Ok(())`，DryRunExporter 覆盖以加 `info!`，向前兼容
+   - **RESOLVED:** Plan 01 在 `Exporter` trait 提供默认 no-op 实现（方法体仅 `let _ = (stats, final_path); Ok(())`）。`DryRunExporter` 覆盖默认实现以增加 `info!("Dry-run: would write {} template stats (no file written)", stats.len())` 日志输出（D-05），但仍不创建任何文件。`SqliteExporter` 与 `CsvExporter` 分别在 Plan 02/03 提供具体实现覆盖。未来新增 exporter 若不实现该方法将自动获得 no-op 行为，向前兼容。
 
 ---
 
