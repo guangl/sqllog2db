@@ -77,7 +77,7 @@ impl Config {
                 }
             }
         }
-        if self.features.charts.is_some() {
+        if let Some(charts) = &self.features.charts {
             let ta_enabled = self
                 .features
                 .template_analysis
@@ -88,6 +88,20 @@ impl Config {
                     field: "features.charts".to_string(),
                     value: String::new(),
                     reason: "启用 [features.charts] 需要先设置 [features.template_analysis]\nenabled = true".to_string(),
+                }));
+            }
+            if charts.output_dir.trim().is_empty() {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts.output_dir".to_string(),
+                    value: charts.output_dir.clone(),
+                    reason: "charts output_dir cannot be empty".to_string(),
+                }));
+            }
+            if charts.top_n == 0 {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts.top_n".to_string(),
+                    value: "0".to_string(),
+                    reason: "top_n must be greater than 0".to_string(),
                 }));
             }
         }
@@ -140,7 +154,7 @@ impl Config {
                 }
             }
         }
-        if self.features.charts.is_some() {
+        if let Some(charts) = &self.features.charts {
             let ta_enabled = self
                 .features
                 .template_analysis
@@ -151,6 +165,20 @@ impl Config {
                     field: "features.charts".to_string(),
                     value: String::new(),
                     reason: "启用 [features.charts] 需要先设置 [features.template_analysis]\nenabled = true".to_string(),
+                }));
+            }
+            if charts.output_dir.trim().is_empty() {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts.output_dir".to_string(),
+                    value: charts.output_dir.clone(),
+                    reason: "charts output_dir cannot be empty".to_string(),
+                }));
+            }
+            if charts.top_n == 0 {
+                return Err(Error::Config(ConfigError::InvalidValue {
+                    field: "features.charts.top_n".to_string(),
+                    value: "0".to_string(),
+                    reason: "top_n must be greater than 0".to_string(),
                 }));
             }
         }
@@ -288,6 +316,13 @@ impl Config {
             }
 
             "features.charts.output_dir" => {
+                if value.trim().is_empty() {
+                    return Err(Error::Config(ConfigError::InvalidValue {
+                        field: key.to_string(),
+                        value: value.to_string(),
+                        reason: "charts output_dir cannot be empty".to_string(),
+                    }));
+                }
                 self.features
                     .charts
                     .get_or_insert_with(Default::default)
@@ -301,6 +336,13 @@ impl Config {
                         reason: "expected a positive integer".to_string(),
                     })
                 })?;
+                if parsed == 0 {
+                    return Err(Error::Config(ConfigError::InvalidValue {
+                        field: key.to_string(),
+                        value: "0".to_string(),
+                        reason: "top_n must be greater than 0".to_string(),
+                    }));
+                }
                 self.features
                     .charts
                     .get_or_insert_with(Default::default)
@@ -1231,5 +1273,117 @@ file = "out.csv"
         cfg.apply_one("features.charts.latency_hist", "false")
             .expect("apply_one should succeed");
         assert!(!cfg.features.charts.unwrap().latency_hist);
+    }
+
+    // ── CR-02: output_dir 非空校验 ─────────────────────────────
+    #[test]
+    fn test_validate_charts_empty_output_dir_is_rejected() {
+        use crate::features::{ChartsConfig, FeaturesConfig, TemplateAnalysisConfig};
+        let mut cfg = default_config();
+        cfg.features = FeaturesConfig {
+            template_analysis: Some(TemplateAnalysisConfig { enabled: true }),
+            charts: Some(ChartsConfig {
+                output_dir: String::new(),
+                ..ChartsConfig::default()
+            }),
+            ..Default::default()
+        };
+        let result = cfg.validate();
+        assert!(result.is_err(), "空 output_dir 应被拒绝");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("features.charts.output_dir"),
+            "错误信息应包含字段名，实际: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_charts_whitespace_output_dir_is_rejected() {
+        use crate::features::{ChartsConfig, FeaturesConfig, TemplateAnalysisConfig};
+        let mut cfg = default_config();
+        cfg.features = FeaturesConfig {
+            template_analysis: Some(TemplateAnalysisConfig { enabled: true }),
+            charts: Some(ChartsConfig {
+                output_dir: "   ".into(),
+                ..ChartsConfig::default()
+            }),
+            ..Default::default()
+        };
+        assert!(cfg.validate().is_err(), "纯空白 output_dir 应被拒绝");
+    }
+
+    #[test]
+    fn test_apply_one_charts_output_dir_empty_is_rejected() {
+        let mut cfg = Config::default();
+        let result = cfg.apply_one("features.charts.output_dir", "");
+        assert!(result.is_err(), "apply_one 空 output_dir 应返回错误");
+    }
+
+    #[test]
+    fn test_apply_one_charts_output_dir_whitespace_is_rejected() {
+        let mut cfg = Config::default();
+        let result = cfg.apply_one("features.charts.output_dir", "   ");
+        assert!(result.is_err(), "apply_one 纯空白 output_dir 应返回错误");
+    }
+
+    // ── WR-01: top_n = 0 校验 ──────────────────────────────────
+    #[test]
+    fn test_validate_charts_top_n_zero_is_rejected() {
+        use crate::features::{ChartsConfig, FeaturesConfig, TemplateAnalysisConfig};
+        let mut cfg = default_config();
+        cfg.features = FeaturesConfig {
+            template_analysis: Some(TemplateAnalysisConfig { enabled: true }),
+            charts: Some(ChartsConfig {
+                output_dir: "charts/".into(),
+                top_n: 0,
+                ..ChartsConfig::default()
+            }),
+            ..Default::default()
+        };
+        let result = cfg.validate();
+        assert!(result.is_err(), "top_n = 0 应被拒绝");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("features.charts.top_n"),
+            "错误信息应包含字段名，实际: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_apply_one_charts_top_n_zero_is_rejected() {
+        let mut cfg = Config::default();
+        let result = cfg.apply_one("features.charts.top_n", "0");
+        assert!(result.is_err(), "apply_one top_n=0 应返回错误");
+    }
+
+    #[test]
+    fn test_validate_and_compile_charts_empty_output_dir_is_rejected() {
+        use crate::features::{ChartsConfig, FeaturesConfig, TemplateAnalysisConfig};
+        let mut cfg = default_config();
+        cfg.features = FeaturesConfig {
+            template_analysis: Some(TemplateAnalysisConfig { enabled: true }),
+            charts: Some(ChartsConfig {
+                output_dir: String::new(),
+                ..ChartsConfig::default()
+            }),
+            ..Default::default()
+        };
+        assert!(cfg.validate_and_compile().is_err());
+    }
+
+    #[test]
+    fn test_validate_and_compile_charts_top_n_zero_is_rejected() {
+        use crate::features::{ChartsConfig, FeaturesConfig, TemplateAnalysisConfig};
+        let mut cfg = default_config();
+        cfg.features = FeaturesConfig {
+            template_analysis: Some(TemplateAnalysisConfig { enabled: true }),
+            charts: Some(ChartsConfig {
+                output_dir: "charts/".into(),
+                top_n: 0,
+                ..ChartsConfig::default()
+            }),
+            ..Default::default()
+        };
+        assert!(cfg.validate_and_compile().is_err());
     }
 }
