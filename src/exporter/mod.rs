@@ -43,6 +43,19 @@ pub trait Exporter {
     fn stats_snapshot(&self) -> Option<ExportStats> {
         None
     }
+
+    /// 将 SQL 模板聚合统计写入导出目标。
+    /// 默认实现为 no-op，向后兼容现有 exporter。
+    // Plan 04 将在 run.rs 接入此方法；骨架阶段暂未调用。
+    #[allow(dead_code)]
+    fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        let _ = (stats, final_path);
+        Ok(())
+    }
 }
 
 /// 具体导出器的枚举包装，消除 `Box<dyn Exporter>` 的虚表分发开销，
@@ -101,6 +114,20 @@ impl ExporterKind {
             Self::Csv(e) => e.finalize(),
             Self::Sqlite(e) => e.finalize(),
             Self::DryRun(e) => e.finalize(),
+        }
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        match self {
+            Self::Csv(e) => e.write_template_stats(stats, final_path),
+            Self::Sqlite(e) => e.write_template_stats(stats, final_path),
+            Self::DryRun(e) => e.write_template_stats(stats, final_path),
         }
     }
 
@@ -169,6 +196,18 @@ impl Exporter for DryRunExporter {
     }
 
     fn finalize(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        _final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        info!(
+            "Dry-run: would write {} template stats (no file written)",
+            stats.len()
+        );
         Ok(())
     }
 
@@ -276,6 +315,16 @@ impl ExporterManager {
         self.exporter.finalize()?;
         info!("Exporters finished");
         Ok(())
+    }
+
+    // Plan 04 将在 run.rs 接入此方法；骨架阶段暂未调用。
+    #[allow(dead_code)]
+    pub fn write_template_stats(
+        &mut self,
+        stats: &[crate::features::TemplateStats],
+        final_path: Option<&std::path::Path>,
+    ) -> Result<()> {
+        self.exporter.write_template_stats(stats, final_path)
     }
 
     #[must_use]
@@ -584,5 +633,104 @@ mod tests {
     fn test_strip_ip_prefix_colon_non_ffff() {
         // Starts with ':' but not the exact ffff prefix
         assert_eq!(strip_ip_prefix("::1"), "::1");
+    }
+
+    // ── write_template_stats ───────────────────────────────────
+
+    /// 辅助：构造一个最小 `TemplateStats` 实例
+    fn make_template_stats(key: &str) -> crate::features::TemplateStats {
+        crate::features::TemplateStats {
+            template_key: key.to_string(),
+            count: 1,
+            avg_us: 100,
+            min_us: 10,
+            max_us: 200,
+            p50_us: 90,
+            p95_us: 180,
+            p99_us: 195,
+            first_seen: "2025-01-01 00:00:00".to_string(),
+            last_seen: "2025-01-01 01:00:00".to_string(),
+        }
+    }
+
+    /// Test 1: 自定义 mock exporter 不覆盖 `write_template_stats`，默认 no-op 返回 `Ok(())`
+    #[test]
+    fn test_default_write_template_stats_noop() {
+        #[derive(Debug, Default)]
+        struct MockExporter;
+
+        impl Exporter for MockExporter {
+            fn initialize(&mut self) -> Result<()> {
+                Ok(())
+            }
+            fn export(&mut self, _: &dm_database_parser_sqllog::Sqllog<'_>) -> Result<()> {
+                Ok(())
+            }
+            fn finalize(&mut self) -> Result<()> {
+                Ok(())
+            }
+            // write_template_stats 未覆盖 → 使用 trait 默认 no-op
+        }
+
+        let mut mock = MockExporter;
+        let stats = vec![make_template_stats("SELECT ?")];
+        let result = mock.write_template_stats(&stats, None);
+        assert!(result.is_ok());
+    }
+
+    /// Test 2: `DryRunExporter` 覆盖为 no-op，不创建任何文件
+    #[test]
+    fn test_dry_run_write_template_stats_noop() {
+        let mut e = DryRunExporter::default();
+        e.initialize().unwrap();
+        let before = e.stats_snapshot().unwrap().exported;
+
+        let stats = vec![
+            make_template_stats("SELECT ?"),
+            make_template_stats("INSERT ?"),
+        ];
+        let result = e.write_template_stats(&stats, None);
+        assert!(result.is_ok());
+
+        // write_template_stats 不影响 exported 计数
+        let after = e.stats_snapshot().unwrap().exported;
+        assert_eq!(before, after);
+    }
+
+    /// Test 3: `ExporterManager::dry_run()` 委托调用 `write_template_stats` 返回 `Ok(())`
+    #[test]
+    fn test_exporter_manager_write_template_stats_dry_run() {
+        let mut manager = ExporterManager::dry_run();
+        let stats = vec![make_template_stats("SELECT ?")];
+        let result = manager.write_template_stats(&stats, None);
+        assert!(result.is_ok());
+    }
+
+    /// Test 4: `ExporterKind` 三个 variant 透传 `write_template_stats` 均不 panic
+    #[test]
+    fn test_exporter_kind_dispatch_write_template_stats() {
+        let stats: Vec<crate::features::TemplateStats> = vec![];
+
+        // DryRun variant
+        let mut dry_run = ExporterKind::DryRun(DryRunExporter::default());
+        assert!(dry_run.write_template_stats(&stats, None).is_ok());
+
+        // CSV variant — 默认实现（Plan 02 尚未实现具体覆盖）
+        let csv = CsvExporter::new(std::path::PathBuf::from("/tmp/test_dispatch.csv"));
+        let mut csv_kind = ExporterKind::Csv(csv);
+        assert!(csv_kind.write_template_stats(&stats, None).is_ok());
+
+        // SQLite variant — 默认实现（Plan 02 尚未实现具体覆盖）
+        use crate::config::SqliteExporter as SqliteExporterCfg;
+        let sqlite_cfg = SqliteExporterCfg {
+            database_url: "/tmp/test_dispatch.db".to_string(),
+            table_name: "records".to_string(),
+            overwrite: true,
+            append: false,
+            batch_size: 10_000,
+        };
+        let sqlite = SqliteExporter::from_config(&sqlite_cfg);
+        let mut sqlite_kind = ExporterKind::Sqlite(sqlite);
+        assert!(sqlite_kind.write_template_stats(&stats, None).is_ok());
     }
 }

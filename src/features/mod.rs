@@ -10,6 +10,7 @@ pub use sql_fingerprint::normalize_template;
 
 pub mod template_aggregator;
 pub use template_aggregator::TemplateAggregator;
+pub use template_aggregator::TemplateStats;
 
 use dm_database_parser_sqllog::{MetaParts, Sqllog};
 use serde::Deserialize;
