@@ -121,12 +121,44 @@ fn default_true() -> bool {
     true
 }
 
+fn default_top_n() -> usize {
+    10
+}
+
 /// `[features.template_analysis]` 配置段
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct TemplateAnalysisConfig {
     /// 是否启用 SQL 模板归一化（默认 false）
     #[serde(default)]
     pub enabled: bool,
+}
+
+/// `[features.charts]` 配置段
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)] // Phase 15 Plan 02 将实现图表生成时使用
+pub struct ChartsConfig {
+    /// 图表输出目录（必填，无默认值）
+    pub output_dir: String,
+    /// 频率 Top-N 数量（默认 10）
+    #[serde(default = "default_top_n")]
+    pub top_n: usize,
+    /// 是否生成频率柱状图（默认 true）
+    #[serde(default = "default_true")]
+    pub frequency_bar: bool,
+    /// 是否生成延迟直方图（默认 true）
+    #[serde(default = "default_true")]
+    pub latency_hist: bool,
+}
+
+impl Default for ChartsConfig {
+    fn default() -> Self {
+        Self {
+            output_dir: "charts/".to_string(),
+            top_n: 10,
+            frequency_bar: true,
+            latency_hist: true,
+        }
+    }
 }
 
 /// 功能开关配置
@@ -137,6 +169,8 @@ pub struct FeaturesConfig {
     /// 字段投影：仅导出指定字段，默认为全部 15 个字段
     pub fields: Option<Vec<String>>,
     pub template_analysis: Option<TemplateAnalysisConfig>,
+    #[allow(dead_code)] // Phase 15 Plan 02 将实现图表生成时使用
+    pub charts: Option<ChartsConfig>,
 }
 
 impl FeaturesConfig {
@@ -285,6 +319,46 @@ mod tests {
         assert!(cfg.filters.is_none());
         assert!(cfg.replace_parameters.is_none());
         assert!(cfg.template_analysis.is_none());
+    }
+
+    // ── ChartsConfig ───────────────────────────────────────────
+    #[test]
+    fn test_charts_config_default_values() {
+        let cfg = ChartsConfig::default();
+        assert_eq!(cfg.output_dir, "charts/");
+        assert_eq!(cfg.top_n, 10);
+        assert!(cfg.frequency_bar);
+        assert!(cfg.latency_hist);
+    }
+
+    #[test]
+    fn test_charts_config_deserialize_only_output_dir() {
+        let cfg: ChartsConfig = toml::from_str(r#"output_dir = "out/""#).unwrap();
+        assert_eq!(cfg.output_dir, "out/");
+        assert_eq!(cfg.top_n, 10);
+        assert!(cfg.frequency_bar);
+        assert!(cfg.latency_hist);
+    }
+
+    #[test]
+    fn test_charts_config_deserialize_full() {
+        let toml = r#"
+output_dir = "custom/"
+top_n = 5
+frequency_bar = false
+latency_hist = false
+"#;
+        let cfg: ChartsConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.output_dir, "custom/");
+        assert_eq!(cfg.top_n, 5);
+        assert!(!cfg.frequency_bar);
+        assert!(!cfg.latency_hist);
+    }
+
+    #[test]
+    fn test_features_config_default_charts_is_none() {
+        let cfg = FeaturesConfig::default();
+        assert!(cfg.charts.is_none());
     }
 
     #[test]
