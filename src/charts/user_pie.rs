@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use plotters::prelude::*;
 
 const MAX_LABEL_CHARS: usize = 20;
@@ -21,6 +19,7 @@ fn truncate_label(name: &str, max_chars: usize) -> String {
     }
 }
 
+#[allow(clippy::many_single_char_names)]
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> RGBColor {
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
@@ -46,6 +45,7 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> RGBColor {
     )
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn make_color(index: usize, total: usize) -> RGBColor {
     let hue = (index * 360 / total.max(1)) as f64;
     hsl_to_rgb(hue, 0.65, 0.55)
@@ -61,7 +61,7 @@ fn prepare_slices(user_counts: &[(&str, u64)], top_n: usize) -> Vec<PieSlice> {
         .enumerate()
         .map(|(i, (name, count))| PieSlice {
             label: truncate_label(name, MAX_LABEL_CHARS),
-            count: **count,
+            count: *count,
             color: make_color(i, total_named),
         })
         .collect();
@@ -76,6 +76,11 @@ fn prepare_slices(user_counts: &[(&str, u64)], top_n: usize) -> Vec<PieSlice> {
     slices
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 fn sector_points(cx: f64, cy: f64, r: f64, start_rad: f64, end_rad: f64) -> Vec<(i32, i32)> {
     let mut pts = vec![(cx as i32, cy as i32)];
     let arc_len = (end_rad - start_rad).abs();
@@ -116,6 +121,7 @@ fn draw_legend(
             slice.color.filled(),
         ))
         .map_err(|e| to_write_err(output_path, &e))?;
+        #[allow(clippy::cast_precision_loss)]
         let pct = slice.count as f64 / total as f64 * 100.0;
         let label_text = format!("{} ({:.1}%)", slice.label, pct);
         root.draw(&Text::new(
@@ -152,6 +158,7 @@ fn render_pie(
     let mut current_angle = -PI / 2.0;
 
     for slice in slices {
+        #[allow(clippy::cast_precision_loss)]
         let fraction = slice.count as f64 / total as f64;
         let sweep = 2.0 * PI * fraction;
         let end_angle = current_angle + sweep;
@@ -167,8 +174,7 @@ fn render_pie(
 
     draw_legend(&root, slices, total, output_path)?;
 
-    root.present()
-        .map_err(|e| to_write_err(output_path, &e))?;
+    root.present().map_err(|e| to_write_err(output_path, &e))?;
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 pub mod frequency_bar;
 pub mod latency_hist;
 pub mod trend_line;
+pub mod user_pie;
 
 use crate::error::{FileError, Result};
 use crate::features::{ChartEntry, ChartsConfig};
@@ -26,6 +27,18 @@ pub fn generate_charts(
 
     if cfg.latency_hist {
         draw_all_latency_hists(&entries, cfg.top_n, output_dir)?;
+    }
+
+    if cfg.trend_line {
+        let hour_data: Vec<(&str, u64)> = agg.iter_hour_counts().collect();
+        let path = output_dir.join("frequency_trend.svg");
+        trend_line::draw_trend_line(&hour_data, &path)?;
+    }
+
+    if cfg.user_pie {
+        let user_data: Vec<(&str, u64)> = agg.iter_user_counts().collect();
+        let path = output_dir.join("user_schema_pie.svg");
+        user_pie::draw_user_pie(&user_data, cfg.top_n, &path)?;
     }
 
     Ok(())

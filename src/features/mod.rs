@@ -151,11 +151,9 @@ pub struct ChartsConfig {
     pub latency_hist: bool,
     /// 是否生成时间趋势折线图（默认 true）
     #[serde(default = "default_true")]
-    #[allow(dead_code)]
     pub trend_line: bool,
     /// 是否生成用户占比饼图（默认 true）
     #[serde(default = "default_true")]
-    #[allow(dead_code)]
     pub user_pie: bool,
 }
 

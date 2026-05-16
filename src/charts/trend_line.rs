@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::error::{Error, FileError};
 use plotters::prelude::*;
 

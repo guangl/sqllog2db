@@ -188,13 +188,11 @@ impl TemplateAggregator {
     }
 
     /// 按 hour bucket key 升序返回 (`bucket_key`, count) 迭代器
-    #[allow(dead_code)]
     pub fn iter_hour_counts(&self) -> impl Iterator<Item = (&str, u64)> {
         self.hour_counts.iter().map(|(k, &v)| (k.as_str(), v))
     }
 
     /// 按 count 降序返回 (user, count) 迭代器（count 相同时按 user 升序）
-    #[allow(dead_code)]
     pub fn iter_user_counts(&self) -> impl Iterator<Item = (&str, u64)> + '_ {
         let mut pairs: Vec<(&str, u64)> = self
             .user_counts
