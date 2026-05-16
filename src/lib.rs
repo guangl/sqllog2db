@@ -1,3 +1,4 @@
+pub mod charts;
 pub mod cli;
 pub mod color;
 pub mod config;

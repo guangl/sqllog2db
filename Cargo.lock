@@ -700,6 +700,7 @@ dependencies = [
  "log",
  "memchr",
  "mimalloc",
+ "plotters",
  "rayon",
  "regex",
  "rusqlite",

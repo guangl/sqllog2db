@@ -57,6 +57,11 @@ rayon = "1.11"
 regex = "1"
 ahash = "0.8"
 hdrhistogram = "7.5.4"
+plotters = { version = "0.3.7", default-features = false, features = [
+  "svg_backend",
+  "all_series",
+  "all_elements",
+] }
 memchr = "2"
 encoding_rs = "0.8"
 compact_str = "0.9"
