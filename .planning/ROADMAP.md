@@ -49,7 +49,7 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 - [ ] **Phase 12: SQL 模板归一化引擎** — normalize_template() 函数 + TemplateAnalysisConfig
 - [x] **Phase 13: TemplateAggregator 流式统计累积器** — 侧路径聚合 + hdrhistogram 百分位 (completed 2026-05-15)
 - [x] **Phase 14: Exporter 集成输出** — sql_templates 表 + *_templates.csv 伴随文件 (completed 2026-05-16)
-- [ ] **Phase 15: SVG 图表基础设施 + 前两类图表** — ChartsConfig + Top N 频率条形图 + 耗时直方图
+- [x] **Phase 15: SVG 图表基础设施 + 前两类图表** — ChartsConfig + Top N 频率条形图 + 耗时直方图 (completed 2026-05-17)
 - [ ] **Phase 16: 剩余图表** — 时间趋势折线图 + 用户/Schema 饼图
 
 ## Phase Details
@@ -108,7 +108,18 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
   3. `latency_histogram.svg` 包含耗时分布直方图，使用 hdrhistogram `iter_recorded()` bucket 数据作为输入，X 轴为耗时区间，Y 轴为记录数
   4. 每个 SVG 写出函数在关闭前显式调用 `flush()?`，文件内容完整无截断
   5. 未启用图表功能时，不创建 `output_dir` 目录，不生成任何 SVG 文件
-**Plans**: TBD
+**Plans**: 5 plans (Wave 1: 15-01, 15-02 — executed; Wave 2: 15-03, 15-04; Wave 3: 15-05)
+- [x] 15-01-PLAN.md — ChartsConfig 结构 + FeaturesConfig.charts 字段 + validate() 依赖检查 + apply_one() CLI 覆盖 (Wave 1)
+- [x] 15-02-PLAN.md — ChartEntry<'a> 借用视图 + iter_chart_entries() 迭代器 + pub use 导出 (Wave 1)
+- [x] 15-03-PLAN.md — Cargo.toml plotters 依赖 + src/charts/mod.rs generate_charts 入口 + src/charts/frequency_bar.rs draw_frequency_bar (Wave 2)
+- [x] 15-04-PLAN.md — src/charts/latency_hist.rs draw_latency_hist hdrhistogram + 对数轴 (Wave 2, depends on 03)
+- [x] 15-05-PLAN.md — src/main.rs mod charts + src/cli/run.rs 两路径接入 + dead_code 清理 (Wave 3, depends on 03+04)
+
+Wave 2 *(blocked on Wave 1 completion)*
+
+Cross-cutting constraints:
+- root.present() 显式 flush 在所有 draw_* 函数中（SC-4）
+- generate_charts 必须在 exporter_manager.finalize() 之前调用（D-01）
 **UI hint**: yes
 
 ### Phase 16: 剩余图表
@@ -141,5 +152,5 @@ Full details: `.planning/milestones/v1.2-ROADMAP.md`
 | 12. SQL 模板归一化引擎 | v1.3 | 0/3 | Planned | - |
 | 13. TemplateAggregator 流式统计累积器 | v1.3 | 2/2 | Complete   | 2026-05-15 |
 | 14. Exporter 集成输出 | v1.3 | 4/4 | Complete   | 2026-05-16 |
-| 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 0/? | Not started | - |
+| 15. SVG 图表基础设施 + 前两类图表 | v1.3 | 2/5 | In Progress | - |
 | 16. 剩余图表 | v1.3 | 0/? | Not started | - |
